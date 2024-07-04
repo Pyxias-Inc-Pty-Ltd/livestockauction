@@ -1,12 +1,11 @@
-import itemService from '../services/item-service';
 import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
-import { isoDateValidation, isStringNumberLike, mongoIdValidation } from '../shared/functions';
-import { BidderOnly, SuperAdminOnly } from '../shared/middleware';
+import { isoDateValidation, mongoIdValidation } from '../shared/functions';
+import { SuperAdminOnly } from '../shared/middleware';
 import { IAdmin } from '../models/user-model';
-import { EAuctionSortType, EItemStatus, ESortOrderType } from '../globals';
 import auctionService from '../services/auction-service';
+import { EParticipationType } from '../globals';
 
 // Constants
 const router = Router();
@@ -15,7 +14,8 @@ const { OK, CREATED } = StatusCodes;
 // Paths
 export const p = {
   createAuction: '/createAuction',
-  deleteAuction: '/deleteAuction'
+  deleteAuction: '/deleteAuction',
+  getAuctionReport: '/getAuctionReport'
 } as const;
 
 /**
@@ -44,6 +44,9 @@ router.post(p.createAuction, SuperAdminOnly(), async (req: Request, res: Respons
       }),
       endTime: isoDateValidation.required().messages({
         'any.required': '"endTime" is a required field'
+      }),
+      participationType: Joi.string().valid(EParticipationType.CITIZEN_ONLY, EParticipationType.EVERYONE).required().messages({
+        'any.required': '"participationType" is a required field'
       })
     }).required();
     
@@ -78,6 +81,32 @@ router.delete(p.deleteAuction, SuperAdminOnly(), async (req: Request, res: Respo
     await auctionService.deleteAuction(req.user as IAdmin, auctionId as string);
 
     return res.status(OK).json({"message": "OK"});
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Get auction report
+ */
+router.get(p.getAuctionReport, SuperAdminOnly(), async (req: Request, res: Response) => {
+  try {
+
+    // Query checks
+    const qSchema = Joi.object().keys({
+      auctionId: mongoIdValidation.required().messages({
+        'any.required': '"auctionId" is a required field'
+      })
+    }).required();
+    
+    // Validate schema against query
+    Joi.assert(req.query, qSchema);
+
+    const { auctionId } = req.query;
+
+    const report = await auctionService.getAuctionReport(auctionId as string);
+
+    return res.status(OK).json({ report });
   } catch (error) {
     throw error;
   }
