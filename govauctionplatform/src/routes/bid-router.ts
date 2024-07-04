@@ -13,7 +13,7 @@ const { CREATED, OK } = StatusCodes;
 // Paths
 export const p = {
   // createBid: '/createBid',
-  getBids: '/getBids',
+  getBids: '/getBids'
 } as const;
 
 // /**
