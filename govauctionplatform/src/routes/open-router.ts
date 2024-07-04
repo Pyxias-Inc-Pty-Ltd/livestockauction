@@ -211,7 +211,7 @@ router.get(p.getAuctions, async (req: Request, res: Response) => {
         'any.required': '"sortBy" is a required field'
       }),
       categoryId: mongoIdValidation,
-      status: Joi.string().valid(EItemStatus.NOT_BEGUN, EItemStatus.ACTIVE, EItemStatus.CANCELLED, EItemStatus.ENDED),
+      status: Joi.string().valid(EItemStatus.ALL, EItemStatus.FRONT_VIEW, EItemStatus.NOT_BEGUN, EItemStatus.ACTIVE, EItemStatus.CANCELLED, EItemStatus.ENDED),
       limit: isStringNumberLike.required().messages({
         'any.required': '"limit" is a required field'
       }),
