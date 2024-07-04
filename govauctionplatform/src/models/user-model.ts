@@ -1,0 +1,282 @@
+import { ConflictError } from '../shared/errors';
+import { Schema, model, Document, Model } from 'mongoose';
+import { adminType, EModels, ENVIRONMENT_PRODUCTION, EUserType, userType } from '../globals';
+import isEmail from 'validator/lib/isEmail';
+import isURL from 'validator/lib/isURL';
+
+export interface IUser extends Document {
+  firstName: string;
+  lastName: string;
+  photoUrl?: string;
+  userType: userType;
+  phone: string;
+  email: string;
+  tz: string;
+  locale: string;
+  password: string;
+  createdDate: any;
+  updatedDate: any;
+}
+
+export interface ISeller extends IUser {
+}
+
+export interface ISellerInput {
+  email: string;
+  phone: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  locale: string;
+  tz: string;
+}
+
+export interface IUpdateSellerInput {
+  photoUrl?: string;
+  email?: string;
+  phone?: string;
+  password?: string;
+  firstName?: string;
+  lastName?: string;
+}
+
+export interface IBidder extends IUser {
+}
+
+export interface IBidderInput {
+  email: string;
+  phone: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  locale: string;
+  tz: string;
+}
+
+export interface IUpdateBidderInput {
+  photoUrl?: string;
+  email?: string;
+  phone?: string;
+  password?: string;
+  firstName?: string;
+  lastName?: string;
+}
+
+export interface IAdmin extends IUser {
+  adminType: adminType;
+}
+
+export interface IAdminInput {
+  adminType: adminType;
+  email: string;
+  phone: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  locale: string;
+  tz: string;
+}
+
+export interface IUpdateAdminInput {
+  photoUrl?: string;
+  email?: string;
+  phone?: string;
+  password?: string;
+  firstName?: string;
+  lastName?: string;
+}
+
+const userSchema = new Schema<IUser>({
+  userType: {type: String, required: true, enum: [EUserType.ADMIN, EUserType.BIDDER]},
+  email: {type: String, unique: true, required: true, validate: {
+    msg: 'Valid email must be supplied.',
+      validator: function (v: string): boolean {
+        return isEmail(v);
+      }
+    }
+  },
+  firstName: {type: String, required: true, trim: true},
+  lastName: {type: String, required: true, trim: true},
+  phone: {type: String, trim: true, required: true},
+  password: {type: String, trim: true},
+  tz: {type: String, trim: true, required: true},
+  locale: {type: String, trim: true, required: true},
+  photoUrl: {type: String, validate: {
+    msg: 'Valid URL must be supplied.',
+      validator: function (v: string): boolean {
+        // Be less stringent in development
+        if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) { 
+          return isURL(v, {protocols: ['https']});
+        } else {
+          return true;
+        }
+      }
+    }
+  }
+}, {
+  timestamps: {
+    createdAt: "createdDate",
+    updatedAt: "updatedDate"
+  }
+});
+
+userSchema.set('toJSON', {
+  virtuals: true,
+  versionKey: false,
+  transform: function (doc, ret) {
+    delete ret._id;
+    delete ret.password;
+    delete ret.__t;
+  }
+});
+
+userSchema.post('save', function(error: any, doc: any, next: any) {
+  if (error.name === 'MongoServerError' && error.code === 11000) {
+    if (error.message.includes('email_1')) {
+      next(new ConflictError('A user with this email already exists'));
+    } else {
+      next(new ConflictError('Duplicate key error'));
+    }
+  } else {
+    next();
+  }
+});
+
+const bidderSchema = new Schema<IBidder>({
+  userType: {type: String, required: true, default: EUserType.BIDDER, enum: [EUserType.BIDDER]},
+  email: {type: String, unique: true, required: true, validate: {
+    msg: 'Valid email must be supplied.',
+      validator: function (v: string): boolean {
+        return isEmail(v);
+      }
+    }
+  },
+  firstName: {type: String, required: true, trim: true},
+  lastName: {type: String, required: true, trim: true},
+  phone: {type: String, trim: true, required: true},
+  password: {type: String, trim: true},
+  tz: {type: String, trim: true, required: true},
+  locale: {type: String, trim: true, required: true},
+  photoUrl: {type: String, validate: {
+    msg: 'Valid URL must be supplied.',
+      validator: function (v: string): boolean {
+        // Be less stringent in development
+        if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) { 
+          return isURL(v, {protocols: ['https']});
+        } else {
+          return true;
+        }
+      }
+    }
+  }
+}, {
+  timestamps: {
+    createdAt: "createdDate",
+    updatedAt: "updatedDate"
+  }
+});
+
+bidderSchema.set('toJSON', {
+  virtuals: true,
+  versionKey: false,
+  transform: function (doc, ret) {
+    delete ret._id;
+    delete ret.password;
+    delete ret.__t;
+  }
+});
+
+const sellerSchema = new Schema<ISeller>({
+  userType: {type: String, required: true, default: EUserType.SELLER, enum: [EUserType.SELLER]},
+  email: {type: String, unique: true, required: true, validate: {
+    msg: 'Valid email must be supplied.',
+      validator: function (v: string): boolean {
+        return isEmail(v);
+      }
+    }
+  },
+  firstName: {type: String, required: true, trim: true},
+  lastName: {type: String, required: true, trim: true},
+  phone: {type: String, trim: true, required: true},
+  password: {type: String, trim: true},
+  tz: {type: String, trim: true, required: true},
+  locale: {type: String, trim: true, required: true},
+  photoUrl: {type: String, validate: {
+    msg: 'Valid URL must be supplied.',
+      validator: function (v: string): boolean {
+        // Be less stringent in development
+        if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) { 
+          return isURL(v, {protocols: ['https']});
+        } else {
+          return true;
+        }
+      }
+    }
+  }
+}, {
+  timestamps: {
+    createdAt: "createdDate",
+    updatedAt: "updatedDate"
+  }
+});
+
+sellerSchema.set('toJSON', {
+  virtuals: true,
+  versionKey: false,
+  transform: function (doc, ret) {
+    delete ret._id;
+    delete ret.password;
+    delete ret.__t;
+  }
+});
+
+const adminSchema = new Schema<IAdmin>({
+  userType: {type: String, required: true, default: EUserType.ADMIN, enum: [EUserType.ADMIN]},
+  email: {type: String, unique: true, required: true, validate: {
+    msg: 'Valid email must be supplied.',
+      validator: function (v: string): boolean {
+        return isEmail(v);
+      }
+    }
+  },
+  firstName: {type: String, required: true, trim: true},
+  lastName: {type: String, required: true, trim: true},
+  phone: {type: String, trim: true, required: true},
+  password: {type: String, trim: true},
+  tz: {type: String, trim: true, required: true},
+  locale: {type: String, trim: true, required: true},
+  photoUrl: {type: String, validate: {
+    msg: 'Valid URL must be supplied.',
+      validator: function (v: string): boolean {
+        // Be less stringent in development
+        if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) { 
+          return isURL(v, {protocols: ['https']});
+        } else {
+          return true;
+        }
+      }
+    }
+  }
+}, {
+  timestamps: {
+    createdAt: "createdDate",
+    updatedAt: "updatedDate"
+  }
+});
+
+adminSchema.set('toJSON', {
+  virtuals: true,
+  versionKey: false,
+  transform: function (doc, ret) {
+    delete ret._id;
+    delete ret.password;
+    delete ret.__t;
+  }
+});
+
+export const User: Model<IUser> = model(EModels.USER, userSchema);
+
+// Attach discriminators
+export const Admin = User.discriminator(EModels.ADMIN, adminSchema);
+export const Bidder = User.discriminator(EModels.BIDDER, bidderSchema);
+export const Seller = User.discriminator(EModels.SELLER, sellerSchema);
