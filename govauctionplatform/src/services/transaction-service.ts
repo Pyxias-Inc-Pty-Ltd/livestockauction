@@ -1,14 +1,15 @@
 import { IBidder } from "../models/user-model";
 import { ForbiddenError, InternalServerError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
-import { ClientSession, Schema, startSession, Types } from 'mongoose';
+import { ClientSession, Schema, startSession } from 'mongoose';
 import { ITransaction, Transaction, ITransactionInput } from "../models/transaction-model";
 import itemService from "./item-service";
-import { EPaymentStatus, ESortOrderType, ETransactionSortType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, paymentProvider, SERVICE_URLS, TINGG_BILLING_SERVICE_ID, transactionType, UNIPAY_APP_AUTH_TOKEN } from "../globals";
+import { EPaymentStatus, ESortOrderType, ETransactionSortType, LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, MAX_LIST_LIMIT_NUMBER, paymentProvider, SERVICE_URLS, TINGG_BILLING_SERVICE_ID, transactionType, UNIPAY_APP_AUTH_TOKEN } from "../globals";
 import bidService from "./bid-service";
 import * as luxon from "luxon";
 import { formatPhoneTinggNumber, generateUniPayAppPaymentURL } from "../shared/functions";
 import tokenService from "./token-service";
+import auctionService from "./auction-service";
 
 /**
  * Intiates a reservation payment transaction for an item.
@@ -20,7 +21,7 @@ import tokenService from "./token-service";
 async function initiateItemReservation(currentUser: IBidder, input: { itemId: string, paymentProvider: paymentProvider }): Promise<ITransaction> {
   try {
 
-    const result = await Promise.all([itemService.getById(input.itemId, { reservePrice: 1, sellerId: 1 }), tokenService.getActiveToken()]);
+    const result = await Promise.all([itemService.getById(input.itemId, { reservePrice: 1, sellerId: 1, auctionId: 1 }), tokenService.getActiveToken()]);
 
     // Check if exists
     if (!result[0]) {
@@ -34,6 +35,22 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
 
     const item = result[0];
     const token = result[1];
+
+    // Find auction
+    const auction = await auctionService.getById(item.auctionId, { participationType: 1 });
+
+    // Check if exists
+    if (!auction) {
+      throw new NotFoundError('Auction not found');
+    }
+
+    // Check participation type
+    if (auction.participationType === 'CITIZEN_ONLY') {
+      // Check current bidder nationality
+      if (currentUser.nationality !== LOCAL_NATIONALITY) {
+        throw new ForbiddenError('This auction is reserved for citizens only');
+      }
+    }
 
     const now = luxon.DateTime.now().setZone(currentUser.tz);
     const endOfDate = now.endOf('day');
@@ -315,7 +332,7 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
 
     // TODO: Make sure bidder can not purchase once bidding has begun
 
-    const result = await Promise.all([itemService.getById(input.itemId, { buyoutPrice: 1, sellerId: 1 }), tokenService.getActiveToken()]);
+    const result = await Promise.all([itemService.getById(input.itemId, { buyoutPrice: 1, sellerId: 1, auctionId: 1 }), tokenService.getActiveToken()]);
 
     // Check if exists
     if (!result[0]) {
@@ -329,6 +346,22 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
 
     const item = result[0];
     const token = result[1];
+
+    // Find auction
+    const auction = await auctionService.getById(item.auctionId, { participationType: 1 });
+
+    // Check if exists
+    if (!auction) {
+      throw new NotFoundError('Auction not found');
+    }
+
+    // Check participation type
+    if (auction.participationType === 'CITIZEN_ONLY') {
+      // Check current bidder nationality
+      if (currentUser.nationality !== LOCAL_NATIONALITY) {
+        throw new ForbiddenError('This auction is reserved for citizens only');
+      }
+    }
 
     // Check if buyout price is set
     if (!item.buyoutPrice) {
