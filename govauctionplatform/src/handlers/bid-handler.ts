@@ -16,6 +16,19 @@ export default {
       throw error;
     }
   },
+  deleteBid: async function (socket: any, data: string): Promise<undefined> {
+    try {
+      const bidder = socket.user as IBidder;
+
+      await bidService.deleteBid(bidder, data);
+
+      // TODO: Remove
+      console.log("deleteBid: ", data);
+      return;
+    } catch (error) {
+      throw error;
+    }
+  },
   joinBiddingRoom: function (socket: any, data: string): undefined {
     try {
       socket.join(`${data}-bid`);
