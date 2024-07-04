@@ -3,8 +3,11 @@ export type adminType = "SUPER";
 export type transactionType = "REFUND" | "PURCHASE" | "RESERVATION";
 export type itemStatus = "NOT_BEGUN" | "ACTIVE" | "ENDED" | "CANCELLED";
 export type auctionStatus = "NOT_BEGUN" | "ACTIVE" | "ENDED" | "CANCELLED";
+export type animalSpecies = "BOVINE" | "EQUINE" | "CAPRINE" | "OVINE" | "PORCINE";
 export type paymentStatus = "PENDING" | "FAILED" | "COMPLETED";
 export type paymentProvider = "CELLULANT" | "UNIPAY";
+export type genderType = "MALE" | "FEMALE" | "MIXED";
+export type participationType = "CITIZEN_ONLY" | "EVERYONE";
 
 export type fauxObject = {[key: string]: any};
 
@@ -17,6 +20,7 @@ export const MAX_LIST_LIMIT_NUMBER = 100;
 export const GENERIC_ERROR_MESSAGE = "Something went wrong, please try again later";
 export const ESCAPE_HTTP_ORIGIN_SOCKET_IO = "http://localhost:3000"; // TODO: Update before production
 export const TINGG_BILLING_SERVICE_ID = 3412;
+export const LOCAL_NATIONALITY = 'BW';
 
 export const EXPRESS_SESSION_SECRET = process.env.EXPRESS_SESSION_SECRET as string;
 const MONGO_DB_PASS = process.env.MONGO_DB_PASS as string;
@@ -272,8 +276,6 @@ export const COUNTRY_PHONE_CODES = [{"country":"Afghanistan","code":"93","iso":"
 {"country":"Zimbabwe","code":"263","iso":"ZW"}];
 
 export enum EItemStatus {
-  ALL = "ALL",
-  FRONT_VIEW = "FRONT_VIEW",
   NOT_BEGUN = "NOT_BEGUN",
   ACTIVE = "ACTIVE",
   ENDED = "ENDED",
@@ -315,6 +317,7 @@ export enum ETransactionType {
 
 export enum EModels {
   ADMIN = "Admin",
+  BREED = "Breed",
   USER = "User",
   BIDDER = "Bidder",
   SELLER = "Seller",
@@ -374,10 +377,34 @@ export enum ESocketEventCode {
   JOIN_BIDDING_ROOM_CHAT = "e:4",
   CREATE_CHAT_MESSAGE = "e:5",
   BROADCAST_CHAT_MESSAGE = "e:6",
-  POLL_PAID_TRANSACTION = "e:7"
+  POLL_PAID_TRANSACTION = "e:7",
+  DELETE_BID = "e:8"
+}
+
+export enum EParticipationType {
+  CITIZEN_ONLY = "CITIZEN_ONLY",
+  EVERYONE = "EVERYONE"
 }
 
 export enum EPaymentProvider {
   CELLULANT = "CELLULANT",
   UNIPAY = "UNIPAY"
+}
+
+export enum EGenderType {
+  MALE = "MALE",
+  FEMALE = "FEMALE",
+  MIXED = "MIXED"
+}
+
+export enum EBreedSortType {
+  NAME = "NAME"
+}
+
+export enum EAnimalSpecies {
+  BOVINE = "BOVINE",
+  EQUINE = "EQUINE",
+  CAPRINE = "CAPRINE",
+  OVINE = "OVINE",
+  PORCINE = "PORCINE"
 }
