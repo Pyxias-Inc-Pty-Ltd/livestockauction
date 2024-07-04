@@ -11,9 +11,9 @@ import { Schema } from "mongoose";
  * @param id 
  * @returns 
  */
-async function getById(id: string | Schema.Types.ObjectId): Promise<IUser | null> {
+async function getById(id: string | Schema.Types.ObjectId, projection?: any): Promise<IUser | null> {
   try {
-    return await User.findById(id);
+    return await User.findById(id, projection);
   } catch (error) {
     // Rethrow error
     throw error;
