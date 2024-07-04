@@ -1,13 +1,14 @@
-import { IAdmin } from "../models/user-model";
+import { IAdmin, IUser } from "../models/user-model";
 import { IItem, IItemInput, Item } from "../models/item-model";
 import { isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
 import { ForbiddenError, InternalServerError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
-import { Schema } from 'mongoose';
+import mongoose, { Schema } from 'mongoose';
 import { EItemSortType, EItemStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
 import auctionService from "./auction-service";
 import { ClientSession, startSession } from 'mongoose';
 import bidService from "./bid-service";
+import userService from "./user-service";
 
 /**
  * Add an item.
@@ -155,15 +156,19 @@ async function setWinningBidder(input: { itemId: string | Schema.Types.ObjectId,
       throw new ForbiddenError('Bidder must be in list of eligible bidders');
     }
 
-    const highestBid = await bidService.getWinningBid(input.itemId);
+    const conditions = new Map<string, any>();
 
-    // Check if exists
-    if (!highestBid) {
-      throw new NotFoundError('Bid not found');
+    // Get bids
+    const bids = await bidService.getBids(conditions);
+
+    // Check length
+    if (bids.length < 1) {
+      throw new InternalServerError('Bids are empty');
     }
 
+    const highestBid = bids[0];
+
     // Check if bidder supplied is the highest bidder
-    console.log('highest bidder', input.bidderId.toString(), highestBid.userId.toString());
     if (highestBid.userId.toString() !== input.bidderId.toString()) {
       throw new ForbiddenError('Bidder supplied is not the highest bidder');
     }
@@ -213,7 +218,7 @@ async function getItems(conditions: Map<string, any>, projection?: any): Promise
     if (conditions.get('status')) {
       q.where({status: conditions.get('status')});
     } else {
-      q.or([{status: EItemStatus.ACTIVE}, {status: EItemStatus.NOT_BEGUN}, {status: EItemStatus.ENDED}]);
+      q.or([{status: EItemStatus.ACTIVE}, {status: EItemStatus.NOT_BEGUN}]);
     }
 
     // Range
@@ -256,11 +261,100 @@ async function getItems(conditions: Map<string, any>, projection?: any): Promise
   }
 }
 
+/**
+ * Counts the number of items that have been bought (i.e., where the "winningBidder" field is set).
+ * 
+ * @returns {Promise<number>} The count of bought items.
+ * @throws Will throw an error if the aggregation query fails.
+ */
+async function countBoughtItems(auctionId: string | Schema.Types.ObjectId): Promise<number> {
+  try {
+    const result = await Item.aggregate([
+      { $match: { auctionId: new mongoose.Types.ObjectId(auctionId.toString()), winningBidder: { $ne: null } } },
+      { $count: "boughtItemsCount" }
+    ]);
+
+    if (result.length > 0) {
+      return result[0].boughtItemsCount;
+    } else {
+      return 0;
+    }
+  } catch (error) {
+    // Rethrow
+    throw error;
+  }
+}
+
+/**
+ * Calculates the total value of lots bought by summing the "currentBid" field for items with a "winningBidder" in a specific auction.
+ * 
+ * @param {string | Schema.Types.ObjectId} auctionId - The ID of the auction to filter by.
+ * @returns {Promise<number>} The total value of bought lots in the specified auction.
+ * @throws Will throw an error if the aggregation query fails.
+ */
+async function calculateTotalValueOfLotsBought(auctionId: string | Schema.Types.ObjectId): Promise<number> {
+  try {
+    const result = await Item.aggregate([
+      { $match: { auctionId: new mongoose.Types.ObjectId(auctionId.toString()), winningBidder: { $ne: null } } },
+      { $group: { _id: null, totalValue: { $sum: "$currentBid" } } }
+    ]);
+
+    if (result.length > 0) {
+      return result[0].totalValue;
+    } else {
+      return 0;
+    }
+  } catch (error) {
+    // Rethrow the error for handling by the caller
+    throw error;
+  }
+}
+
+/**
+ * Retrieves a list of all unique bidders for a given auction ID using the eligibleBidders field.
+ * 
+ * @param {string} auctionId - The ID of the auction to retrieve bidders for.
+ * @returns {Promise<(IUser | null)[]>} A list of bidders.
+ * @throws Will throw an error if the aggregation query fails.
+ */
+async function getBiddersForAuction(auctionId: string | Schema.Types.ObjectId): Promise<(IUser | null)[]> {
+  try {
+    const result = await Item.aggregate([
+      { $match: { auctionId: new mongoose.Types.ObjectId(auctionId.toString()) } },
+      { $unwind: "$eligibleBidders" },
+      { $group: { _id: null, bidders: { $addToSet: "$eligibleBidders" } } },
+      { $project: { _id: 0, bidders: 1 } }
+    ]);
+
+    if (result.length > 0) {
+      const bidders = await Promise.all((result[0].bidders as Array<string>).map(async (bidder) => {
+        return await userService.getById(bidder, { firstName: 1, lastName: 1 });
+      }));
+
+      return bidders.filter((bidder) => {
+        if (bidder) {
+          return true;
+        } else {
+          return false;
+        }
+      });
+    } else {
+      return [];
+    }
+  } catch (error) {
+    // Rethrow the error for handling by the caller
+    throw error;
+  }
+}
+
 // Export default
 export default {
   createItem,
   setWinningBidder,
   deleteItem,
   getById,
-  getItems
+  getItems,
+  countBoughtItems,
+  calculateTotalValueOfLotsBought,
+  getBiddersForAuction
 } as const;
