@@ -1,8 +1,9 @@
-import { ConflictError } from '../shared/errors';
+import { ConflictError, InternalServerError, NotFoundError } from '../shared/errors';
 import { Schema, model, Document } from 'mongoose';
-import { itemStatus, EModels, EItemStatus } from '../globals';
+import { itemStatus, EModels, EItemStatus, genderType, EGenderType } from '../globals';
 import { generateSlug } from '../shared/functions';
 import { uniqBy } from 'lodash';
+import { ICategory } from './category-model';
 
 export interface IItem extends Document {
   creatorId: Schema.Types.ObjectId;
@@ -10,6 +11,13 @@ export interface IItem extends Document {
   categoryId: Schema.Types.ObjectId;
   sellerId: Schema.Types.ObjectId;
   gallery: Array<string>;
+  isLivestock: boolean;
+  isAStud: boolean;
+  dob?: Date;
+  studRegistrationNumber?: string;
+  numberOfCalvesBorn?: number;
+  gender?: genderType;
+  breedId?: Schema.Types.ObjectId;
   title: string;
   description: string;
   terms: string;
@@ -34,6 +42,13 @@ export interface IItemInput {
   sellerId: Schema.Types.ObjectId;
   auctionId: Schema.Types.ObjectId;
   categoryId: Schema.Types.ObjectId;
+  dob?: Date;
+  isAStud: boolean;
+  numberOfCalvesBorn?: number;
+  studRegistrationNumber?: string;
+  isLivestock: boolean;
+  gender?: genderType;
+  breedId?: Schema.Types.ObjectId;
   title: string;
   description: string;
   terms: string;
@@ -48,6 +63,12 @@ export interface IItemInput {
 export interface IUpdateItemInput {
   gallery?: Array<string>;
   currentBid?: number;
+  gender?: genderType;
+  dob?: Date;
+  isAStud?: boolean;
+  studRegistrationNumber?: string;
+  numberOfCalvesBorn?: number;
+  breedId?: Schema.Types.ObjectId;
   auctionId?: Schema.Types.ObjectId;
   categoryId?: Schema.Types.ObjectId;
   buyoutPrice?: number;
@@ -75,7 +96,24 @@ const schema = new Schema<IItem>({
   startTime: { type: Date, required: true },
   endTime: { type: Date, required: true },
   status: { type: String, enum: [EItemStatus.NOT_BEGUN, EItemStatus.ACTIVE, EItemStatus.CANCELLED, EItemStatus.ENDED]},
-  eligibleBidders: [String]
+  eligibleBidders: [String],
+  isLivestock: { type: Boolean, default: true, required: true },
+  gender: { type: String, enum: [EGenderType.FEMALE, EGenderType.MALE, EGenderType.MIXED], required: function (): boolean {
+    return (this as IItem).isLivestock;
+  } },
+  breedId: { type: Schema.Types.ObjectId, ref: EModels.BREED, required: function (): boolean {
+    return (this as IItem).isLivestock;
+  } },
+  isAStud: { type: Boolean, default: false, required: function (): boolean {
+    return (this as IItem).isLivestock;
+  } },
+  studRegistrationNumber: { type: String, trim: true , required: function (): boolean {
+    return (this as IItem).isAStud;
+  } },
+  numberOfCalvesBorn: { type: Number, min: 0 },
+  dob: {type: Date, required: function (): boolean {
+    return (this as IItem).gender !== undefined && (this as IItem).gender !== 'MIXED';
+  }}
 }, {
   timestamps: {
     createdAt: "createdDate",
@@ -97,6 +135,23 @@ schema.pre('save', async function () {
 
   if (doc.isNew || doc.isModified('title')) {
     doc.titleSlug = generateSlug(doc.title);
+  }
+
+  if (doc.isNew || doc.isModified('gender') || doc.isModified('isLivestock')) {
+    if (doc.isLivestock && doc.gender === 'FEMALE') {
+      const category = await doc.$model(EModels.CATEGORY).findById({phone: doc.categoryId}, {nameSlug: 1}) as ICategory | null;
+
+      // Check if exists
+      if (!category) {
+        throw new NotFoundError('Category not found');
+      }
+
+      if (category.nameSlug === 'cattle') {
+        if (typeof doc.numberOfCalvesBorn !== 'number') {
+          throw new InternalServerError(`Property 'numberOfCalvesBorn' must be defined`);
+        }
+      }
+    }
   }
 
   // Check if empty
