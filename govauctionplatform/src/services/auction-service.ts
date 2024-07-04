@@ -168,9 +168,13 @@ async function getAuctions(conditions: Map<string, any>, projection?: any): Prom
     }
 
     if (conditions.get('status')) {
-      q.where({status: conditions.get('status')});
-    } else {
-      q.or([{status: EItemStatus.ACTIVE}, {status: EItemStatus.NOT_BEGUN}]);
+      if (conditions.get('status') === EItemStatus.ALL) {
+        q.or([{status: EItemStatus.ACTIVE}, {status: EItemStatus.NOT_BEGUN}, {status: EItemStatus.CANCELLED}, {status: EItemStatus.ENDED}]);
+      } else if (conditions.get('status') === EItemStatus.FRONT_VIEW) {
+        q.or([{status: EItemStatus.ACTIVE}, {status: EItemStatus.NOT_BEGUN}]);
+      } else {
+        q.where({status: conditions.get('status')});
+      }
     }
 
     // Range
