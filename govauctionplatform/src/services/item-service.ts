@@ -45,7 +45,7 @@ async function createItem(currentUser: IAdmin, input: IItemInput): Promise<IItem
 
     // Check status
     if (auction.status !== 'NOT_BEGUN') {
-      throw new ForbiddenError('Can not delete a processed auction');
+      throw new ForbiddenError('Can not add an item to a processed auction');
     }
 
     newItem.status = 'NOT_BEGUN';
