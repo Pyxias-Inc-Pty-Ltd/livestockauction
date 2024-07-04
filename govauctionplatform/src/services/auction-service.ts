@@ -6,6 +6,7 @@ import { Schema } from 'mongoose';
 import { EAuctionSortType, EItemStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
 import { Auction, IAuction, IAuctionInput } from "../models/auction-model";
 import categoryService from "./category-service";
+import itemService from "./item-service";
 
 /**
  * Add an auction.
@@ -141,7 +142,6 @@ async function searchAuctions (input: { term: string }): Promise<IAuction[]> {
 /**
  * Get auctions.
  * 
- * @param currentUser
  * @param conditions
  * @param projection
  * @returns 
@@ -168,13 +168,9 @@ async function getAuctions(conditions: Map<string, any>, projection?: any): Prom
     }
 
     if (conditions.get('status')) {
-      if (conditions.get('status') === EItemStatus.ALL) {
-        q.or([{status: EItemStatus.ACTIVE}, {status: EItemStatus.NOT_BEGUN}, {status: EItemStatus.CANCELLED}, {status: EItemStatus.ENDED}]);
-      } else if (conditions.get('status') === EItemStatus.FRONT_VIEW) {
-        q.or([{status: EItemStatus.ACTIVE}, {status: EItemStatus.NOT_BEGUN}]);
-      } else {
-        q.where({status: conditions.get('status')});
-      }
+      q.where({status: conditions.get('status')});
+    } else {
+      q.or([{status: EItemStatus.ACTIVE}, {status: EItemStatus.NOT_BEGUN}]);
     }
 
     // Range
@@ -214,11 +210,37 @@ async function getAuctions(conditions: Map<string, any>, projection?: any): Prom
   }
 }
 
+/**
+ * Gets an auction report
+ * 
+ * @param auctionId 
+ * @returns 
+ */
+async function getAuctionReport(auctionId: string | Schema.Types.ObjectId): Promise<{
+  boughtItemsCount: number,
+  totalValueOfLotsBought: number,
+  bidders: Array<IUser | null>
+}> {
+  try {
+    const result = await Promise.all([itemService.countBoughtItems(auctionId), itemService.calculateTotalValueOfLotsBought(auctionId), itemService.getBiddersForAuction(auctionId)]);
+
+    return {
+      boughtItemsCount: result[0],
+      totalValueOfLotsBought: result[1],
+      bidders: result[2]
+    }
+  } catch (error) {
+    // Rethrow error
+    throw error;
+  }
+}
+
 // Export default
 export default {
   createAuction,
   deleteAuction,
   getById,
   getAuctions,
-  searchAuctions
+  searchAuctions,
+  getAuctionReport
 } as const;
