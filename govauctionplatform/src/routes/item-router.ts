@@ -2,10 +2,10 @@ import itemService from '../services/item-service';
 import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
-import { isoDateValidation, isStringNumberLike, mongoIdValidation, urlValidation } from '../shared/functions';
-import { BidderOnly, SuperAdminOnly } from '../shared/middleware';
+import { isoDateValidation, mongoIdValidation, urlValidation } from '../shared/functions';
+import { SuperAdminOnly } from '../shared/middleware';
 import { IAdmin } from '../models/user-model';
-import { EItemSortType, EItemStatus, ESortOrderType } from '../globals';
+import { EGenderType } from '../globals';
 
 // Constants
 const router = Router();
@@ -57,6 +57,39 @@ router.post(p.createItem, SuperAdminOnly(), async (req: Request, res: Response) 
       }),
       endTime: isoDateValidation.required().messages({
         'any.required': '"endTime" is a required field'
+      }),
+      isLivestock: Joi.boolean().required().messages({
+        'any.required': '"isLivestock" is a required field'
+      }),
+      dob: Joi.string().isoDate(),
+      gender: Joi.string().valid(EGenderType.FEMALE, EGenderType.MALE, EGenderType.MIXED).when('isLivestock', {
+        is: true,
+        then: Joi.required().messages({
+          'any.required': '"gender" is a required field'
+        }),
+        otherwise: Joi.optional()
+      }),
+      breedId: mongoIdValidation.when('isLivestock', {
+        is: true,
+        then: Joi.required().messages({
+          'any.required': '"breedId" is a required field'
+        }),
+        otherwise: Joi.optional()
+      }),
+      isAStud: Joi.boolean().when('isLivestock', {
+        is: true,
+        then: Joi.required().messages({
+          'any.required': '"isAStud" is a required field'
+        }),
+        otherwise: Joi.optional()
+      }),
+      numberOfCalvesBorn: Joi.number().min(0),
+      studRegistrationNumber: Joi.string().when('isAStud', {
+        is: true,
+        then: Joi.required().messages({
+          'any.required': '"studRegistrationNumber" is a required field'
+        }),
+        otherwise: Joi.optional()
       })
     }).required();
     
