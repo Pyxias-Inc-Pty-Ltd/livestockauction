@@ -1,6 +1,6 @@
 import { ConflictError } from '../shared/errors';
 import { Schema, model, Document, Model } from 'mongoose';
-import { adminType, EModels, ENVIRONMENT_PRODUCTION, EUserType, userType } from '../globals';
+import { adminType, EGenderType, EModels, ENVIRONMENT_PRODUCTION, EUserType, genderType, userType } from '../globals';
 import isEmail from 'validator/lib/isEmail';
 import isURL from 'validator/lib/isURL';
 
@@ -41,9 +41,23 @@ export interface IUpdateSellerInput {
 }
 
 export interface IBidder extends IUser {
+  identityNumber: string;
+  nationality: string;
+  dob: Date;
+  gender: genderType;
+  physicalAddress: string;
+  postalAddress: string;
+  keeperId: string;
 }
 
 export interface IBidderInput {
+  identityNumber: string;
+  nationality: string;
+  dob: Date;
+  gender: genderType;
+  physicalAddress: string;
+  postalAddress: string;
+  keeperId: string;
   email: string;
   phone: string;
   password: string;
@@ -60,6 +74,13 @@ export interface IUpdateBidderInput {
   password?: string;
   firstName?: string;
   lastName?: string;
+  identityNumber?: string;
+  nationality?: string;
+  dob?: Date;
+  gender?: genderType;
+  physicalAddress?: string;
+  postalAddress?: string;
+  keeperId?: string;
 }
 
 export interface IAdmin extends IUser {
@@ -168,7 +189,14 @@ const bidderSchema = new Schema<IBidder>({
         }
       }
     }
-  }
+  },
+  identityNumber: {type: String, required: true, trim: true, unique: true},
+  nationality: {type: String, required: true, trim: true},
+  dob: {type: Date, required: true},
+  gender: {type: String, required: true, enum: [EGenderType.FEMALE, EGenderType.MALE]},
+  physicalAddress: {type: String, required: true, trim: true},
+  postalAddress: {type: String, required: true, trim: true},
+  keeperId: {type: String, required: true, trim: true, unique: true}
 }, {
   timestamps: {
     createdAt: "createdDate",
