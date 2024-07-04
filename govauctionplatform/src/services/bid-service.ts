@@ -4,6 +4,7 @@ import itemService from "./item-service";
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { ClientSession, Schema, startSession } from 'mongoose';
 import { EBidSortType, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { isMongoId } from "validator";
 
 /**
  * Add a bid.
@@ -182,8 +183,50 @@ async function getBids(conditions: Map<string, any>, projection?: any): Promise<
   }
 }
 
+/**
+ * Get a bid by id.
+ * 
+ * @param id 
+ * @param projection
+ * @returns 
+ */
+async function getById(id: string | Schema.Types.ObjectId, projection?: any): Promise<IBid | null> {
+  try {
+    if (isMongoId(id.toString())) {
+      const bid = await Bid.findById(id, projection);
+      return bid;
+    } else {
+      return null;
+    }
+  } catch (error) {
+    // Rethrow error
+    throw error;
+  }
+}
+
+/**
+ * Delete a bid by id.
+ * 
+ * @param bidId 
+ * @param projection
+ * @returns 
+ */
+async function deleteBid(currentUser: IBidder, bidId: string | Schema.Types.ObjectId): Promise<undefined> {
+  try {
+    if (isMongoId(bidId.toString())) {
+      await Bid.findOneAndDelete({ bidId, userId: currentUser.id });
+    } else {
+      return;
+    }
+  } catch (error) {
+    // Rethrow error
+    throw error;
+  }
+}
+
 // Export default
 export default {
+  deleteBid,
   createBid,
   getBids,
   getWinningBid
