@@ -1,6 +1,6 @@
 import { ConflictError } from '../shared/errors';
 import { Schema, model, Document } from 'mongoose';
-import { itemStatus, EModels, EAuctionStatus } from '../globals';
+import { itemStatus, EModels, EAuctionStatus, participationType, EParticipationType } from '../globals';
 import { generateSlug } from '../shared/functions';
 
 export interface IAuction extends Document {
@@ -11,6 +11,7 @@ export interface IAuction extends Document {
   numberOfLots: number;
   creatorId: Schema.Types.ObjectId;
   categoryId: Schema.Types.ObjectId;
+  participationType: participationType;
   terms: string;
   startTime: Date;
   endTime: Date;
@@ -23,6 +24,7 @@ export interface IAuctionInput {
   title: string;
   auctionNumber: string;
   auctionLocation: string;
+  participationType: participationType;
   creatorId: Schema.Types.ObjectId;
   categoryId: Schema.Types.ObjectId;
   terms: string;
@@ -35,6 +37,7 @@ export interface IUpdateAuctionInput {
   auctionNumber?: string;
   auctionLocation?: string;
   numberOfLots?: number;
+  participationType?: participationType;
   categoryId?: Schema.Types.ObjectId;
   terms?: string;
   startTime?: Date;
@@ -54,6 +57,7 @@ const schema = new Schema<IAuction>({
   startTime: { type: Date, required: true },
   endTime: { type: Date, required: true },
   status: { type: String, enum: [EAuctionStatus.NOT_BEGUN, EAuctionStatus.ACTIVE, EAuctionStatus.CANCELLED, EAuctionStatus.ENDED]},
+  participationType: { type: String, default: EParticipationType.EVERYONE, enum: [EParticipationType.CITIZEN_ONLY, EParticipationType.EVERYONE]},
 }, {
   timestamps: {
     createdAt: "createdDate",
