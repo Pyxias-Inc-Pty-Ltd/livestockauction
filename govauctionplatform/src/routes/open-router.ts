@@ -2,13 +2,12 @@ import userService from '../services/user-service';
 import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
-import { isoAlpha3CurrencyValidation, isStringNumberLike, mongoIdValidation, phoneValidation } from '../shared/functions';
+import { isoAlpha2CountryValidation, isoAlpha3CurrencyValidation, isStringNumberLike, mongoIdValidation, phoneValidation } from '../shared/functions';
 import transactionService from '../services/transaction-service';
 import auctionService from '../services/auction-service';
 import categoryService from '../services/category-service';
 import itemService from '../services/item-service';
-import { ESortOrderType, EAuctionSortType, EItemStatus, EItemSortType, EUniPayPaymentStatus } from '../globals';
-import { IUser } from '../models/user-model';
+import { ESortOrderType, EAuctionSortType, EItemStatus, EItemSortType, EUniPayPaymentStatus, EGenderType } from '../globals';
 
 // Constants
 const router = Router();
@@ -91,6 +90,27 @@ router.post(p.createBidder, async (req: Request, res: Response) => {
       }),
       locale: Joi.string().required().messages({
         'any.required': '"locale" is a required field'
+      }),
+      identityNumber: Joi.string().required().messages({
+        'any.required': '"identityNumber" is a required field'
+      }),
+      nationality: isoAlpha2CountryValidation.required().messages({
+        'any.required': '"nationality" is a required field'
+      }),
+      dob: Joi.string().isoDate().required().messages({
+        'any.required': '"dob" is a required field'
+      }),
+      gender: Joi.string().valid(EGenderType.FEMALE, EGenderType.MALE).required().messages({
+        'any.required': '"gender" is a required field'
+      }),
+      physicalAddress: Joi.string().required().messages({
+        'any.required': '"physicalAddress" is a required field'
+      }),
+      postalAddress: Joi.string().required().messages({
+        'any.required': '"postalAddress" is a required field'
+      }),
+      keeperId: Joi.string().required().messages({
+        'any.required': '"keeperId" is a required field'
       })
     }).required();
     
@@ -191,7 +211,7 @@ router.get(p.getAuctions, async (req: Request, res: Response) => {
         'any.required': '"sortBy" is a required field'
       }),
       categoryId: mongoIdValidation,
-      status: Joi.string().valid(EItemStatus.ALL, EItemStatus.FRONT_VIEW, EItemStatus.NOT_BEGUN, EItemStatus.ACTIVE, EItemStatus.CANCELLED, EItemStatus.ENDED),
+      status: Joi.string().valid(EItemStatus.NOT_BEGUN, EItemStatus.ACTIVE, EItemStatus.CANCELLED, EItemStatus.ENDED),
       limit: isStringNumberLike.required().messages({
         'any.required': '"limit" is a required field'
       }),
