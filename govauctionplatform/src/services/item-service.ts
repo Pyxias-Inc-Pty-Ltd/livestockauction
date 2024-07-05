@@ -218,7 +218,7 @@ async function getItems(conditions: Map<string, any>, projection?: any): Promise
     if (conditions.get('status')) {
       q.where({status: conditions.get('status')});
     } else {
-      q.or([{status: EItemStatus.ACTIVE}, {status: EItemStatus.NOT_BEGUN}]);
+      q.or([{status: EItemStatus.ACTIVE}, {status: EItemStatus.NOT_BEGUN}, {status: EItemStatus.ENDED}]);
     }
 
     // Range
