@@ -7,7 +7,15 @@ import transactionService from '../services/transaction-service';
 import auctionService from '../services/auction-service';
 import categoryService from '../services/category-service';
 import itemService from '../services/item-service';
-import { ESortOrderType, EAuctionSortType, EItemStatus, EItemSortType, EUniPayPaymentStatus, EGenderType } from '../globals';
+import {
+  ESortOrderType,
+  EAuctionSortType,
+  EItemStatus,
+  EItemSortType,
+  EUniPayPaymentStatus,
+  EGenderType,
+  EAuctionStatus
+} from '../globals';
 
 // Constants
 const router = Router();
@@ -211,7 +219,7 @@ router.get(p.getAuctions, async (req: Request, res: Response) => {
         'any.required': '"sortBy" is a required field'
       }),
       categoryId: mongoIdValidation,
-      status: Joi.string().valid(EItemStatus.ALL, EItemStatus.FRONT_VIEW, EItemStatus.NOT_BEGUN, EItemStatus.ACTIVE, EItemStatus.CANCELLED, EItemStatus.ENDED),
+      status: Joi.string().valid(EAuctionStatus.ALL, EAuctionStatus.FRONT_VIEW, EAuctionStatus.NOT_BEGUN, EAuctionStatus.ACTIVE, EAuctionStatus.CANCELLED, EAuctionStatus.ENDED),
       limit: isStringNumberLike.required().messages({
         'any.required': '"limit" is a required field'
       }),
