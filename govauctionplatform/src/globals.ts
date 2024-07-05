@@ -275,7 +275,7 @@ export const COUNTRY_PHONE_CODES = [{"country":"Afghanistan","code":"93","iso":"
 {"country":"Zambia","code":"260","iso":"ZM"},
 {"country":"Zimbabwe","code":"263","iso":"ZW"}];
 
-export enum EItemStatus {
+export enum EAuctionStatus {
   ALL = "ALL",
   FRONT_VIEW = "FRONT_VIEW",
   NOT_BEGUN = "NOT_BEGUN",
@@ -284,7 +284,7 @@ export enum EItemStatus {
   CANCELLED = "CANCELLED"
 }
 
-export enum EAuctionStatus {
+export enum EItemStatus {
   NOT_BEGUN = "NOT_BEGUN",
   ACTIVE = "ACTIVE",
   ENDED = "ENDED",
