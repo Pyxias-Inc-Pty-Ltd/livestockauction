@@ -3,7 +3,7 @@ import { isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { Schema } from 'mongoose';
-import { EAuctionSortType, EItemStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { EAuctionSortType, EAuctionStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
 import { Auction, IAuction, IAuctionInput } from "../models/auction-model";
 import categoryService from "./category-service";
 import itemService from "./item-service";
@@ -168,10 +168,10 @@ async function getAuctions(conditions: Map<string, any>, projection?: any): Prom
     }
 
     if (conditions.get('status')) {
-      if (conditions.get('status') === EItemStatus.ALL) {
-        q.or([{status: EItemStatus.ACTIVE}, {status: EItemStatus.NOT_BEGUN}, {status: EItemStatus.CANCELLED}, {status: EItemStatus.ENDED}]);
-      } else if (conditions.get('status') === EItemStatus.FRONT_VIEW) {
-        q.or([{status: EItemStatus.ACTIVE}, {status: EItemStatus.NOT_BEGUN}]);
+      if (conditions.get('status') === EAuctionStatus.ALL) {
+        q.or([{status: EAuctionStatus.ACTIVE}, {status: EAuctionStatus.NOT_BEGUN}, {status: EAuctionStatus.CANCELLED}, {status: EAuctionStatus.ENDED}]);
+      } else if (conditions.get('status') === EAuctionStatus.FRONT_VIEW) {
+        q.or([{status: EAuctionStatus.ACTIVE}, {status: EAuctionStatus.NOT_BEGUN}]);
       } else {
         q.where({status: conditions.get('status')});
       }
