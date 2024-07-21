@@ -3,22 +3,63 @@ import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isStringNumberLike, mongoIdValidation } from '../shared/functions';
 import { BidderOnly } from '../shared/middleware';
-import bidService from '../services/bid-service';
-import { EBidSortType, ESortOrderType } from '../globals';
+import { IUser } from '../models/user-model';
+import messageService from '../services/message-service';
+import {EMessageSortType, ESortOrderType} from '../globals';
 
 // Constants
 const router = Router();
-const { OK } = StatusCodes;
+const { OK, CREATED } = StatusCodes;
 
 // Paths
 export const p = {
-  getMessages: '/getMessages',
+  createMessage: '/createMessage',
+  getMessages: '/getMessages'
 } as const;
 
 /**
- * Get bids.
+ * Create a message
  */
-router.get(p.getMessages, BidderOnly(), async (req: Request, res: Response) => {
+router.post(p.createMessage, BidderOnly(), SuperAdminOnly(), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      auctionId: Joi.when('isAGroupForum', {
+        is: true,
+        then: mongoIdValidation.required().messages({
+          'any.required': '"auctionId" is required for group messages'
+        }),
+        otherwise: Joi.optional()
+      }),
+      recipientId: Joi.when('isAGroupForum', {
+        is: false,
+        then: mongoIdValidation.required().messages({
+          'any.required': '"recipientId" is required for private messages'
+        }),
+        otherwise: Joi.optional()
+      }),
+      isAGroupForum: Joi.boolean().required().messages({
+        'any.required': '"isAGroupForum" is required to determine message type'
+      }),
+      content: Joi.string().required().messages({
+        'any.required': '"content" is required'
+      })
+    })
+    .required();
+
+    // Validate schema against input
+    Joi.assert(req.body, schema);
+
+    const message = await messageService.createMessage(req.user as IUser, req.body as any);
+    return res.status(CREATED).json({message});
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Get messages.
+ */
+router.get(p.getMessages, BidderOnly(), SuperAdminOnly(), async (req: Request, res: Response) => {
   try {
 
     const conditions = new Map<string, any>();
@@ -27,7 +68,7 @@ router.get(p.getMessages, BidderOnly(), async (req: Request, res: Response) => {
       sortOrder: Joi.string().required().valid(ESortOrderType.ASC, ESortOrderType.DESC, ESortOrderType.asc, ESortOrderType.desc).messages({
         'any.required': '"sortOrder" is a required field'
       }),
-      sortBy: Joi.string().required().valid(EBidSortType.DATE, EBidSortType.AMOUNT).messages({
+      sortBy: Joi.string().required().valid(EMessageSortType.DATE).messages({
         'any.required': '"sortBy" is a required field'
       }),
       itemId: mongoIdValidation.required().messages({
@@ -53,8 +94,8 @@ router.get(p.getMessages, BidderOnly(), async (req: Request, res: Response) => {
       conditions.set('lastDocumentId', lastDocumentId);
     }
 
-    const bids = await bidService.getBids(conditions);
-    return res.status(OK).json({bids});
+    const messages = await messageService.getMessages(conditions);
+    return res.status(OK).json({messages});
   } catch (error) {
     throw error;
   }
