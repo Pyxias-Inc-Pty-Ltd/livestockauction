@@ -7,23 +7,24 @@ import userService from '../services/user-service';
 
 /**
  * Check if current user is a super admin
- * 
- * @param isSkippable
+ *
  * @param errorMessage
- * @returns 
+ * @returns
  */
-export function SuperAdminOnly(isSkippable = false, errorMessage?: string) {
+export function SuperAdminOnly(errorMessage?: string) {
   return function (req: Request, res: Response, next: NextFunction) {
     try {
       if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) {
         if ((((req as any).user as IUser).userType !== 'ADMIN') && (((req as any).user as IAdmin).adminType !== 'SUPER')) {
-          if (!isSkippable) {
+          if (!res.locals.isSkippable) {
             if (errorMessage) {
               throw new UnauthorizedError(errorMessage);
             } else {
               throw new UnauthorizedError(`Admin must be of type ${EAdminType.SUPER}`);
             }
           }
+        } else {
+          res.locals.isSkippable = true;
         }
       }
       next();
@@ -38,18 +39,20 @@ export function SuperAdminOnly(isSkippable = false, errorMessage?: string) {
  * 
  * @returns 
  */
-export function BidderOnly(isSkippable = false, errorMessage?: string) {
+export function BidderOnly(errorMessage?: string) {
   return function (req: Request, res: Response, next: NextFunction) {
     try {
       if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) {
         if (((req as any).user as IUser).userType !== 'BIDDER') {
-          if (!isSkippable) {
+          if (!res.locals.isSkippable) {
             if (errorMessage) {
               throw new UnauthorizedError(errorMessage);
             } else {
               throw new UnauthorizedError(`User must be of type ${EUserType.BIDDER}`);
             }
           }
+        } else {
+          res.locals.isSkippable = true;
         }
       }
       next();
@@ -64,18 +67,20 @@ export function BidderOnly(isSkippable = false, errorMessage?: string) {
  * 
  * @returns 
  */
-export function SellerOnly(isSkippable = false, errorMessage?: string) {
+export function SellerOnly(errorMessage?: string) {
   return function (req: Request, res: Response, next: NextFunction) {
     try {
       if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) {
         if (((req as any).user as IUser).userType !== 'SELLER') {
-          if (!isSkippable) {
+          if (!res.locals.isSkippable) {
             if (errorMessage) {
               throw new UnauthorizedError(errorMessage);
             } else {
               throw new UnauthorizedError(`User must be of type ${EUserType.SELLER}`);
             }
           }
+        } else {
+          res.locals.isSkippable = true;
         }
       }
       next();
