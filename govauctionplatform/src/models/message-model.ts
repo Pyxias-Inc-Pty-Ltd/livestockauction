@@ -12,9 +12,11 @@ export interface IMessage extends Document {
 }
 
 export interface IMessageInput {
-  itemId: Schema.Types.ObjectId;
-  userId: Schema.Types.ObjectId;
-  message: string;
+  auctionId?: Schema.Types.ObjectId;
+  senderId: Schema.Types.ObjectId;
+  recipientId?: Schema.Types.ObjectId;
+  isAGroupForum: boolean;
+  content: string;
 }
 
 const schema = new Schema<IMessage>({
