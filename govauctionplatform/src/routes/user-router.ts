@@ -25,8 +25,32 @@ export const p = {
   getBidderById: '/getBidderById',
   deleteAdminById: '/deleteAdminById',
   deleteBidderById: '/deleteBidderById',
-  setFirebaseTokenId: '/setFirebaseTokenId'
+  setFirebaseTokenId: '/setFirebaseTokenId',
+  getUserById: '/getUserById'
 } as const;
+
+/**
+ * Get a category by id.
+ */
+router.get(p.getUserById, SuperAdminOnly(), async (req: Request, res: Response) => {
+  try {
+    // Query checks
+    const qSchema = Joi.object().keys({
+      id: Joi.string().required().messages({
+        'any.required': '"id" is a required field'
+      })
+    }).required();
+
+    // Validate schema against query
+    Joi.assert(req.query, qSchema);
+
+    const { id } = req.query;
+    const user = await userService.getById(id as string);
+    return res.status(OK).json({ user });
+  } catch (error) {
+    throw error;
+  }
+});
 
 /**
  * Get own account.
