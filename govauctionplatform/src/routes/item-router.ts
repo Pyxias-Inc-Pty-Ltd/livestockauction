@@ -12,8 +12,7 @@ const router = Router();
 const { OK, CREATED } = StatusCodes;
 
 // Paths
-export const p = {
-  createItem: '/createItem',
+export const p = {  createItem: '/createItem',
   setWinningBidder: '/setWinningBidder',
   deleteItem: '/deleteItem',
   setNewBidAmountManually: '/setNewBidAmountManually',
