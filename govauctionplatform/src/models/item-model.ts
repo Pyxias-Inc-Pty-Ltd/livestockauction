@@ -21,8 +21,10 @@ export interface IItem extends Document {
   title: string;
   description: string;
   terms: string;
+  isBidIncrementedManually: boolean;
+  manualBidAmount: number;
   startingBid: number;
-  bidIncrement: number;
+  bidIncrement?: number;
   reservePrice: number;
   eligibleBidders: Array<string>;
   winningBidder?: Schema.Types.ObjectId;
@@ -31,6 +33,7 @@ export interface IItem extends Document {
   buyoutPrice?: number;
   startTime: Date;
   endTime: Date;
+  version: number;
   status: itemStatus;
   createdDate: any;
   updatedDate: any;
@@ -42,6 +45,8 @@ export interface IItemInput {
   sellerId: Schema.Types.ObjectId;
   auctionId: Schema.Types.ObjectId;
   categoryId: Schema.Types.ObjectId;
+  isBidIncrementedManually?: boolean;
+  manualBidAmount?: number;
   dob?: Date;
   isAStud: boolean;
   numberOfCalvesBorn?: number;
@@ -54,27 +59,10 @@ export interface IItemInput {
   terms: string;
   startingBid: number;
   status: itemStatus;
-  bidIncrement: number;
+  bidIncrement?: number;
   reservePrice: number;
   startTime: Date;
   endTime: Date;
-}
-
-export interface IUpdateItemInput {
-  gallery?: Array<string>;
-  currentBid?: number;
-  gender?: genderType;
-  dob?: Date;
-  isAStud?: boolean;
-  studRegistrationNumber?: string;
-  numberOfCalvesBorn?: number;
-  breedId?: Schema.Types.ObjectId;
-  auctionId?: Schema.Types.ObjectId;
-  categoryId?: Schema.Types.ObjectId;
-  buyoutPrice?: number;
-  winningBidder?: Schema.Types.ObjectId;
-  eligibleBidders?: Array<string>;
-  status?: itemStatus;
 }
 
 const schema = new Schema<IItem>({
@@ -88,10 +76,14 @@ const schema = new Schema<IItem>({
   description: { type: String, required: true, trim: true },
   terms: { type: String, required: true, trim: true },
   startingBid: { type: Number, required: true },
-  bidIncrement: { type: Number, required: true },
+  bidIncrement: { type: Number, required: function (): boolean {
+    return !(this as IItem).isBidIncrementedManually;
+  } },
   reservePrice: { type: Number, required: true },
   currentBid: { type: Number },
   buyoutPrice: { type: Number },
+  manualBidAmount: { type: Number, default: 0 },
+  isBidIncrementedManually: {type: Boolean, default: false},
   gallery: { type: [String], required: true },
   startTime: { type: Date, required: true },
   endTime: { type: Date, required: true },
@@ -113,7 +105,8 @@ const schema = new Schema<IItem>({
   numberOfCalvesBorn: { type: Number, min: 0 },
   dob: {type: Date, required: function (): boolean {
     return (this as IItem).gender !== undefined && (this as IItem).gender !== 'MIXED';
-  }}
+  }},
+  version: { type: Number, default: 0 }
 }, {
   timestamps: {
     createdAt: "createdDate",
