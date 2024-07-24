@@ -182,8 +182,25 @@ async function getUsers(conditions: Map<string, any>, projection?: any): Promise
   }
 }
 
+/**
+ * Set Firebase Token ID for a user.
+ * 
+ * @param currentUser - The currently logged in user.
+ * @param tokenId - The Firebase Token ID to set.
+ * @returns
+ */
+async function setFirebaseTokenId(currentUser: IUser, tokenId: string): Promise<void> {
+  try {
+    currentUser.firebaseTokenId = tokenId;
+    await currentUser.save();
+  } catch (error) {
+    throw error;
+  }
+}
+
 // Export default
 export default {
+  setFirebaseTokenId,
   createInitAdmin,
   createBidder,
   createSeller,
