@@ -13,6 +13,7 @@ export interface IUser extends Document {
   email: string;
   tz: string;
   locale: string;
+  firebaseTokenId: string;
   password: string;
   createdDate: any;
   updatedDate: any;
@@ -133,7 +134,8 @@ const userSchema = new Schema<IUser>({
         }
       }
     }
-  }
+  },
+  firebaseTokenId: {type: String, trim: true}
 }, {
   timestamps: {
     createdAt: "createdDate",
