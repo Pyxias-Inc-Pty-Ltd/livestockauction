@@ -3,12 +3,11 @@ import { IItem, IItemInput, Item } from "../models/item-model";
 import { isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
 import { ForbiddenError, InternalServerError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
-import mongoose, { Schema } from 'mongoose';
+import { Schema } from 'mongoose';
 import { EItemSortType, EItemStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
 import auctionService from "./auction-service";
 import { ClientSession, startSession } from 'mongoose';
 import bidService from "./bid-service";
-import userService from "./user-service";
 
 /**
  * Add an item.
@@ -24,6 +23,10 @@ async function createItem(currentUser: IAdmin, input: IItemInput): Promise<IItem
     const newItem = new Item(input);
 
     newItem.creatorId = currentUser.id;
+
+    if (newItem.isBidIncrementedManually) {
+      newItem.manualBidAmount = newItem.startingBid;
+    }
 
     // TOOD: Should we have a buffer window? e.g. You can not create an item 2 hours before auction starts?
 
@@ -114,6 +117,62 @@ async function deleteItem(currentUser: IAdmin, itemId: string | Schema.Types.Obj
 }
 
 /**
+ * Sets the new bid amount manually.
+ * 
+ * @param amount
+ * @returns 
+ */
+async function setNewBidAmountManually(input: { itemId: string | Schema.Types.ObjectId, amount: number }): Promise<IItem> {
+  try {
+
+    // Find item
+    const item = await getById(input.itemId);
+
+    // Check if exists
+    if (!item) {
+      throw new NotFoundError('Item not found');
+    }
+
+    if (!item.isBidIncrementedManually) {
+      throw new ForbiddenError('Bid amount can not be set manually on this item');
+    }
+
+    item.manualBidAmount = input.amount;
+
+    return await item.save();
+    
+  } catch (error) {
+    // Rethrow error
+    throw error;
+  }
+}
+
+/**
+ * Get manual bid amount.
+ * 
+ * @param amount
+ * @returns 
+ */
+async function getManualBidAmount(itemId: string | Schema.Types.ObjectId): Promise<number> {
+  try {
+    
+    // Find item
+    const item = await getById(itemId, { manualBidAmount: 1 });
+
+    // Check if exists
+    if (!item) {
+      throw new NotFoundError('Item not found');
+    }
+
+    return item.manualBidAmount;
+
+  } catch (error) {
+    // Rethrow error
+    throw error;
+  }
+}
+
+/**
  * Get an item by id.
  * 
  * @param id 
@@ -181,6 +240,16 @@ async function setWinningBidder(input: { itemId: string | Schema.Types.ObjectId,
     // Rethrow error
     throw error;
   }
+}
+
+async function updateItemWithBid(item: IItem, newBidAmount: number, session: ClientSession): Promise<boolean> {
+  const result = await Item.updateOne(
+    { _id: item._id, version: item.version },
+    { $set: { currentBid: newBidAmount }, $inc: { version: 1 } },
+    { session }
+  );
+
+  return result.modifiedCount === 1;
 }
 
 /**
@@ -261,100 +330,14 @@ async function getItems(conditions: Map<string, any>, projection?: any): Promise
   }
 }
 
-/**
- * Counts the number of items that have been bought (i.e., where the "winningBidder" field is set).
- * 
- * @returns {Promise<number>} The count of bought items.
- * @throws Will throw an error if the aggregation query fails.
- */
-async function countBoughtItems(auctionId: string | Schema.Types.ObjectId): Promise<number> {
-  try {
-    const result = await Item.aggregate([
-      { $match: { auctionId: new mongoose.Types.ObjectId(auctionId.toString()), winningBidder: { $ne: null } } },
-      { $count: "boughtItemsCount" }
-    ]);
-
-    if (result.length > 0) {
-      return result[0].boughtItemsCount;
-    } else {
-      return 0;
-    }
-  } catch (error) {
-    // Rethrow
-    throw error;
-  }
-}
-
-/**
- * Calculates the total value of lots bought by summing the "currentBid" field for items with a "winningBidder" in a specific auction.
- * 
- * @param {string | Schema.Types.ObjectId} auctionId - The ID of the auction to filter by.
- * @returns {Promise<number>} The total value of bought lots in the specified auction.
- * @throws Will throw an error if the aggregation query fails.
- */
-async function calculateTotalValueOfLotsBought(auctionId: string | Schema.Types.ObjectId): Promise<number> {
-  try {
-    const result = await Item.aggregate([
-      { $match: { auctionId: new mongoose.Types.ObjectId(auctionId.toString()), winningBidder: { $ne: null } } },
-      { $group: { _id: null, totalValue: { $sum: "$currentBid" } } }
-    ]);
-
-    if (result.length > 0) {
-      return result[0].totalValue;
-    } else {
-      return 0;
-    }
-  } catch (error) {
-    // Rethrow the error for handling by the caller
-    throw error;
-  }
-}
-
-/**
- * Retrieves a list of all unique bidders for a given auction ID using the eligibleBidders field.
- * 
- * @param {string} auctionId - The ID of the auction to retrieve bidders for.
- * @returns {Promise<(IUser | null)[]>} A list of bidders.
- * @throws Will throw an error if the aggregation query fails.
- */
-async function getBiddersForAuction(auctionId: string | Schema.Types.ObjectId): Promise<(IUser | null)[]> {
-  try {
-    const result = await Item.aggregate([
-      { $match: { auctionId: new mongoose.Types.ObjectId(auctionId.toString()) } },
-      { $unwind: "$eligibleBidders" },
-      { $group: { _id: null, bidders: { $addToSet: "$eligibleBidders" } } },
-      { $project: { _id: 0, bidders: 1 } }
-    ]);
-
-    if (result.length > 0) {
-      const bidders = await Promise.all((result[0].bidders as Array<string>).map(async (bidder) => {
-        return await userService.getById(bidder, { firstName: 1, lastName: 1 });
-      }));
-
-      return bidders.filter((bidder) => {
-        if (bidder) {
-          return true;
-        } else {
-          return false;
-        }
-      });
-    } else {
-      return [];
-    }
-  } catch (error) {
-    // Rethrow the error for handling by the caller
-    throw error;
-  }
-}
-
 // Export default
 export default {
   createItem,
   setWinningBidder,
+  updateItemWithBid,
+  getManualBidAmount,
+  setNewBidAmountManually,
   deleteItem,
   getById,
-  getItems,
-  countBoughtItems,
-  calculateTotalValueOfLotsBought,
-  getBiddersForAuction
+  getItems
 } as const;
