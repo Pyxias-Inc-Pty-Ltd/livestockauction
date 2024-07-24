@@ -1,5 +1,8 @@
 import { Schema, model, Document } from 'mongoose';
 import { EModels } from '../globals';
+import { IAuction } from './auction-model';
+import { firebase } from '../index';
+import { NotFoundError } from '../shared/errors';
 
 export interface IForumComment extends Document {
     forumId: Schema.Types.ObjectId;
@@ -11,13 +14,14 @@ export interface IForumComment extends Document {
 
 export interface IForum extends Document {
     auctionId: Schema.Types.ObjectId;
-    participants: Array<Schema.Types.ObjectId>;
+    participants: Array<string>;
     createdDate: Date;
     updatedDate: Date;
 }
 
 export interface IForumInput {
-    auctionId: Schema.Types.ObjectId;
+  auctionId: Schema.Types.ObjectId;
+  participants?: Array<string>;
 }
 
 export interface IForumCommentInput {
@@ -52,7 +56,7 @@ forumCommentSchema.post('save', function(doc) {
 
 const forumSchema = new Schema<IForum>({
     auctionId: { type: Schema.Types.ObjectId, required: true, ref: EModels.AUCTION },
-    participants: [{ type: Schema.Types.ObjectId, ref: EModels.USER }]
+    participants: [{ type: String }]
 }, {
     timestamps: {
         createdAt: "createdDate",
@@ -69,8 +73,40 @@ forumSchema.pre('save', async function(next) {
 });
 
 // Post-save hook for forumSchema
-forumSchema.post('save', function(doc) {
-    console.log(`Forum with ID ${doc._id} was saved.`);
+forumSchema.post('save', async function(doc) {
+    try {
+        // Fetch the new participants
+        const newParticipants = doc.participants;
+        
+        // Fetch the users' Firebase tokens
+
+        const [ auction, users ] = await Promise.all([doc.$model(EModels.AUCTION).findById(doc.auctionId, { name: 1 }), doc.$model(EModels.USER).find({ _id: { $in: newParticipants } }).select('firebaseTokenId').exec()]);
+
+        if (!auction) {
+          throw new NotFoundError('Auction not found');
+        }
+
+        const tokens = users.map((user: any) => user.firebaseTokenId).filter(token => token);
+
+        // Construct message
+        const message = {
+            notification: {
+                title: 'Added to a Forum',
+                body: `You have been added to the forum: "${(auction as IAuction).title}"`
+            },
+            tokens: tokens
+        };
+
+        // Send notifications
+        if (tokens.length > 0) {
+            const response = await firebase.messaging().sendEachForMulticast(message);
+            console.log('Successfully sent notifications:', response);
+        } else {
+            console.log('No tokens available to send notifications.');
+        }
+    } catch (error) {
+        console.error('Error sending notification:', error);
+    }
 });
 
 forumSchema.set('toJSON', {
