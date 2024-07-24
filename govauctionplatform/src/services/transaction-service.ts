@@ -10,6 +10,7 @@ import * as luxon from "luxon";
 import { formatPhoneTinggNumber, generateUniPayAppPaymentURL } from "../shared/functions";
 import tokenService from "./token-service";
 import auctionService from "./auction-service";
+import forumService from "./forum-service";
 
 /**
  * Intiates a reservation payment transaction for an item.
@@ -517,10 +518,23 @@ async function processSuccessfulPaymentFromTingg (input: { accountNumber: string
         throw new NotFoundError('Item not found');
       }
 
+      const forum = await forumService.getForumByAuctionId(item.auctionId);
+
+      // Check if exists
+      if (!forum) {
+        throw new NotFoundError('Forum not found');
+      }
+
       // Insert buyer into list of eligible bidders
       item.eligibleBidders.push(transaction.buyerId.toString());
 
+      forum.participants.push(transaction.buyerId.toString());
+
       await sess.withTransaction(async () => {
+
+        await forum.save({
+          session: sess
+        });
 
         await item.save({
           session: sess
