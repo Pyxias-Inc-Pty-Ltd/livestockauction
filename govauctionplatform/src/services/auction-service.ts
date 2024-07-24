@@ -1,12 +1,15 @@
-import { IAdmin, IUser } from "../models/user-model";
+import { IAdmin } from "../models/user-model";
 import { isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
-import { Schema } from 'mongoose';
+import { ClientSession, Schema, startSession } from 'mongoose';
 import { EAuctionSortType, EAuctionStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
 import { Auction, IAuction, IAuctionInput } from "../models/auction-model";
 import categoryService from "./category-service";
-import itemService from "./item-service";
+import forumService from "./forum-service";
+import { Forum } from "../models/forum-model";
+import { Transaction } from "../models/transaction-model";
+import { Bid } from "../models/bid-model";
 
 /**
  * Add an auction.
@@ -15,6 +18,9 @@ import itemService from "./item-service";
  * @returns 
  */
 async function createAuction(currentUser: IAdmin, input: IAuctionInput): Promise<IAuction> {
+
+  let sess: ClientSession | null = null;
+
   try {
     const newAuction = new Auction(input);
 
@@ -38,11 +44,29 @@ async function createAuction(currentUser: IAdmin, input: IAuctionInput): Promise
       throw new NotFoundError('Category not found');
     }
 
-    await newAuction.save();
+    // Start session and mongo acid transaction
+    sess = await startSession();
+
+    await sess.withTransaction(async () => {
+
+      await newAuction.save({
+        session: sess
+      });
+
+      await forumService.createForum({
+        auctionId: newAuction.id
+      }, sess!);
+
+    });
 
     return newAuction;
   } catch (error) {
     throw error;
+  } finally {
+    if (sess) {
+      // End session
+      await sess.endSession();
+    }
   }
 }
 
@@ -220,19 +244,61 @@ async function getAuctions(conditions: Map<string, any>, projection?: any): Prom
  * @param auctionId 
  * @returns 
  */
-async function getAuctionReport(auctionId: string | Schema.Types.ObjectId): Promise<{
-  boughtItemsCount: number,
-  totalValueOfLotsBought: number,
-  bidders: Array<IUser | null>
-}> {
+async function getAuctionReport(auctionId: string | Schema.Types.ObjectId) {
   try {
-    const result = await Promise.all([itemService.countBoughtItems(auctionId), itemService.calculateTotalValueOfLotsBought(auctionId), itemService.getBiddersForAuction(auctionId)]);
-
+    const calculateAgeGroup = (dob: Date) => {
+      const age = Math.floor((Date.now() - dob.getTime()) / (1000 * 3600 * 24 * 365.25));
+      if (age < 18) return '<18';
+      if (age <= 30) return '18-30';
+      if (age <= 50) return '31-50';
+      return '51+';
+    };
+  
+    const participantsAggregation = [
+      { $match: { auctionId: new Schema.Types.ObjectId(auctionId.toString()) }},
+      { $lookup: { from: 'users', localField: 'participants', foreignField: '_id', as: 'participantsDetails' }},
+      { $unwind: '$participantsDetails' },
+      { $addFields: { 'participantsDetails.ageGroup': { $function: { body: calculateAgeGroup.toString(), args: ['$participantsDetails.dob'], lang: 'js' }}}},
+      { $group: { _id: { gender: '$participantsDetails.gender', ageGroup: '$participantsDetails.ageGroup' }, count: { $sum: 1 }}}
+    ];
+  
+    const bidsAggregation = [
+      { $match: { auctionId: new Schema.Types.ObjectId(auctionId.toString()) }},
+      { $group: { _id: '$auctionId', highestBid: { $max: '$bidAmount' }, lowestBid: { $min: '$bidAmount' }}}
+    ];
+  
+    const averagePriceAggregation = [
+      { $match: { auctionId: new Schema.Types.ObjectId(auctionId.toString()) }},
+      { $lookup: { from: 'items', localField: 'itemId', foreignField: '_id', as: 'itemDetails' }},
+      { $unwind: '$itemDetails' },
+      { $group: { _id: { breed: '$itemDetails.breedId', gender: '$itemDetails.gender' }, averagePrice: { $avg: '$amount' }}}
+    ];
+  
+    const subtotalAggregation = [
+      { $match: { auctionId: new Schema.Types.ObjectId(auctionId.toString()) }},
+      { $lookup: { from: 'items', localField: 'itemId', foreignField: '_id', as: 'itemDetails' }},
+      { $unwind: '$itemDetails' },
+      { $group: { _id: { breed: '$itemDetails.breedId', gender: '$itemDetails.gender' }, subtotal: { $sum: '$amount' }}}
+    ];
+  
+    const grandTotalAggregation = [
+      { $match: { auctionId: new Schema.Types.ObjectId(auctionId.toString()) }},
+      { $group: { _id: null, grandTotal: { $sum: '$amount' }}}
+    ];
+  
+    const participants = await Forum.aggregate(participantsAggregation).exec();
+    const bids = await Bid.aggregate(bidsAggregation).exec();
+    const averagePrice = await Transaction.aggregate(averagePriceAggregation).exec();
+    const subtotals = await Transaction.aggregate(subtotalAggregation).exec();
+    const grandTotal = await Transaction.aggregate(grandTotalAggregation).exec();
+  
     return {
-      boughtItemsCount: result[0],
-      totalValueOfLotsBought: result[1],
-      bidders: result[2]
-    }
+      participants,
+      bids,
+      averagePrice,
+      subtotals,
+      grandTotal
+    };
   } catch (error) {
     // Rethrow error
     throw error;
