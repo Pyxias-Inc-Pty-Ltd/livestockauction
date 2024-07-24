@@ -1,6 +1,6 @@
 import { ConflictError, ForbiddenError } from "../shared/errors";
 import { IAdmin, IUser, User, IAdminInput, Admin, IBidder, IBidderInput, Bidder, ISeller, ISellerInput, Seller } from "../models/user-model";
-import { EAdminType, ESortOrderType, EUserSortType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, SALT_ROUNDS } from "../globals";
+import { EAdminType, ESortOrderType, EUserSortType, EUserType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, SALT_ROUNDS } from "../globals";
 import { genSalt, hash } from 'bcrypt';
 import { generateRandomPassword } from "../shared/functions";
 import { Schema } from "mongoose";
@@ -183,6 +183,22 @@ async function getUsers(conditions: Map<string, any>, projection?: any): Promise
 }
 
 /**
+ * Get admins.
+ * 
+ * @param conditions
+ * @param projection
+ * @returns 
+ */
+async function getAdmins(projection?: any): Promise<IAdmin[]> {
+  try {
+    return User.find({ userType: EUserType.ADMIN }, projection);
+  } catch (error) {
+    // Rethrow error
+    throw error;
+  }
+}
+
+/**
  * Set Firebase Token ID for a user.
  * 
  * @param currentUser - The currently logged in user.
@@ -200,6 +216,7 @@ async function setFirebaseTokenId(currentUser: IUser, tokenId: string): Promise<
 
 // Export default
 export default {
+  getAdmins,
   setFirebaseTokenId,
   createInitAdmin,
   createBidder,
