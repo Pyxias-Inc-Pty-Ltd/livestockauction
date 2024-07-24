@@ -7,6 +7,7 @@ import transactionService from '../services/transaction-service';
 import auctionService from '../services/auction-service';
 import categoryService from '../services/category-service';
 import itemService from '../services/item-service';
+import breedService from '../services/breed-service';
 import {
   ESortOrderType,
   EAuctionSortType,
@@ -30,8 +31,104 @@ export const p = {
   getAuctions: '/getAuctions',
   searchAuctions: '/searchAuctions',
   getCategories: '/getCategories',
-  createBidder: '/createBidder'
+  createBidder: '/createBidder',
+  getItemById: '/getItemById',
+  getAuctionById: '/getAuctionById',
+  getCategoryById: '/getCategoryById',
+  getBreedById: '/getBreedById'
 } as const;
+
+/**
+ * Get a category by id.
+ */
+router.get(p.getCategoryById, async (req: Request, res: Response) => {
+  try {
+    // Query checks
+    const qSchema = Joi.object().keys({
+      id: Joi.string().required().messages({
+        'any.required': '"id" is a required field'
+      })
+    }).required();
+
+    // Validate schema against query
+    Joi.assert(req.query, qSchema);
+
+    const { id } = req.query;
+    const category = await categoryService.getById(id as string);
+    return res.status(OK).json({ category });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Get a breed by id.
+ */
+router.get(p.getBreedById, async (req: Request, res: Response) => {
+  try {
+    // Query checks
+    const qSchema = Joi.object().keys({
+      id: Joi.string().required().messages({
+        'any.required': '"id" is a required field'
+      })
+    }).required();
+
+    // Validate schema against query
+    Joi.assert(req.query, qSchema);
+
+    const { id } = req.query;
+    const breed = await breedService.getById(id as string);
+    return res.status(OK).json({ breed });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Get an item by id.
+ */
+router.get(p.getItemById, async (req: Request, res: Response) => {
+  try {
+    // Query checks
+    const qSchema = Joi.object().keys({
+      id: Joi.string().required().messages({
+        'any.required': '"id" is a required field'
+      })
+    }).required();
+
+    // Validate schema against query
+    Joi.assert(req.query, qSchema);
+
+    const { id } = req.query;
+    const item = await itemService.getById(id as string);
+    return res.status(OK).json({ item });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Get an auction by id.
+ */
+router.get(p.getAuctionById, async (req: Request, res: Response) => {
+  try {
+    // Query checks
+    const qSchema = Joi.object().keys({
+      id: Joi.string().required().messages({
+        'any.required': '"id" is a required field'
+      })
+    }).required();
+
+    // Validate schema against query
+    Joi.assert(req.query, qSchema);
+
+    const { id } = req.query;
+    const auction = await auctionService.getById(id as string);
+    return res.status(OK).json({ auction });
+  } catch (error) {
+    throw error;
+  }
+});
 
 /**
  * Create the initial admin
