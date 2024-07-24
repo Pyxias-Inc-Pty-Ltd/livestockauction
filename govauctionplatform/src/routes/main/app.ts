@@ -6,6 +6,7 @@ import transactionRouter from '../transaction-router';
 import categoryRouter from '../category-router';
 import auctionRouter from '../auction-router';
 import breedRouter from '../breed-router';
+import forumRouter from '../forum-router';
 
 // Export the base-router
 const baseRouter = Router();
@@ -18,6 +19,7 @@ baseRouter.use('/users', userRouter);
 baseRouter.use('/transactions', transactionRouter);
 baseRouter.use('/categories', categoryRouter);
 baseRouter.use('/breeds', breedRouter);
+baseRouter.use('/forums', forumRouter);
 
 // Export default.
 export default baseRouter;
