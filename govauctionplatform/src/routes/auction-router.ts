@@ -2,7 +2,7 @@ import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isoDateValidation, mongoIdValidation } from '../shared/functions';
-import { SuperAdminOnly } from '../shared/middleware';
+import { SuperAdminOnly, BidderOnly, SellerOnly } from '../shared/middleware';
 import { IAdmin } from '../models/user-model';
 import auctionService from '../services/auction-service';
 import { EParticipationType } from '../globals';
