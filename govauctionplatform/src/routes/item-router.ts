@@ -3,7 +3,7 @@ import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isoDateValidation, mongoIdValidation, urlValidation } from '../shared/functions';
-import { SuperAdminOnly } from '../shared/middleware';
+import { SuperAdminOnly, BidderOnly } from '../shared/middleware';
 import { IAdmin } from '../models/user-model';
 import { EGenderType } from '../globals';
 
@@ -15,7 +15,9 @@ const { OK, CREATED } = StatusCodes;
 export const p = {
   createItem: '/createItem',
   setWinningBidder: '/setWinningBidder',
-  deleteItem: '/deleteItem'
+  deleteItem: '/deleteItem',
+  setNewBidAmountManually: '/setNewBidAmountManually',
+  getManualBidAmount: '/getManualBidAmount'
 } as const;
 
 /**
@@ -49,8 +51,15 @@ router.post(p.createItem, SuperAdminOnly(), async (req: Request, res: Response) 
         'any.required': '"reservePrice" is a required field'
       }),
       buyoutPrice: Joi.number(),
-      bidIncrement: Joi.number().required().messages({
-        'any.required': '"bidIncrement" is a required field'
+      isBidIncrementedManually: Joi.boolean().required().messages({
+        'any.required': '"isBidIncrementedManually" is a required field'
+      }),
+      bidIncrement: Joi.number().when('isBidIncrementedManually', {
+        is: false,
+        then: Joi.required().messages({
+          'any.required': '"bidIncrement" is a required field'
+        }),
+        otherwise: Joi.optional()
       }),
       startTime: isoDateValidation.required().messages({
         'any.required': '"startTime" is a required field'
@@ -148,6 +157,53 @@ router.delete(p.deleteItem, SuperAdminOnly(), async (req: Request, res: Response
     await itemService.deleteItem(req.user as IAdmin, itemId as string);
 
     return res.status(OK).json({"message": "OK"});
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Set new bid amount manually
+ */
+router.put(p.setNewBidAmountManually, SuperAdminOnly(), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      itemId: mongoIdValidation.required().messages({
+        'any.required': '"itemId" is a required field'
+      }),
+      amount: Joi.number().required().messages({
+        'any.required': '"amount" is a required field'
+      })
+    }).required();
+    
+    // Validate schema against input
+    Joi.assert(req.body, schema);
+
+    const item = await itemService.setNewBidAmountManually(req.body as any);
+    return res.status(OK).json({ item });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Get manual bid amount
+ */
+router.get(p.getManualBidAmount, SuperAdminOnly(), BidderOnly(), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      itemId: mongoIdValidation.required().messages({
+        'any.required': '"itemId" is a required field'
+      })
+    }).required();
+    
+    // Validate schema against input
+    Joi.assert(req.query, schema);
+
+    const { itemId } = req.query;
+
+    const manualBidAmount = await itemService.getManualBidAmount(itemId as string);
+    return res.status(OK).json({ manualBidAmount });
   } catch (error) {
     throw error;
   }
