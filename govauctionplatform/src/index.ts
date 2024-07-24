@@ -2,14 +2,14 @@ import './pre-start'; // Must be the first import
 import logger from 'jet-logger';
 import app from './server';
 import { connect } from 'mongoose';
-import { formatMoney } from 'accounting';
 import { createServer } from 'http';
 import { Server, Socket } from "socket.io";
 import StatusCodes from 'http-status-codes';
-import { ESocketEventCode, SERVICE_URLS} from './globals';
+import { ESocketEventCode, SERVICE_URLS, FIREBASE_SERVICE_ACCOUNT_CREDENTIALS} from './globals';
 import bidHandler from './handlers/bid-handler';
 import transactionHandler from './handlers/transaction-handler';
 import messageHandler from './handlers/message-handler';
+import * as admin from 'firebase-admin';
 import authHandler from './handlers/auth-handler';
 import { CustomError } from './shared/errors';
 
@@ -18,6 +18,11 @@ const { OK, INTERNAL_SERVER_ERROR, CREATED } = StatusCodes;
 // Constants
 const serverStartMsg = 'Express server started on port: ',
   port = (process.env.PORT || 3000);
+
+// Init firebase
+export const firebase = admin.initializeApp({
+  credential: admin.credential.cert(JSON.parse(FIREBASE_SERVICE_ACCOUNT_CREDENTIALS))
+});
 
 const httpServer = createServer(app);
 
@@ -28,6 +33,8 @@ export const io = new Server(httpServer, {
     origin: ['http://localhost:5173', 'https://livestock-auction-demo.netlify.app', SERVICE_URLS.clientURI]
   }
 });
+
+
 
 // Check for auth on handshake
 io.use(async (socket: any, next: any) => {
