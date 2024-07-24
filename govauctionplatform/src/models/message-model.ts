@@ -2,41 +2,31 @@ import { Schema, model, Document } from 'mongoose';
 import { EModels } from '../globals';
 
 export interface IMessage extends Document {
-  auctionId?: Schema.Types.ObjectId;
-  senderId: Schema.Types.ObjectId;
-  recipientId?: Schema.Types.ObjectId;
-  isAGroupForum: boolean;
+  adminId: Schema.Types.ObjectId;
+  bidderId: Schema.Types.ObjectId;
+  authorId: Schema.Types.ObjectId;
   content: string;
-  isRead: boolean;
   createdDate: any;
 }
 
 export interface IMessageInput {
-  auctionId?: Schema.Types.ObjectId;
-  senderId: Schema.Types.ObjectId;
-  recipientId?: Schema.Types.ObjectId;
-  isAGroupForum: boolean;
+  authorId: Schema.Types.ObjectId;
+  chatId: Schema.Types.ObjectId;
   content: string;
 }
 
-const schema = new Schema<IMessage>({
-  senderId: { type: Schema.Types.ObjectId, required: true, ref: EModels.USER },
-  recipientId: { type: Schema.Types.ObjectId, required: function (): boolean {
-    return !(this as IMessage).isAGroupForum;
-  }, ref: EModels.USER },
-  auctionId: { type: Schema.Types.ObjectId, required: function (): boolean {
-    return (this as IMessage).isAGroupForum;
-  }, ref: EModels.AUCTION },
-  content: { type: String, required: true, trim: true },
-  isRead: { type: Boolean, required: true, default: false },
-  isAGroupForum: { type: Boolean, required: true, default: false }
+const messageSchema = new Schema<IMessage>({
+  adminId: { type: Schema.Types.ObjectId, required: true, ref: EModels.ADMIN },
+  bidderId: { type: Schema.Types.ObjectId, required: true, ref: EModels.BIDDER },
+  authorId: { type: Schema.Types.ObjectId, required: true, ref: EModels.USER },
+  content: { type: String, required: true, trim: true }
 }, {
   timestamps: {
     createdAt: "createdDate"
   }
 });
 
-schema.set('toJSON', {
+messageSchema.set('toJSON', {
   virtuals: true,
   versionKey: false,
   transform: function (doc, ret) {
@@ -45,4 +35,4 @@ schema.set('toJSON', {
   }
 });
 
-export const Message = model(EModels.MESSAGE, schema);
+export const Message = model(EModels.MESSAGE, messageSchema);
