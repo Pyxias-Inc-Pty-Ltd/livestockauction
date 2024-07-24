@@ -22,6 +22,19 @@ export const ESCAPE_HTTP_ORIGIN_SOCKET_IO = "http://localhost:3000"; // TODO: Up
 export const TINGG_BILLING_SERVICE_ID = 3412;
 export const LOCAL_NATIONALITY = 'BW';
 
+export const FIREBASE_SERVICE_ACCOUNT_CREDENTIALS = JSON.stringify({
+  "type": "service_account",
+  "project_id": "bw-goverment-auction-platform",
+  "private_key_id": "0dcde5690a2e668ead9549b44e79d50d0d6c684f",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCoXvzFU7Z78LU3\nn8/qEdwOb10eN1UxdhLvyFec+TeJo6omDG1UdTlSUjfuO8VJAKwxoRF05GoROatT\n+wIEEIhfRS64NYAweVdj6l2dIZTQ7Fe1MxTIXhvbRDAebDnhruZTM3PEH2QTJdUA\no/uL+LcRLx+6HWFgoxfhOURRLiqG4abtvj58RnCVcmWSAu5yW3S946jsvnnYrmax\njheU87nnw4EhJuoB4iGvzDBVTO1N4ZsVrg65k0O+zv3bvuwcR6zVUgqqFYc+Bdlb\nd6hni3OHBtcmlkESXQ5QVRhphaZEkXIG0GR+CvH1NvYDY0dqSUIq+PUdSXV7M7Ga\ns9Gq+TphAgMBAAECggEADjb+xjYcGPiohAq1BgD+ACX8yZlIUwWx8ZaLdxA/VRqB\nOfcgn9nJvh585Fsde91XrFT54VGLdurUgSGW+PrgWJLBsAGsUetcqm3V+3cjVkQt\n33lxjr0LQwbNvTPL6zbV8T5NzsgLreYqxoQRr66O3h+JYTAr0XnTgUtRbj0kkACH\nyKg1SlZwP+budFCieJzijgrva6DTSF1t+5dldM8peOTksLZnVQP364HByGwhbsv+\nxIeuT1W42MDWj7OjLP3ZKkdaXHNoFxZLoaq/qmXRNPM/hUegt4rY7nUm5rs5YM3K\nbhtWbwk0IwXVHoFxzgdYXrRjamjlV2J/KbuavXSvNQKBgQDpVyHxS5rUkNbpAZoB\nfXKYDgrCqWePoxyQeUBInlhDIkd+hHz2z0SgY98tqqEaOmxMR76rfDhdPBqJZVfj\nY5r2cL3AWTA6Shk5U0gCfZerHEKLdrTgygfSmAzngMMtiqd7+avPuiPbodb+UT6v\n6Q5dzbhlXSN6aLj6XVy/fQIXbwKBgQC4uLXYA8G+nE+u8Dn5QKI0Cz/2ehv5SKU0\n+bt2BulGAKTiSfqXwMhOSZTDpD50OvOAGgZj4v4UJ6oTjXsetz0++D4Edeu08Krw\nE7xJdsTujXJVYPygxaV8bzig4f+ty02EytoQm2OKK35QDUO3OP++SJTm+Y1mocdD\ng1qodGljLwKBgCsWoffy5CZ4kJb6arv3tF+LyETmD2+gyTeMjGhchSPwgo9EW+cf\noyaTCrVeGt3DCBiV7wmvqKDe5m+UvUQKMqVrcD7CuXsqD7pcPKHpG0bHsyoZw5D2\n/bbPySI+zsvsHL1x/14em1yFaDQSQKcvPC3qPTDKoDCMggwJjYT2ypoVAoGBAISY\nOhe0IqezRlN5pvOvHH+lL6W6Y0geiFAtjw2aymnwXmr81X+G54GiucFxrU77Xfyv\nMbUTpHRNQH1GioEy4SjJQqMrDiXUt68bS4WkVpoyOEbnFpBFL5PRtmFtuH1FOQDA\nJ6XSFLKCo+nMi7YCmTk6mn/t1D0+lW115WaUIW4LAoGBAMWWGcognXBs7fVn8hv4\nlfRIazP3bQQwXtNcKd359QLVKk4elu2zp2XzIWDUyEneaIGuP15ck9AVYNK/UjLQ\nH8axIgSyWkYzbEjWvEbsLaLiECfEqeIZsS/QuHeL0F0pnsUEMUx4FDE6kcIyUGlX\nt0gJgzRokDC+LeBddIxWpMoS\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-n9wlb@bw-goverment-auction-platform.iam.gserviceaccount.com",
+  "client_id": "117201245138807169384",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-n9wlb@bw-goverment-auction-platform.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+});
 export const EXPRESS_SESSION_SECRET = process.env.EXPRESS_SESSION_SECRET as string;
 const MONGO_DB_PASS = process.env.MONGO_DB_PASS as string;
 const MONGO_DB_USER = process.env.MONGO_DB_USER as string;
