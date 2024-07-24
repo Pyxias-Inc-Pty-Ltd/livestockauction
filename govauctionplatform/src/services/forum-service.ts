@@ -1,39 +1,58 @@
-import { IForum, Forum } from '../models/forum-model';
+import { IForum, Forum, IForumInput } from '../models/forum-model';
 import { IForumComment, ForumComment } from '../models/forum-model';
 import { ForbiddenError, NotFoundError } from '../shared/errors';
 import { ClientSession, Schema, startSession } from 'mongoose';
 import { ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from '../globals';
 import { isMongoId } from 'validator';
 import { IAdmin, IBidder } from '../models/user-model';
+import userService from "./user-service";
 
 /**
  * Create a forum.
  *
  * @param input
+ * @param sess
  * @returns
  */
-async function createForum(input: IForum): Promise<IForum> {
-    let sess: ClientSession | null = null;
-
+async function createForum(input: IForumInput, sess: ClientSession): Promise<IForum> {
     try {
         const newForum = new Forum(input);
 
-        // Start session and mongo acid transaction
-        sess = await startSession();
+        // Add admins to the forum
+        const users = await userService.getAdmins({ _id: 1 });
 
-        await sess.withTransaction(async () => {
-            await newForum.save({ session: sess });
-        });
+        if (users.length > 0) {
+          for (let i = 0; i < users.length; i++) {
+            newForum.participants.push(users[i]._id);
+          }
+        }
 
+        await newForum.save({ session: sess });
         return newForum;
     } catch (error) {
         throw error;
-    } finally {
-        if (sess) {
-            // End session
-            await sess.endSession();
-        }
     }
+}
+
+/**
+ * Get a forum by id.
+ * 
+ * @param id 
+ * @param projection
+ * @returns 
+ */
+async function getById(id: string | Schema.Types.ObjectId, projection?: any): Promise<IForum | null> {
+  try {
+    if (isMongoId(id.toString())) {
+      const forum = await Forum.findById(id, projection);
+      return forum;
+    } else {
+      return null;
+    }
+  } catch (error) {
+    // Rethrow error
+    throw error;
+  }
 }
 
 /**
@@ -189,6 +208,7 @@ async function deleteForumComment(id: string | Schema.Types.ObjectId): Promise<I
 // Export default
 export default {
     createForum,
+    getById,
     getForumByAuctionId,
     updateForum,
     deleteForum,
