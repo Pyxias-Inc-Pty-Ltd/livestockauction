@@ -31,7 +31,8 @@ export const UNIPAY_APP_AUTH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzd
 export const SERVICE_URLS: {[key: string]: string} = {
   mongoDBURI: `mongodb+srv://${MONGO_DB_USER}:${MONGO_DB_PASS}@cluster0.5odo36p.mongodb.net/bwgovauctionplatform?retryWrites=true&w=majority`,
   tinggCreatePaymentLinkURI: "https://paybylink-apis.pay.tingg.africa/paybylink-apis/public/bill/create",
-  unipayInitiatePaymentApplication: "http://164.92.135.170:8888/api/applications/initiatePaymentApplicationByApp"
+  unipayInitiatePaymentApplication: "http://164.92.135.170:8888/api/applications/initiatePaymentApplicationByApp",
+  clientURI: "https://auctiondev.xyz"
 }
 
 export const COUNTRY_PHONE_CODES = [{"country":"Afghanistan","code":"93","iso":"AF"},
@@ -329,7 +330,14 @@ export enum EModels {
   TRANSACTION = "Transaction",
   CATEGORY = "Category",
   MESSAGE = "Message",
-  TOKEN = "Token"
+  CHAT = "Chat",
+  TOKEN = "Token",
+  FORUM = "Forum",
+  FORUM_COMMENT = "ForumComment",
+  NOTIFICATION = "Notification",
+  NOTIFICATION_OBJECT = "NotificationObject",
+  NOTIFICATION_CHANGE = "NotificationChange",
+  NOTIFICATION_TRIGGER= "NotificationTrigger"
 }
 
 export enum ESortOrderType {
@@ -409,4 +417,8 @@ export enum EAnimalSpecies {
   CAPRINE = "CAPRINE",
   OVINE = "OVINE",
   PORCINE = "PORCINE"
+}
+
+export enum EPushMessageReason {
+  
 }
