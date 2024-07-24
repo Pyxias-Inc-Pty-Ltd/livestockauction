@@ -13,63 +13,46 @@ import { isMongoId } from "validator";
  * @returns 
  */
 async function createBid(currentUser: IBidder, input: IBidInput): Promise<IBid> {
-
   let sess: ClientSession | null = null;
 
   try {
+    let item = await itemService.getById(input.itemId);
 
-    const item = await itemService.getById(input.itemId);
+    // Check if item exists
+    if (!item) throw new NotFoundError('Item not found');
 
-    // Check if exists
-    if (!item) {
-      throw new NotFoundError('Item not found');
-    }
-
-    // Check if is in eligible bidders
-    if (item.eligibleBidders.lastIndexOf(currentUser.id.toString()) === -1) {
+    // Check eligibility for bidding
+    if (!item.eligibleBidders.includes(currentUser.id.toString())) {
       throw new ForbiddenError('Not eligible for bidding');
     }
 
+    // Check auction status
     const now = new Date();
+    if (item.status === 'NOT_BEGUN') throw new ForbiddenError('Auction has not begun');
+    if (item.status === 'ENDED') throw new ForbiddenError('Auction has already ended');
+    if (item.status === 'CANCELLED') throw new ForbiddenError('Auction has been cancelled');
 
-    // Check the item status
-    if (item.status === 'NOT_BEGUN') {
-      throw new ForbiddenError('Auction has not begun');
-    }
-    if (item.status === 'ENDED') { // TODO: Have a cron job that updates this status
-      throw new ForbiddenError('Auction has already ended');
-    }
-    if (item.status === 'CANCELLED') {
-      throw new ForbiddenError('Auction has been cancelled');
-    }
-
-    if (item.startingBid > input.bidAmount) {
-      throw new ForbiddenError('Bid amount must be higher than or equal to the starting bid');
-    }
-
-    if (item.currentBid) {
-      if (item.currentBid >= input.bidAmount) {
-        throw new ForbiddenError('Bid amount must be higher than the current bid');
-      }
-    }
+    // Validate bid amount
+    if (input.bidAmount <= item.startingBid) throw new ForbiddenError('Bid amount must be higher than the starting bid');
+    if (item.currentBid && input.bidAmount <= item.currentBid) throw new ForbiddenError('Bid amount must be higher than the current bid');
 
     const newBid = new Bid(input);
+    newBid.userId = currentUser.id;
+    newBid.bidTime = now;
 
     // Start session and mongo acid transaction
     sess = await startSession();
 
     await sess.withTransaction(async () => {
 
-      newBid.userId = currentUser.id;
-      newBid.bidTime = now;
-  
-      item.currentBid = input.bidAmount;
+      // Update item with optimistic concurrency control
+      const updateResult = await itemService.updateItemWithBid(item!, input.bidAmount, sess!);
 
-      await item.save({
-        session: sess
-      });
-  
-      await newBid.save({
+      if (!updateResult) {
+        throw new Error('Failed to update item due to version conflict. Please try again.');
+      }
+
+      await newBid.save({ 
         session: sess
       });
 
@@ -87,6 +70,46 @@ async function createBid(currentUser: IBidder, input: IBidInput): Promise<IBid> 
 }
 
 /**
+ * Retract a bid.
+ * 
+ * @param currentUser 
+ * @param bidId 
+ * @returns 
+ */
+async function retractBid(currentUser: IBidder, bidId: string | Schema.Types.ObjectId): Promise<void> {
+  const session = await startSession();
+  session.startTransaction();
+
+  try {
+    const bid = await Bid.findOne({ _id: bidId, userId: currentUser.id }).session(session);
+    if (!bid) throw new NotFoundError('Bid not found');
+
+    const item = await itemService.getById(bid.itemId);
+    if (!item) throw new NotFoundError('Item not found');
+
+    // Check auction status
+    if (item.status !== 'ACTIVE') throw new ForbiddenError('Cannot retract bid after auction has ended or if it is not active');
+
+    // Remove bid and update item
+    await bid.remove({ session });
+
+    const highestRemainingBid = await Bid.findOne({ itemId: bid.itemId })
+      .sort({ bidAmount: -1 })
+      .session(session);
+
+    item.currentBid = highestRemainingBid ? highestRemainingBid.bidAmount : item.startingBid;
+    await item.save({ session });
+
+    await session.commitTransaction();
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
+}
+
+/**
  * Get the winning bid
  * 
  * @param itemId 
@@ -94,9 +117,7 @@ async function createBid(currentUser: IBidder, input: IBidInput): Promise<IBid> 
  */
 async function getWinningBid(itemId: string | Schema.Types.ObjectId): Promise<IBid | null> {
   try {
-
-    const conditions = new Map<string, any>(); 
-
+    const conditions = new Map<string, any>();
     conditions.set('limit', 1);
     conditions.set('sortBy', EBidSortType.AMOUNT);
     conditions.set('sortOrder', ESortOrderType.DESC);
@@ -104,12 +125,7 @@ async function getWinningBid(itemId: string | Schema.Types.ObjectId): Promise<IB
 
     const bids = await getBids(conditions);
 
-    if (bids.length > 0) {
-      return bids[0];
-    } else {
-      return null;
-    }
-
+    return bids.length > 0 ? bids[0] : null;
   } catch (error) {
     throw error;
   }
@@ -183,6 +199,7 @@ async function getBids(conditions: Map<string, any>, projection?: any): Promise<
   }
 }
 
+
 /**
  * Get a bid by id.
  * 
@@ -193,13 +210,10 @@ async function getBids(conditions: Map<string, any>, projection?: any): Promise<
 async function getById(id: string | Schema.Types.ObjectId, projection?: any): Promise<IBid | null> {
   try {
     if (isMongoId(id.toString())) {
-      const bid = await Bid.findById(id, projection);
-      return bid;
-    } else {
-      return null;
+      return await Bid.findById(id, projection);
     }
+    return null;
   } catch (error) {
-    // Rethrow error
     throw error;
   }
 }
@@ -211,15 +225,12 @@ async function getById(id: string | Schema.Types.ObjectId, projection?: any): Pr
  * @param projection
  * @returns 
  */
-async function deleteBid(currentUser: IBidder, bidId: string | Schema.Types.ObjectId): Promise<undefined> {
+async function deleteBid(currentUser: IBidder, bidId: string | Schema.Types.ObjectId): Promise<void> {
   try {
     if (isMongoId(bidId.toString())) {
-      await Bid.findOneAndDelete({ bidId, userId: currentUser.id });
-    } else {
-      return;
+      await Bid.findOneAndDelete({ _id: bidId, userId: currentUser.id });
     }
   } catch (error) {
-    // Rethrow error
     throw error;
   }
 }
@@ -229,5 +240,6 @@ export default {
   deleteBid,
   createBid,
   getBids,
-  getWinningBid
+  getWinningBid,
+  retractBid
 } as const;
