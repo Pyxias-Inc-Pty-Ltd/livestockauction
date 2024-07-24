@@ -25,7 +25,7 @@ const httpServer = createServer(app);
 export const io = new Server(httpServer, { 
   cors: {
     credentials: true,
-    origin: ['http://localhost:5173', 'https://livestock-auction-demo.netlify.app', 'https://auctiondev.xyz']
+    origin: ['http://localhost:5173', 'https://livestock-auction-demo.netlify.app', SERVICE_URLS.clientURI]
   }
 });
 
@@ -83,7 +83,7 @@ const onConnection = (socket: Socket) => {
     try {
       console.log("ESocketEventCode.CREATE_CHAT_MESSAGE: ", data);
       const message = await messageHandler.createChatMessage(socket, data);
-      socket.to(`${message.itemId.toString()}-chat`).emit(ESocketEventCode.BROADCAST_CHAT_MESSAGE, message.message);
+      // socket.to(`${message.auctionId!.toString()}-chat`).emit(ESocketEventCode.BROADCAST_CHAT_MESSAGE, message.content);
       cb({ status: CREATED });
     } catch (error) {
       if (error instanceof CustomError) {
