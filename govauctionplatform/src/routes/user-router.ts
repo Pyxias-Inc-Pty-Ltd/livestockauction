@@ -4,7 +4,7 @@ import * as Joi from 'joi';
 import StatusCodes from 'http-status-codes';
 import { isStringNumberLike, mongoIdValidation, phoneValidation } from '../shared/functions';
 import userService from '../services/user-service';
-import { IAdmin } from '../models/user-model';
+import { IAdmin, IUser } from '../models/user-model';
 import { InternalServerError } from '../shared/errors';
 import { ESortOrderType, EUserSortType, EUserType } from '../globals';
 
@@ -25,6 +25,7 @@ export const p = {
   getBidderById: '/getBidderById',
   deleteAdminById: '/deleteAdminById',
   deleteBidderById: '/deleteBidderById',
+  setFirebaseTokenId: '/setFirebaseTokenId'
 } as const;
 
 /**
@@ -114,6 +115,28 @@ router.get(p.getUsers, SuperAdminOnly(), async (req: Request, res: Response) => 
     
     const users = await userService.getUsers(conditions);
     return res.status(OK).json({users});
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Set Firebase Token ID for a user.
+ */
+router.put(p.setFirebaseTokenId, async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object({
+      tokenId: Joi.string().required().messages({
+        'any.required': '"tokenId" is a required field'
+      })
+    }).required();
+
+    // Validate schema against input
+    Joi.assert(req.body, schema);
+
+    const { tokenId } = req.body;
+    await userService.setFirebaseTokenId(req.user as IUser, tokenId);
+    return res.status(OK).json({ "message": "ok" });
   } catch (error) {
     throw error;
   }
