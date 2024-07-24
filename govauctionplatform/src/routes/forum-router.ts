@@ -13,33 +13,11 @@ const { OK, CREATED } = StatusCodes;
 
 // Paths
 export const p = {
-    createForum: '/createForum',
     getForumByAuctionId: '/getForumByAuctionId',
     createForumComment: '/createForumComment',
     getForumComments: '/getForumComments',
     deleteForumCommentById: '/deleteForumCommentById'
 } as const;
-
-/**
- * Create forum.
- */
-router.post(p.createForum, async (req: Request, res: Response) => {
-    try {
-        const schema = Joi.object({
-            auctionId: mongoIdValidation.required().messages({
-                'any.required': '"auctionId" is a required field'
-            })
-        }).required();
-
-        // Validate schema against input
-        Joi.assert(req.body, schema);
-
-        const forum = await forumService.createForum(req.body);
-        return res.status(CREATED).json({ forum });
-    } catch (error) {
-        throw error;
-    }
-});
 
 /**
  * Get forum by auction ID.
