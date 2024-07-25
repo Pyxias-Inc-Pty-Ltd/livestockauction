@@ -18,6 +18,7 @@ export const p = {
   getBidders: '/getBidders',
   getAdmins: '/getAdmins',
   getOwnAccount: '/getOwnAccount',
+  getUserReport: '/getUserReport',
   updatePassword: '/updatePassword',
   createAdmin: '/createAdmin',
   createSeller: '/createSeller',
@@ -161,6 +162,18 @@ router.put(p.setFirebaseTokenId, async (req: Request, res: Response) => {
     const { tokenId } = req.body;
     await userService.setFirebaseTokenId(req.user as IUser, tokenId);
     return res.status(OK).json({ "message": "ok" });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Get user report
+ */
+router.get(p.getUserReport, SuperAdminOnly(), async (req: Request, res: Response) => {
+  try {
+    const report = await userService.getUserReport();
+    return res.status(OK).json({ report });
   } catch (error) {
     throw error;
   }
