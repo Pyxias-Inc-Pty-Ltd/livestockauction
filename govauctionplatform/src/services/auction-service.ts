@@ -194,7 +194,7 @@ async function getAuctions(conditions: Map<string, any>, projection?: any): Prom
       if (conditions.get('status') === EAuctionStatus.ALL) {
         q.or([{status: EAuctionStatus.ACTIVE}, {status: EAuctionStatus.NOT_BEGUN}, {status: EAuctionStatus.CANCELLED}, {status: EAuctionStatus.ENDED}]);
       } else if (conditions.get('status') === EAuctionStatus.FRONT_VIEW) {
-        q.or([{status: EAuctionStatus.ACTIVE}, {status: EAuctionStatus.NOT_BEGUN}]);
+        q.or([{status: EAuctionStatus.ACTIVE}, {status: EAuctionStatus.NOT_BEGUN}, {status: EAuctionStatus.ENDED}]);
       } else {
         q.where({status: conditions.get('status')});
       }
