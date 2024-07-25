@@ -147,6 +147,9 @@ forumSchema.post('save', async function(doc) {
             if ((user as any).firebaseTokenId) {
               // Construct message
               const message = {
+                  data: {
+                    pmr: EPushMessageReason.NOTIFY_USER_OF_FORUM_PARTICIPATION
+                  },
                   notification: {
                       title: 'Added to a Forum',
                       body: notificationMessage
