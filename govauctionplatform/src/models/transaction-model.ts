@@ -1,7 +1,7 @@
 import { Schema, model, Document } from 'mongoose';
-import { EModels, EPaymentStatus, ETransactionType, paymentStatus, transactionType } from '../globals';
+import { EModels, EPaymentStatus, EPushMessageReason, ETransactionType, paymentStatus, transactionType } from '../globals';
 import { firebase } from '../index';
-import { NotFoundError } from '../shared/errors';
+import { InternalServerError, NotFoundError } from '../shared/errors';
 import { IUser } from './user-model';
 import { IItem } from './item-model';
 
@@ -63,11 +63,28 @@ schema.set('toJSON', {
   }
 });
 
+schema.pre('save', async function(next) {
+  if (!this.isNew && this.isModified('status')) {
+    this.$locals.isPaymentStatusModified = true;
+  } else {
+    this.$locals.isPaymentStatusModified = false;
+  }
+  next();
+});
+
 // Post-save hook for transaction schema
 schema.post('save', async function (doc) {
   try {
-    if (doc.status === EPaymentStatus.COMPLETED) {
-      const [ buyer, item ] = await Promise.all([doc.$model(EModels.USER).findById(doc.buyerId, { firebaseTokenId: 1 }), doc.$model(EModels.ITEM).findById(doc.itemId, { title: 1 })]);
+    if (this.$locals.isPaymentStatusModified) {
+      const sess = doc.$session();
+      if (!sess) {
+        throw new InternalServerError('A mongodb session is required on the transaction-model post save hook');
+      }
+
+      const [buyer, item] = await Promise.all([
+        doc.$model(EModels.USER).findById(doc.buyerId, { firebaseTokenId: 1 }).session(sess),
+        doc.$model(EModels.ITEM).findById(doc.itemId, { title: 1 }).session(sess)
+      ]);
 
       if (!buyer) {
         throw new NotFoundError('User not found');
@@ -77,72 +94,64 @@ schema.post('save', async function (doc) {
         throw new NotFoundError('Item not found');
       }
 
-      const token = (buyer as IUser).firebaseTokenId;
+      const firebaseTokenId = (buyer as any).firebaseTokenId;
+      let notificationTrigger = null;
+      let notificationMessage = "";
 
-      let body = "";
-
-      if (doc.transactionType === "RESERVATION") {
-        body = `Your payment for reservation of "${(item as IItem).title}" has been completed successfully.`;
-      } else if (doc.transactionType === "PURCHASE") {
-        body = `Your payment for purchase of "${(item as IItem).title}" has been completed successfully.`;
-      } else { // Assumes REFUND
-        body = `Your refund for "${(item as IItem).title}" has been completed successfully.`;
+      switch (doc.transactionType) {
+        case "RESERVATION":
+          notificationTrigger = await doc.$model(EModels.NOTIFICATION_TRIGGER).findOne({ name: doc.status === EPaymentStatus.COMPLETED ? EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_RESERVE_PRICE_PAYMENT : EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_RESERVE_PRICE_PAYMENT }, { _id: 1 }).session(sess);
+          notificationMessage = `Your payment for reservation of "${(item as any).title}" has ${doc.status === EPaymentStatus.COMPLETED ? 'been completed successfully' : 'failed'}.`;
+          break;
+        case "PURCHASE":
+          notificationTrigger = await doc.$model(EModels.NOTIFICATION_TRIGGER).findOne({ name: doc.status === EPaymentStatus.COMPLETED ? EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_PURCHASE_PAYMENT : EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_PURCHASE_PAYMENT }, { _id: 1 }).session(sess);
+          notificationMessage = `Your payment for purchase of "${(item as any).title}" has ${doc.status === EPaymentStatus.COMPLETED ? 'been completed successfully' : 'failed'}.`;
+          break;
+        default: // Assumes REFUND
+          notificationTrigger = await doc.$model(EModels.NOTIFICATION_TRIGGER).findOne({ name: doc.status === EPaymentStatus.COMPLETED ? EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_REFUND : EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_REFUND }, { _id: 1 }).session(sess);
+          notificationMessage = `Your refund for "${(item as any).title}" has ${doc.status === EPaymentStatus.COMPLETED ? 'been completed successfully' : 'failed'}.`;
+          break;
       }
 
-      // Construct message
-      const message = {
-        notification: {
-          title: 'Transaction Completed',
-          body
-        },
-        token: token
-      };
-
-      // Send notification
-      if (token) {
-        const response = await firebase.messaging().send(message);
-        console.log('Successfully sent notification:', response);
-      } else {
-        console.log('No token available to send notification.');
-      }
-    } else if (doc.status === EPaymentStatus.FAILED) {
-      const [ buyer, item ] = await Promise.all([doc.$model(EModels.USER).findById(doc.buyerId, { firebaseTokenId: 1 }), doc.$model(EModels.ITEM).findById(doc.itemId, { title: 1 })]);
-
-      if (!buyer) {
-        throw new NotFoundError('User not found');
+      if (!notificationTrigger) {
+        throw new InternalServerError('Notification trigger not found');
       }
 
-      if (!item) {
-        throw new NotFoundError('Item not found');
-      }
+      // Create notification object
+      const newNotificationObject = await doc.$model(EModels.NOTIFICATION_OBJECT).create([{
+        trigger: notificationTrigger.id,
+        entity: doc.id,
+        onEntityModel: EModels.TRANSACTION
+      }], { session: sess });
 
-      const token = (buyer as IUser).firebaseTokenId;
+      // Create notification change
+      await doc.$model(EModels.NOTIFICATION_CHANGE).create([{
+        notificationObject: (newNotificationObject as any)._id,
+        actor: buyer._id,
+        onActorModel: EModels.USER
+      }], { session: sess });
 
-      let body = "";
+      // Create notification
+      await doc.$model(EModels.NOTIFICATION).create([{
+        notificationObject: (newNotificationObject as any)._id,
+        notifier: buyer._id,
+        onNotifierModel: EModels.USER,
+        notificationMessage
+      }], { session: sess });
 
-      if (doc.transactionType === "RESERVATION") {
-        body = `Your payment for reservation of "${(item as IItem).title}" has failed.`;
-      } else if (doc.transactionType === "PURCHASE") {
-        body = `Your payment for purchase of "${(item as IItem).title}" has failed.`;
-      } else { // Assumes REFUND
-        body = `Your refund for "${(item as IItem).title}" has failed.`;
-      }
+      // TODO: Also send to email
 
-      // Construct message
-      const message = {
-        notification: {
-          title: 'Transaction Completed',
-          body
-        },
-        token: token
-      };
-
-      // Send notification
-      if (token) {
-        const response = await firebase.messaging().send(message);
-        console.log('Successfully sent notification:', response);
-      } else {
-        console.log('No token available to send notification.');
+      // Check for firebase token
+      if (firebaseTokenId) {
+        // Construct message
+        const message = {
+          notification: {
+            title: `Transaction ${doc.status === EPaymentStatus.COMPLETED ? 'completed' : 'failed'}`,
+            body: notificationMessage
+          },
+          token: firebaseTokenId
+        };
+        await firebase.messaging().send(message);
       }
     }
   } catch (error) {
