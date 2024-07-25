@@ -8,6 +8,7 @@ import auctionRouter from '../auction-router';
 import breedRouter from '../breed-router';
 import forumRouter from '../forum-router';
 import notificationTriggerRouter from '../notification-trigger-router';
+import notificationRouter from '../notification-router';
 
 // Export the base-router
 const baseRouter = Router();
@@ -22,6 +23,7 @@ baseRouter.use('/categories', categoryRouter);
 baseRouter.use('/breeds', breedRouter);
 baseRouter.use('/forums', forumRouter);
 baseRouter.use('/notificationTriggers', notificationTriggerRouter);
+baseRouter.use('/notifications', notificationRouter);
 
 // Export default.
 export default baseRouter;
