@@ -1,4 +1,4 @@
-import { IAdmin, User } from "../models/user-model";
+import { IAdmin } from "../models/user-model";
 import { isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
@@ -7,7 +7,6 @@ import { EAuctionSortType, EAuctionStatus, ESortOrderType, LIST_LIMIT_NUMBER, MA
 import { Auction, IAuction, IAuctionInput } from "../models/auction-model";
 import categoryService from "./category-service";
 import forumService from "./forum-service";
-import { Bid } from "../models/bid-model";
 import { Item } from "../models/item-model";
 
 /**
@@ -415,6 +414,23 @@ async function getAuctionReport(auctionId: string | Schema.Types.ObjectId) {
       }
     ]);
 
+    // Sum of elibigble bidders
+    const sumOfEligibleBidders = await Item.aggregate([
+      { $match: { auctionId: new Types.ObjectId(auctionId.toString()) } },
+      {
+        $group: {
+          _id: null,
+          totalEligibleBidders: { $sum: { $size: "$eligibleBidders" } }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          totalEligibleBidders: 1
+        }
+      }
+    ]);
+
     return {
       participantsByGenderAge,
       highestLowestBids,
@@ -422,6 +438,7 @@ async function getAuctionReport(auctionId: string | Schema.Types.ObjectId) {
       subtotalsByBreedSex,
       itemsPurchasedVsNotPurchased,
       grandTotal: grandTotal[0]?.total || 0,
+      sumOfEligibleBidders: sumOfEligibleBidders[0]?.totalEligibleBidders || 0
     };
   } catch (error) {
     // Rethrow error
