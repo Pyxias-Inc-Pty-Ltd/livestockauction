@@ -84,11 +84,6 @@ forumSchema.pre('save', async function(next) {
 // Post-save hook for forumSchema
 forumSchema.post('save', async function(doc) {
     try {
-        if (!doc.$session()) {
-          throw new InternalServerError('A mongodb session is required on the forum-model post save hook');
-        }
-
-        const sess = doc.$session();
         const originalParticipants = this.$locals.originalParticipants as Array<string> || [];
 
         // Fetch the new participants
@@ -96,6 +91,12 @@ forumSchema.post('save', async function(doc) {
         const addedParticipants = newParticipants.filter(p => !originalParticipants.includes(p));
 
         if (addedParticipants.length > 0) {
+
+          if (!doc.$session()) {
+            throw new InternalServerError('A mongodb session is required on the forum-model post save hook');
+          }
+
+          const sess = doc.$session();
           const userId = addedParticipants[addedParticipants.length - 1];
         
           const [ auction, user, notificationTrigger ] = await Promise.all([doc.$model(EModels.AUCTION).findById(doc.auctionId, { name: 1 }), doc.$model(EModels.USER).findById(userId, { firebaseTokenId: 1, email: 1, userType: 1 }), doc.$model(EModels.NOTIFICATION_TRIGGER).findOne({ name: EPushMessageReason.NOTIFY_USER_OF_FORUM_PARTICIPATION }, { _id: 1 })]);
@@ -133,7 +134,7 @@ forumSchema.post('save', async function(doc) {
             const notificationMessage = `You have been added to the forum: "${(auction as IAuction).title}"`;
 
             // Create notification
-            await doc.$model(EModels.NOTIFICATION_CHANGE).create({
+            await doc.$model(EModels.NOTIFICATION).create({
               notificationObject: (newNotificationObject as any).id,
               notifier: userId,
               onNotifierModel: EModels.USER,
