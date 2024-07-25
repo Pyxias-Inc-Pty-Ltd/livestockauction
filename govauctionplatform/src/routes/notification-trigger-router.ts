@@ -23,7 +23,7 @@ export const p = {
 router.post(p.createNotificationTrigger, SuperAdminOnly(), async (req: Request, res: Response) => {
   try {
     const bSchema = Joi.object().keys({
-      name: Joi.string().required().valid(EPushMessageReason.NOTIFY_USER_OF_FORUM_PARTICIPATION, EPushMessageReason.NOTIFY_USER_OF_STARTING_AUCTION, EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_PURCHASE_PAYMENT, EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_REFUND, EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_RESERVE_PRICE_PAYMENT, EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_RESERVE_PRICE_PAYMENT, EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_REFUND, EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_RESERVE_PRICE_PAYMENT, EPushMessageReason.NOTIFY_USER_OF_UPCOMING_AUCTION).messages({
+      name: Joi.string().required().valid(EPushMessageReason.NOTIFY_USER_OF_FORUM_PARTICIPATION, EPushMessageReason.NOTIFY_USER_OF_STARTING_AUCTION, EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_PURCHASE_PAYMENT, EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_REFUND, EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_RESERVE_PRICE_PAYMENT, EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_REFUND, EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_RESERVE_PRICE_PAYMENT, EPushMessageReason.NOTIFY_USER_OF_UPCOMING_AUCTION).messages({
         'any.required': '"name" is a required field'
       }),
       description: Joi.string().required().messages({
