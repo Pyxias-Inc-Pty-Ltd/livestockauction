@@ -97,17 +97,21 @@ schema.post('save', async function (doc) {
       const firebaseTokenId = (buyer as any).firebaseTokenId;
       let notificationTrigger = null;
       let notificationMessage = "";
+      let pmr = "";
 
       switch (doc.transactionType) {
         case "RESERVATION":
+          pmr = doc.status === EPaymentStatus.COMPLETED ? EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_RESERVE_PRICE_PAYMENT : EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_RESERVE_PRICE_PAYMENT;
           notificationTrigger = await doc.$model(EModels.NOTIFICATION_TRIGGER).findOne({ name: doc.status === EPaymentStatus.COMPLETED ? EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_RESERVE_PRICE_PAYMENT : EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_RESERVE_PRICE_PAYMENT }, { _id: 1 }).session(sess);
           notificationMessage = `Your payment for reservation of "${(item as any).title}" has ${doc.status === EPaymentStatus.COMPLETED ? 'been completed successfully' : 'failed'}.`;
           break;
         case "PURCHASE":
+          pmr = doc.status === EPaymentStatus.COMPLETED ? EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_PURCHASE_PAYMENT : EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_PURCHASE_PAYMENT;
           notificationTrigger = await doc.$model(EModels.NOTIFICATION_TRIGGER).findOne({ name: doc.status === EPaymentStatus.COMPLETED ? EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_PURCHASE_PAYMENT : EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_PURCHASE_PAYMENT }, { _id: 1 }).session(sess);
           notificationMessage = `Your payment for purchase of "${(item as any).title}" has ${doc.status === EPaymentStatus.COMPLETED ? 'been completed successfully' : 'failed'}.`;
           break;
         default: // Assumes REFUND
+          pmr = doc.status === EPaymentStatus.COMPLETED ? EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_REFUND : EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_REFUND;
           notificationTrigger = await doc.$model(EModels.NOTIFICATION_TRIGGER).findOne({ name: doc.status === EPaymentStatus.COMPLETED ? EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_REFUND : EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_REFUND }, { _id: 1 }).session(sess);
           notificationMessage = `Your refund for "${(item as any).title}" has ${doc.status === EPaymentStatus.COMPLETED ? 'been completed successfully' : 'failed'}.`;
           break;
@@ -145,6 +149,9 @@ schema.post('save', async function (doc) {
       if (firebaseTokenId) {
         // Construct message
         const message = {
+          data: {
+            pmr
+          },
           notification: {
             title: `Transaction ${doc.status === EPaymentStatus.COMPLETED ? 'completed' : 'failed'}`,
             body: notificationMessage
