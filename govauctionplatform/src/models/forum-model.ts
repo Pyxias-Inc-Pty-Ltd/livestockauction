@@ -84,6 +84,10 @@ forumSchema.pre('save', async function(next) {
 // Post-save hook for forumSchema
 forumSchema.post('save', async function(doc) {
     try {
+        if (!doc.$session()) {
+          throw new InternalServerError('A mongodb session is required on the forum-model post save hook');
+        }
+
         const sess = doc.$session();
         const originalParticipants = this.$locals.originalParticipants as Array<string> || [];
 
