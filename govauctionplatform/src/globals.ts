@@ -384,6 +384,10 @@ export enum EMessageSortType {
   DATE = "DATE"
 }
 
+export enum ENotificationSortType {
+  DATE = "DATE"
+}
+
 export enum EUserSortType {
   DATE = "DATE"
 }
