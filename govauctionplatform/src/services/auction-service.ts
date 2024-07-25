@@ -1,15 +1,14 @@
-import { IAdmin } from "../models/user-model";
+import { IAdmin, User } from "../models/user-model";
 import { isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
-import { ClientSession, Schema, startSession } from 'mongoose';
+import { ClientSession, Schema, startSession, Types } from 'mongoose';
 import { EAuctionSortType, EAuctionStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
 import { Auction, IAuction, IAuctionInput } from "../models/auction-model";
 import categoryService from "./category-service";
 import forumService from "./forum-service";
-import { Forum } from "../models/forum-model";
-import { Transaction } from "../models/transaction-model";
 import { Bid } from "../models/bid-model";
+import { Item } from "../models/item-model";
 
 /**
  * Add an auction.
@@ -246,58 +245,183 @@ async function getAuctions(conditions: Map<string, any>, projection?: any): Prom
  */
 async function getAuctionReport(auctionId: string | Schema.Types.ObjectId) {
   try {
-    const calculateAgeGroup = (dob: Date) => {
-      const age = Math.floor((Date.now() - dob.getTime()) / (1000 * 3600 * 24 * 365.25));
-      if (age < 18) return '<18';
-      if (age <= 30) return '18-30';
-      if (age <= 50) return '31-50';
-      return '51+';
-    };
-  
-    const participantsAggregation = [
-      { $match: { auctionId: new Schema.Types.ObjectId(auctionId.toString()) }},
-      { $lookup: { from: 'users', localField: 'participants', foreignField: '_id', as: 'participantsDetails' }},
-      { $unwind: '$participantsDetails' },
-      { $addFields: { 'participantsDetails.ageGroup': { $function: { body: calculateAgeGroup.toString(), args: ['$participantsDetails.dob'], lang: 'js' }}}},
-      { $group: { _id: { gender: '$participantsDetails.gender', ageGroup: '$participantsDetails.ageGroup' }, count: { $sum: 1 }}}
-    ];
-  
-    const bidsAggregation = [
-      { $match: { auctionId: new Schema.Types.ObjectId(auctionId.toString()) }},
-      { $group: { _id: '$auctionId', highestBid: { $max: '$bidAmount' }, lowestBid: { $min: '$bidAmount' }}}
-    ];
-  
-    const averagePriceAggregation = [
-      { $match: { auctionId: new Schema.Types.ObjectId(auctionId.toString()) }},
-      { $lookup: { from: 'items', localField: 'itemId', foreignField: '_id', as: 'itemDetails' }},
-      { $unwind: '$itemDetails' },
-      { $group: { _id: { breed: '$itemDetails.breedId', gender: '$itemDetails.gender' }, averagePrice: { $avg: '$amount' }}}
-    ];
-  
-    const subtotalAggregation = [
-      { $match: { auctionId: new Schema.Types.ObjectId(auctionId.toString()) }},
-      { $lookup: { from: 'items', localField: 'itemId', foreignField: '_id', as: 'itemDetails' }},
-      { $unwind: '$itemDetails' },
-      { $group: { _id: { breed: '$itemDetails.breedId', gender: '$itemDetails.gender' }, subtotal: { $sum: '$amount' }}}
-    ];
-  
-    const grandTotalAggregation = [
-      { $match: { auctionId: new Schema.Types.ObjectId(auctionId.toString()) }},
-      { $group: { _id: null, grandTotal: { $sum: '$amount' }}}
-    ];
-  
-    const participants = await Forum.aggregate(participantsAggregation).exec();
-    const bids = await Bid.aggregate(bidsAggregation).exec();
-    const averagePrice = await Transaction.aggregate(averagePriceAggregation).exec();
-    const subtotals = await Transaction.aggregate(subtotalAggregation).exec();
-    const grandTotal = await Transaction.aggregate(grandTotalAggregation).exec();
-  
+    // Number of Participants (by gender and age group)
+    const participantsByGenderAge = await Item.aggregate([
+      { $match: { auctionId: new Types.ObjectId(auctionId.toString()) } },
+      { $unwind: '$eligibleBidders' },
+      {
+        $addFields: {
+          eligibleBidderObjectId: { $toObjectId: '$eligibleBidders' }
+        }
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'eligibleBidderObjectId',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: '$user' },
+      {
+        $group: {
+          _id: '$user._id',
+          gender: { $first: '$user.gender' },
+          age: { $first: { $subtract: [{ $year: new Date() }, { $year: '$user.dob' }] } }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            gender: '$gender',
+            ageGroup: {
+              $cond: {
+                if: { $lt: ['$age', 18] },
+                then: 'Under 18',
+                else: {
+                  $cond: {
+                    if: { $and: [{ $gte: ['$age', 18] }, { $lte: ['$age', 24] }] },
+                    then: '18-24',
+                    else: {
+                      $cond: {
+                        if: { $and: [{ $gte: ['$age', 25] }, { $lte: ['$age', 34] }] },
+                        then: '25-34',
+                        else: {
+                          $cond: {
+                            if: { $and: [{ $gte: ['$age', 35] }, { $lte: ['$age', 44] }] },
+                            then: '35-44',
+                            else: '45 and Over'
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          count: { $sum: 1 },
+        },
+      }
+    ]);  
+
+    // Highest and Lowest Bids
+    const highestLowestBids = await Item.aggregate([
+      { $match: { auctionId: new Types.ObjectId(auctionId.toString()) } },
+      {
+        $lookup: {
+          from: 'bids',
+          localField: '_id',
+          foreignField: 'itemId',
+          as: 'bids',
+        },
+      },
+      { $unwind: '$bids' },
+      {
+        $group: {
+          _id: null,
+          highestBid: { $max: '$bids.bidAmount' },
+          lowestBid: { $min: '$bids.bidAmount' },
+        },
+      }
+    ]);
+
+    // Average Price (by breed and sex)
+    const averagePriceByBreedSex = await Item.aggregate([
+      { $match: { auctionId: new Types.ObjectId(auctionId.toString()), isLivestock: true } },
+      {
+        $group: {
+          _id: { breedId: '$breedId', gender: '$gender' },
+          averagePrice: { $avg: { $ifNull: ['$currentBid', 0] } },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $lookup: {
+          from: 'breeds',
+          localField: '_id.breedId',
+          foreignField: '_id',
+          as: 'breed',
+        },
+      },
+      { $unwind: '$breed' },
+      {
+        $project: {
+          _id: 0,
+          breed: '$breed.name',
+          gender: '$_id.gender',
+          averagePrice: 1,
+          count: 1,
+        },
+      }
+    ]);
+
+    // Subtotals Generated (by breed and sex)
+    const subtotalsByBreedSex = await Item.aggregate([
+      { $match: { auctionId: new Types.ObjectId(auctionId.toString()), isLivestock: true } },
+      {
+        $group: {
+          _id: { breedId: '$breedId', gender: '$gender' },
+          subtotal: { $sum: { $ifNull: ['$currentBid', 0] } },
+        },
+      },
+      {
+        $lookup: {
+          from: 'breeds',
+          localField: '_id.breedId',
+          foreignField: '_id',
+          as: 'breed',
+        },
+      },
+      { $unwind: '$breed' },
+      {
+        $project: {
+          _id: 0,
+          breed: '$breed.name',
+          gender: '$_id.gender',
+          subtotal: 1,
+        },
+      }
+    ]);
+
+    // Items Purchased vs. Not Purchased
+    const itemsPurchasedVsNotPurchased = await Item.aggregate([
+      { $match: { auctionId: new Types.ObjectId(auctionId.toString()), status: 'ENDED' } },
+      {
+        $group: {
+          _id: {
+            purchased: { $cond: [{ $ifNull: ['$winningBidder', false] }, true, false] }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          purchased: '$_id.purchased',
+          count: 1
+        }
+      }
+    ]);
+
+    // Grand Total of Money Generated
+    const grandTotal = await Item.aggregate([
+      { $match: { auctionId: new Types.ObjectId(auctionId.toString()) } },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: { $ifNull: ['$currentBid', 0] } },
+        },
+      }
+    ]);
+
     return {
-      participants,
-      bids,
-      averagePrice,
-      subtotals,
-      grandTotal
+      participantsByGenderAge,
+      highestLowestBids,
+      averagePriceByBreedSex,
+      subtotalsByBreedSex,
+      itemsPurchasedVsNotPurchased,
+      grandTotal: grandTotal[0]?.total || 0,
     };
   } catch (error) {
     // Rethrow error
