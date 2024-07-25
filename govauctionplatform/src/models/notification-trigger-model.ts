@@ -15,7 +15,7 @@ export interface INotificationTriggerInput {
 }
 
 const schema: Schema<INotificationTrigger> = new Schema({
-    name: {type: String, required: true, unique: true, trim: true, uppercase: true, enum: [EPushMessageReason.NOTIFY_USER_OF_UPCOMING_AUCTION, EPushMessageReason.NOTIFY_USER_OF_STARTING_AUCTION, EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_RESERVE_PRICE_PAYMENT, EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_PURCHASE_PAYMENT, EPushMessageReason.NOTIFY_USER_OF_FORUM_PARTICIPATION]},
+    name: {type: String, required: true, unique: true, trim: true, uppercase: true, enum: [EPushMessageReason.NOTIFY_USER_OF_UPCOMING_AUCTION, EPushMessageReason.NOTIFY_USER_OF_STARTING_AUCTION, EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_RESERVE_PRICE_PAYMENT, EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_PURCHASE_PAYMENT, EPushMessageReason.NOTIFY_USER_OF_FORUM_PARTICIPATION, EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_RESERVE_PRICE_PAYMENT]},
     description: {type: String, required: true, trim: true}
 }, {
     timestamps: {
