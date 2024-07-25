@@ -19,7 +19,7 @@ export interface INotificationObject extends Document {
 const schema: Schema<INotificationObject> = new Schema({
     trigger: {type: Schema.Types.ObjectId, required: true, ref: EModels.NOTIFICATION_TRIGGER},
     entity: {type: Schema.Types.ObjectId, required: true, refPath: "onEntityModel"},
-    onEntityModel: {type: String, required: true, enum: [EModels.USER], [EModels.FORUM]}
+    onEntityModel: {type: String, required: true, enum: [EModels.USER, EModels.FORUM]}
 }, {
     timestamps: {
         createdAt: "createdDate",
