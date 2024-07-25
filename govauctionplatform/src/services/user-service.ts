@@ -214,8 +214,47 @@ async function setFirebaseTokenId(currentUser: IUser, tokenId: string): Promise<
   }
 }
 
+/**
+ * Fetches a report containing various user statistics.
+ *
+ * @returns {Promise<any>} A promise resolving to an object containing user report data:
+ *   - `totalUsers`: The total number of registered users.
+ *   - `usersByType`: An array of objects containing user counts by type (e.g., admin, user). Each object has properties:
+ *     - `_id`: The user type.
+ *     - `count`: The number of users for that type.
+ *   - `usersCreatedLast30Days`: The number of users created in the last 30 days.
+ * @throws {Error} Any errors encountered during data retrieval or aggregation.
+ */
+async function getUserReport() {
+  try {
+    const totalUsers = await User.countDocuments();
+    const usersByType = await User.aggregate([
+      {
+        $group: {
+          _id: '$userType',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const usersCreatedLast30Days = await User.countDocuments({
+      createdDate: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } // Last 30 days
+    });
+
+    return {
+      totalUsers,
+      usersByType,
+      usersCreatedLast30Days
+    };
+  } catch (error) {
+    // Handle the error
+    throw error;
+  }
+}
+
 // Export default
 export default {
+  getUserReport,
   getAdmins,
   setFirebaseTokenId,
   createInitAdmin,
