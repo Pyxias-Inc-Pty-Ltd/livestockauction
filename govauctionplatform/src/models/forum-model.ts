@@ -1,8 +1,8 @@
 import { Schema, model, Document } from 'mongoose';
-import { EModels } from '../globals';
+import { EModels, EPushMessageReason, EUserType } from '../globals';
 import { IAuction } from './auction-model';
 import { firebase } from '../index';
-import { NotFoundError } from '../shared/errors';
+import { InternalServerError, NotFoundError } from '../shared/errors';
 
 export interface IForumComment extends Document {
     forumId: Schema.Types.ObjectId;
@@ -66,6 +66,15 @@ const forumSchema = new Schema<IForum>({
 
 // Pre-save hook for forumSchema
 forumSchema.pre('save', async function(next) {
+    if (!this.isNew) {
+      const originalDocument = await this.$model(EModels.FORUM).findById(this._id, { participants: 1 });
+      // Check if exists
+      if (!originalDocument) {
+        throw new NotFoundError('Forum not found');
+      }
+
+      this.$locals.originalParticipants = (originalDocument as any).participants;
+    }
     if (this.isModified('participants') && !this.isNew) {
         this.updatedDate = new Date();
     }
@@ -75,34 +84,73 @@ forumSchema.pre('save', async function(next) {
 // Post-save hook for forumSchema
 forumSchema.post('save', async function(doc) {
     try {
+        const sess = doc.$session();
+        const originalParticipants = this.$locals.originalParticipants as Array<string> || [];
+
         // Fetch the new participants
         const newParticipants = doc.participants;
+        const addedParticipants = newParticipants.filter(p => !originalParticipants.includes(p));
+
+        if (addedParticipants.length > 0) {
+          const userId = addedParticipants[addedParticipants.length - 1];
         
-        // Fetch the users' Firebase tokens
+          const [ auction, user, notificationTrigger ] = await Promise.all([doc.$model(EModels.AUCTION).findById(doc.auctionId, { name: 1 }), doc.$model(EModels.USER).findById(userId, { firebaseTokenId: 1, email: 1, userType: 1 }), doc.$model(EModels.NOTIFICATION_TRIGGER).findOne({ name: EPushMessageReason.NOTIFY_USER_OF_FORUM_PARTICIPATION }, { _id: 1 })]);
 
-        const [ auction, users ] = await Promise.all([doc.$model(EModels.AUCTION).findById(doc.auctionId, { name: 1 }), doc.$model(EModels.USER).find({ _id: { $in: newParticipants } }).select('firebaseTokenId').exec()]);
+          if (!auction) {
+            throw new NotFoundError('Auction not found');
+          }
 
-        if (!auction) {
-          throw new NotFoundError('Auction not found');
-        }
+          // Check if exists
+          if (!notificationTrigger) {
+            throw new InternalServerError('Notification trigger not found');
+          }
 
-        const tokens = users.map((user: any) => user.firebaseTokenId).filter(token => token);
+          // Check if exists
+          if (!user) {
+            throw new InternalServerError('User not found');
+          }
 
-        // Construct message
-        const message = {
-            notification: {
-                title: 'Added to a Forum',
-                body: `You have been added to the forum: "${(auction as IAuction).title}"`
-            },
-            tokens: tokens
-        };
+          // Check if admin
+          if ((user as any).userType !== EUserType.ADMIN) {
+            // Create notification object
+            const newNotificationObject = await doc.$model(EModels.NOTIFICATION_OBJECT).create({
+              trigger: notificationTrigger.id,
+              entity: doc.id,
+              onEntityModel: EModels.FORUM
+            }, { session: sess });
 
-        // Send notifications
-        if (tokens.length > 0) {
-            const response = await firebase.messaging().sendEachForMulticast(message);
-            console.log('Successfully sent notifications:', response);
-        } else {
-            console.log('No tokens available to send notifications.');
+            // Create notification change
+            await doc.$model(EModels.NOTIFICATION_CHANGE).create({
+              notificationObject: (newNotificationObject as any).id,
+              actor: userId,
+              onActorModel: EModels.USER
+            }, { session: sess });
+
+            const notificationMessage = `You have been added to the forum: "${(auction as IAuction).title}"`;
+
+            // Create notification
+            await doc.$model(EModels.NOTIFICATION_CHANGE).create({
+              notificationObject: (newNotificationObject as any).id,
+              notifier: userId,
+              onNotifierModel: EModels.USER,
+              notificationMessage
+            }, { session: sess });
+
+            // TODO: Also send to email
+
+            // Check for firebase token
+            if ((user as any).firebaseTokenId) {
+              // Construct message
+              const message = {
+                  notification: {
+                      title: 'Added to a Forum',
+                      body: notificationMessage
+                  },
+                  token: (user as any).firebaseTokenId
+              };
+              await firebase.messaging().send(message);
+            }
+          }
         }
     } catch (error) {
         console.error('Error sending notification:', error);
