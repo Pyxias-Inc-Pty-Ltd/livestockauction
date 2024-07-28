@@ -10,8 +10,9 @@ export interface IMessage extends Document {
 }
 
 export interface IMessageInput {
+  adminId: Schema.Types.ObjectId;
+  bidderId: Schema.Types.ObjectId;
   authorId: Schema.Types.ObjectId;
-  chatId: Schema.Types.ObjectId;
   content: string;
 }
 
