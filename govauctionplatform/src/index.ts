@@ -90,7 +90,21 @@ const onConnection = (socket: Socket) => {
     try {
       console.log("ESocketEventCode.CREATE_CHAT_MESSAGE: ", data);
       const message = await messageHandler.createChatMessage(socket, data);
-      // socket.to(`${message.auctionId!.toString()}-chat`).emit(ESocketEventCode.BROADCAST_CHAT_MESSAGE, message.content);
+      socket.to(`${message.adminId}-${message.bidderId}-chat`).emit(ESocketEventCode.BROADCAST_CHAT_MESSAGE, JSON.stringify(message));
+      cb({ status: CREATED });
+    } catch (error) {
+      if (error instanceof CustomError) {
+        cb({ status: error.HttpStatus, msg: error.message });
+      } else {
+        cb({ status: INTERNAL_SERVER_ERROR });
+      }
+    }
+  });
+  socket.on(ESocketEventCode.CREATE_FORUM_COMMENT, async function (data, cb) {
+    try {
+      console.log("ESocketEventCode.CREATE_FORUM_COMMENT: ", data);
+      const comment = await messageHandler.createForumComment(socket, data);
+      socket.to(`${comment.forumId}-forum`).emit(ESocketEventCode.BROADCAST_FORUM_COMMENT, JSON.stringify(comment));
       cb({ status: CREATED });
     } catch (error) {
       if (error instanceof CustomError) {
