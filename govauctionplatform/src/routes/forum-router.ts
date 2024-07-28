@@ -2,9 +2,9 @@ import { Request, Response, Router } from 'express';
 import * as Joi from 'joi';
 import StatusCodes from 'http-status-codes';
 import forumService from '../services/forum-service';
-import { mongoIdValidation } from '../shared/functions';
+import { isStringNumberLike, mongoIdValidation } from '../shared/functions';
 import { SuperAdminOnly, BidderOnly } from '../shared/middleware';
-import { EAdminType, EUserType } from '../globals';
+import { EAdminType, EForumCommentSortType, ESortOrderType, EUserType } from '../globals';
 import { IAdmin, IBidder } from '../models/user-model';
 
 // Constants
@@ -83,6 +83,51 @@ router.delete(p.deleteForumCommentById, SuperAdminOnly(), BidderOnly(`Current us
     } catch (error) {
         throw error;
     }
+});
+
+/**
+ * Get Forum comments.
+ */
+router.get(p.getForumComments, BidderOnly(), SuperAdminOnly(), async (req: Request, res: Response) => {
+  try {
+
+    const conditions = new Map<string, any>();
+    // Query checks
+    const qSchema = Joi.object().keys({
+      sortOrder: Joi.string().required().valid(ESortOrderType.ASC, ESortOrderType.DESC, ESortOrderType.asc, ESortOrderType.desc).messages({
+        'any.required': '"sortOrder" is a required field'
+      }),
+      sortBy: Joi.string().required().valid(EForumCommentSortType.DATE).messages({
+        'any.required': '"sortBy" is a required field'
+      }),
+      forumId: mongoIdValidation.required().messages({
+        'any.required': '"forumId" is a required field'
+      }),
+      limit: isStringNumberLike.required().messages({
+        'any.required': '"limit" is a required field'
+      }),
+      lastDocumentId: mongoIdValidation
+    }).required();
+    
+    // Validate schema against query
+    Joi.assert(req.query, qSchema);
+
+    const { limit, sortBy, sortOrder, lastDocumentId, forumId } = req.query;
+  
+    conditions.set('limit', parseInt(limit as string));
+    conditions.set('sortBy', sortBy);
+    conditions.set('sortOrder', sortOrder);
+    conditions.set('forumId', forumId);
+
+    if (lastDocumentId) {
+      conditions.set('lastDocumentId', lastDocumentId);
+    }
+
+    const comments = await forumService.getForumComments(conditions);
+    return res.status(OK).json({comments});
+  } catch (error) {
+    throw error;
+  }
 });
 
 // Export default
