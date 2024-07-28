@@ -384,6 +384,10 @@ export enum EMessageSortType {
   DATE = "DATE"
 }
 
+export enum EForumCommentSortType {
+  DATE = "DATE"
+}
+
 export enum ENotificationSortType {
   DATE = "DATE"
 }
@@ -405,7 +409,9 @@ export enum ESocketEventCode {
   CREATE_CHAT_MESSAGE = "e:5",
   BROADCAST_CHAT_MESSAGE = "e:6",
   POLL_PAID_TRANSACTION = "e:7",
-  DELETE_BID = "e:8"
+  DELETE_BID = "e:8",
+  CREATE_FORUM_COMMENT = "e:9",
+  BROADCAST_FORUM_COMMENT = "e:10"
 }
 
 export enum EParticipationType {
