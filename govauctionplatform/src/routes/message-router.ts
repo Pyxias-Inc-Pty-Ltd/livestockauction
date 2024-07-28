@@ -75,12 +75,13 @@ router.get(p.getMessages, BidderOnly(), SuperAdminOnly(), async (req: Request, r
     // Validate schema against query
     Joi.assert(req.query, qSchema);
 
-    const { limit, sortBy, sortOrder, lastDocumentId, chatId } = req.query;
+    const { limit, sortBy, sortOrder, lastDocumentId, adminId, bidderId } = req.query;
   
     conditions.set('limit', parseInt(limit as string));
     conditions.set('sortBy', sortBy);
     conditions.set('sortOrder', sortOrder);
-    conditions.set('chatId', chatId);
+    conditions.set('adminId', adminId);
+    conditions.set('bidderId', bidderId);
 
     if (lastDocumentId) {
       conditions.set('lastDocumentId', lastDocumentId);
