@@ -69,7 +69,13 @@ router.post(p.createItem, SuperAdminOnly(), async (req: Request, res: Response) 
       isLivestock: Joi.boolean().required().messages({
         'any.required': '"isLivestock" is a required field'
       }),
-      dob: Joi.string().isoDate(),
+      dob: Joi.string().isoDate().when('isLivestock', {
+        is: true,
+        then: Joi.required().messages({
+          'any.required': '"dob" is a required field'
+        }),
+        otherwise: Joi.optional()
+      }),
       gender: Joi.string().valid(EGenderType.FEMALE, EGenderType.MALE, EGenderType.MIXED).when('isLivestock', {
         is: true,
         then: Joi.required().messages({
@@ -99,7 +105,7 @@ router.post(p.createItem, SuperAdminOnly(), async (req: Request, res: Response) 
         }),
         otherwise: Joi.optional()
       })
-    }).required();
+    }).required();    
     
     // Validate schema against input
     Joi.assert(req.body, schema);
