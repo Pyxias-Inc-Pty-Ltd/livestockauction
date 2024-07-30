@@ -217,6 +217,8 @@ async function setWinningBidder(input: { itemId: string | Schema.Types.ObjectId,
 
     const conditions = new Map<string, any>();
 
+    conditions.set('itemId', item.id);
+
     // Get bids
     const bids = await bidService.getBids(conditions);
 
