@@ -159,7 +159,7 @@ schema.pre('save', async function () {
 
 schema.post('save', function(error: any, doc: any, next: any) {
   if (error.name === 'MongoServerError' && error.code === 11000) {
-    if (error.message.includes('titleSlug_1')) {
+    if (error.message.includes('titleSlug_1__id_1')) {
       next(new ConflictError('An item with this title already exists'));
     } else {
       next(new ConflictError('Duplicate key error'));
