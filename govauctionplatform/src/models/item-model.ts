@@ -72,7 +72,7 @@ const schema = new Schema<IItem>({
   sellerId: { type: Schema.Types.ObjectId, required: true, ref: EModels.SELLER },
   winningBidder: { type: Schema.Types.ObjectId, ref: EModels.BIDDER },
   title: { type: String, required: true, trim: true },
-  titleSlug: {type: String, trim: true, sparse: true, unique: true},
+  titleSlug: {type: String, trim: true},
   description: { type: String, required: true, trim: true },
   terms: { type: String, required: true, trim: true },
   startingBid: { type: Number, required: true },
@@ -113,6 +113,8 @@ const schema = new Schema<IItem>({
     updatedAt: "updatedDate"
   }
 });
+
+schema.index({ titleSlug: 1, _id: 1 }, { unique: true });
 
 schema.set('toJSON', {
   virtuals: true,
