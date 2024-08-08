@@ -21,6 +21,7 @@ export const GENERIC_ERROR_MESSAGE = "Something went wrong, please try again lat
 export const ESCAPE_HTTP_ORIGIN_SOCKET_IO = "http://localhost:3000"; // TODO: Update before production
 export const TINGG_BILLING_SERVICE_ID = 3412;
 export const LOCAL_NATIONALITY = 'BW';
+export const VERIFIED_EMAIL = 'services@unipay.africa';
 
 export const FIREBASE_SERVICE_ACCOUNT_CREDENTIALS = JSON.stringify({
   "type": "service_account",
@@ -40,7 +41,7 @@ const MONGO_DB_PASS = process.env.MONGO_DB_PASS as string;
 const MONGO_DB_USER = process.env.MONGO_DB_USER as string;
 // export const UNIPAY_APP_AUTH_TOKEN = process.env.UNIPAY_APP_AUTH_TOKEN as string;
 export const UNIPAY_APP_AUTH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWJqZWN0IjoiNjY3YzVmOTMwM2YzZjEyODRhMWI0OGVhIiwic2NvcGUiOiJBUEkiLCJpYXQiOjE3MTk0MjY5NjN9.xi1tGljRdbpFzamQlD1G4TVYK1gWt6xyEAXrT4MVpko";
-
+export const SEND_GRID_API_KEY = "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";
 export const SERVICE_URLS: {[key: string]: string} = {
   mongoDBURI: `mongodb+srv://${MONGO_DB_USER}:${MONGO_DB_PASS}@cluster0.5odo36p.mongodb.net/bwgovauctionplatform?retryWrites=true&w=majority`,
   tinggCreatePaymentLinkURI: "https://paybylink-apis.pay.tingg.africa/paybylink-apis/public/bill/create",
@@ -454,3 +455,241 @@ export enum EPushMessageReason {
   NOTIFY_USER_OF_UNSUCCESSFUL_REFUND = "NOTIFY_USER_OF_UNSUCCESSFUL_REFUND",
   NOTIFY_USER_OF_FORUM_PARTICIPATION = "NOTIFY_USER_OF_FORUM_PARTICIPATION"
 }
+
+export const welcomeBidderEmailTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Welcome to Botswana Government Auction Platform</title>
+  </head>
+  <body>
+    <h1>Welcome to the Botswana Government Auction Platform!</h1>
+    <p>Dear [UserName],</p>
+    <p>We are delighted to have you as a member of our auction platform. Here, you can participate in various government auctions, bid on items, and much more.</p>
+    <p>Feel free to explore and start bidding!</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
+export const welcomeSellerEmailTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Welcome to Botswana Government Auction Platform</title>
+  </head>
+  <body>
+    <h1>Welcome to the Botswana Government Auction Platform!</h1>
+    <p>Dear [UserName],</p>
+    <p>We are delighted to have you as a member of our auction platform. Here, you can participate in creating various government auctions, and much more.</p>
+    <p>Feel free to start creating auctions!</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
+export const passwordResetTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Password Reset Request</title>
+  </head>
+  <body>
+    <h1>Password Reset Request</h1>
+    <p>Dear [UserName],</p>
+    <p>We received a request to reset your password. Click the link below to set a new password:</p>
+    <p><a href="[ResetLink]">Reset Password</a></p>
+    <p>If you did not request a password reset, please ignore this email.</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
+export const reservePricePaymentTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Reserve Price Payment Successful</title>
+  </head>
+  <body>
+    <h1>Reserve Price Payment Successful</h1>
+    <p>Dear [UserName],</p>
+    <p>We are pleased to inform you that your reserve price payment for the auction item "[ItemName]" has been successfully processed.</p>
+    <p>Thank you for your payment. You are now eligible to bid on this item.</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
+export const purchasePaymentTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Purchase Payment Successful</title>
+  </head>
+  <body>
+    <h1>Purchase Payment Successful</h1>
+    <p>Dear [UserName],</p>
+    <p>We are pleased to inform you that your payment for the auction item "[ItemName]" has been successfully processed.</p>
+    <p>Thank you for your purchase. The item will be shipped to you soon.</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
+export const refundTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Refund Processed Successfully</title>
+  </head>
+  <body>
+    <h1>Refund Processed Successfully</h1>
+    <p>Dear [UserName],</p>
+    <p>We are pleased to inform you that your refund for the auction item "[ItemName]" has been successfully processed.</p>
+    <p>The refunded amount has been credited to your account.</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
+export const addedToForumTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Added to Auction Forum</title>
+  </head>
+  <body>
+    <h1>Added to Auction Forum</h1>
+    <p>Dear [UserName],</p>
+    <p>You have been added to the auction forum for "[AuctionName]". You can now participate in discussions, ask questions, and stay updated with the latest updates.</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
+export const winningBidderTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Congratulations! You are the Winning Bidder</title>
+  </head>
+  <body>
+    <h1>Congratulations! You are the Winning Bidder</h1>
+    <p>Dear [UserName],</p>
+    <p>We are excited to inform you that you are the winning bidder for the auction item "[ItemName]".</p>
+    <p>Please proceed with the payment to complete your purchase.</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
+export const reservePricePaymentFailedTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Reserve Price Payment Failed</title>
+  </head>
+  <body>
+    <h1>Reserve Price Payment Failed</h1>
+    <p>Dear [UserName],</p>
+    <p>We regret to inform you that your reserve price payment for the auction item "[ItemName]" was unsuccessful.</p>
+    <p>Please try again or contact support if you need assistance.</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
+export const purchasePaymentFailedTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Purchase Payment Failed</title>
+  </head>
+  <body>
+    <h1>Purchase Payment Failed</h1>
+    <p>Dear [UserName],</p>
+    <p>We regret to inform you that your payment for the auction item "[ItemName]" was unsuccessful.</p>
+    <p>Please try again or contact support if you need assistance.</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
+export const upcomingAuctionTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Upcoming Auction Notification</title>
+  </head>
+  <body>
+    <h1>Upcoming Auction Notification</h1>
+    <p>Dear [UserName],</p>
+    <p>We are excited to inform you about an upcoming auction: "[AuctionName]".</p>
+    <p>The auction will start on [StartDate] and end on [EndDate]. Don't miss the opportunity to participate and bid on amazing items!</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
+export const auctionStartedTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Auction Started Notification</title>
+  </head>
+  <body>
+    <h1>Auction Started</h1>
+    <p>Dear [UserName],</p>
+    <p>We are pleased to inform you that the auction "[AuctionName]" has started.</p>
+    <p>You can now start bidding on your favorite items. The auction will end on [EndDate].</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
+export const auctionEndedTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Auction Ended Notification</title>
+  </head>
+  <body>
+    <h1>Auction Ended</h1>
+    <p>Dear [UserName],</p>
+    <p>We are pleased to inform you that the auction "[AuctionName]" has ended.</p>
+    <p>Thank you for your participation. If you have won any items, you will receive further instructions via email.</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
+export const refundFailedTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Refund Failed</title>
+  </head>
+  <body>
+    <h1>Refund Failed</h1>
+    <p>Dear [UserName],</p>
+    <p>We regret to inform you that the refund process for the auction item [ItemName] has failed.</p>
+    <p>Please contact our support team for assistance and further information.</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
