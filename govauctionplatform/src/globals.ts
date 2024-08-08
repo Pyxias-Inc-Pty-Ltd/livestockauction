@@ -340,6 +340,7 @@ export enum EModels {
   ITEM = "Item",
   AUCTION = "Auction",
   BID = "Bid",
+  BIDDER_COUNTER = "BidderCounter",
   TRANSACTION = "Transaction",
   CATEGORY = "Category",
   MESSAGE = "Message",
