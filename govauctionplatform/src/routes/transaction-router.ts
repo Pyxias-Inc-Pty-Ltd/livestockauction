@@ -1,6 +1,6 @@
 import { IBidder } from '../models/user-model';
 import transactionService from '../services/transaction-service';
-import { BidderOnly } from '../shared/middleware';
+import { BidderOnly, SuperAdminOnly } from '../shared/middleware';
 import * as Joi from 'joi';
 import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
@@ -94,7 +94,7 @@ router.post(p.initiatePurchaseItemUsingBuyoutPrice, BidderOnly(), async (req: Re
 /**
  * Get transactions.
  */
-router.get(p.getTransactions, BidderOnly(), async (req: Request, res: Response) => {
+router.get(p.getTransactions, SuperAdminOnly(), async (req: Request, res: Response) => {
   try {
 
     const conditions = new Map<string, any>();
