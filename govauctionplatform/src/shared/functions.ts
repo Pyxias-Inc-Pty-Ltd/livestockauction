@@ -326,3 +326,16 @@ export function generateUniPayAppPaymentURL(applicationId: string): string {
   const base64Encoded = Buffer.from(jsonString).toString('base64');
   return `https://unipay.africa/misc/${base64Encoded}`;
 }
+
+/**
+ * Prefixes a single-digit number with a zero.
+ *
+ * @param {number} input The number to be prefixed.
+ * @returns {string} The number as a two-digit string, with a leading zero if necessary.
+ */
+export function prefixWithZero(input: number): string {
+  if (input < 10) {
+    return '0' + input;
+  }
+  return input.toString();
+}
