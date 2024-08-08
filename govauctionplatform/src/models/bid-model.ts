@@ -17,12 +17,6 @@ export interface IBidInput {
   bidTime: Date;
 }
 
-// export interface IUpdateBidderInput {
-//   currentBid?: number;
-//   buyoutPrice?: number;
-//   status?: itemStatus;
-// }
-
 const schema = new Schema<IBid>({
   userId: { type: Schema.Types.ObjectId, required: true, ref: EModels.USER },
   itemId: { type: Schema.Types.ObjectId, required: true, ref: EModels.ITEM },
