@@ -154,8 +154,18 @@ userSchema.set('toJSON', {
   }
 });
 
+// Pre-save hook for userSchema
+userSchema.pre('save', async function(next) {
+  if (this.isNew) {
+    this.$locals.isNew = true;
+  } else {
+    this.$locals.isNew = false;
+  }
+  next();
+});
+
 userSchema.post('save', async function (doc, next) {
-  if (doc.isNew) {
+  if (this.$locals.isNew) {
     try {
 
       const { email, firstName, lastName, userType } = doc;
@@ -164,20 +174,19 @@ userSchema.post('save', async function (doc, next) {
           let htmlContent = "";
 
           if (userType === EUserType.BIDDER) {
-            welcomeBidderEmailTemplate.replace('[UserName]', firstName);
+            htmlContent = welcomeBidderEmailTemplate.replace('[UserName]', firstName);
           }
           if (userType === EUserType.SELLER) {
-            welcomeSellerEmailTemplate.replace('[UserName]', `${firstName} ${lastName}`);
+            htmlContent = welcomeSellerEmailTemplate.replace('[UserName]', `${firstName} ${lastName}`);
           }
-  
+
           await sgMail.send({
               to: email,
               from: VERIFIED_EMAIL,
               subject: 'Welcome to the Botswana Government Auction Platform',
               html: htmlContent
           });
-  
-          console.log(`Welcome email sent to ${email}`);
+
           next();
       } else {
         next();
