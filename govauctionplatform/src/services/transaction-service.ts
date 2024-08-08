@@ -7,10 +7,11 @@ import itemService from "./item-service";
 import { EPaymentStatus, ESortOrderType, ETransactionSortType, LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, MAX_LIST_LIMIT_NUMBER, paymentProvider, SERVICE_URLS, TINGG_BILLING_SERVICE_ID, transactionType, UNIPAY_APP_AUTH_TOKEN } from "../globals";
 import bidService from "./bid-service";
 import * as luxon from "luxon";
-import { formatPhoneTinggNumber, generateUniPayAppPaymentURL } from "../shared/functions";
+import { formatPhoneTinggNumber, generateUniPayAppPaymentURL, prefixWithZero } from "../shared/functions";
 import tokenService from "./token-service";
 import auctionService from "./auction-service";
 import forumService from "./forum-service";
+import { BidderCounter } from "../models/bidder-counter";
 
 /**
  * Intiates a reservation payment transaction for an item.
@@ -493,6 +494,7 @@ async function processSuccessfulPaymentFromTingg (input: { accountNumber: string
 
   try {
 
+    let needle = false;
     // Find transaction
     const transaction = await getById(input.accountNumber);
 
@@ -525,12 +527,44 @@ async function processSuccessfulPaymentFromTingg (input: { accountNumber: string
         throw new NotFoundError('Forum not found');
       }
 
-      // Insert buyer into list of eligible bidders
-      item.eligibleBidders.push(transaction.buyerId.toString());
+      const stringBuyerId = transaction.buyerId.toString();
 
-      forum.participants.push(transaction.buyerId.toString());
+      // Insert buyer into list of eligible bidders
+      item.eligibleBidders.push(stringBuyerId);
+
+      forum.participants.push(stringBuyerId);
+
+      const auction = await auctionService.getById(item.auctionId);
+
+      // Check if exists
+      if (!auction) {
+        throw new NotFoundError('Auction not found');
+      }
+
+      // Insert buyer into list of eligible bidders
+      item.eligibleBidders.push(stringBuyerId);
+
+      if (auction.participantsWithBiddingNumbers.length > 0) {
+        for (let index = 0; index < auction.participantsWithBiddingNumbers.length; index++) {
+          const element = auction.participantsWithBiddingNumbers[index];
+          if (element.includes(stringBuyerId)) {
+            needle = true;
+            break;
+          }
+        }
+      }
 
       await sess.withTransaction(async () => {
+
+        if (!needle) {
+          const bidderCounter = await BidderCounter.findOneAndUpdate({ auctionId: item.auctionId }, { $inc: { sequenceValue: 1 } }, { new: true, upsert: true, session: sess });
+
+          auction.participantsWithBiddingNumbers.push(`${stringBuyerId}:BIDDER${prefixWithZero(bidderCounter.sequenceValue)}`);
+
+          await auction.save({
+            session: sess
+          });
+        }
 
         await forum.save({
           session: sess
@@ -580,6 +614,7 @@ async function processSuccessfulPaymentFromUniPay(input: { payload: string, tran
 
   try {
 
+    let needle = false;
     const payload = JSON.parse(input.payload);
     const paymentMethod = 'UniPay';
 
@@ -609,10 +644,51 @@ async function processSuccessfulPaymentFromUniPay(input: { payload: string, tran
         throw new NotFoundError('Item not found');
       }
 
+      const forum = await forumService.getForumByAuctionId(item.auctionId);
+
+      // Check if exists
+      if (!forum) {
+        throw new NotFoundError('Forum not found');
+      }
+
+      const stringBuyerId = transaction.buyerId.toString();
+
       // Insert buyer into list of eligible bidders
-      item.eligibleBidders.push(transaction.buyerId.toString());
+      item.eligibleBidders.push(stringBuyerId);
+
+      forum.participants.push(stringBuyerId);
+
+      const auction = await auctionService.getById(item.auctionId);
+
+      // Check if exists
+      if (!auction) {
+        throw new NotFoundError('Auction not found');
+      }
+
+      // Insert buyer into list of eligible bidders
+      item.eligibleBidders.push(stringBuyerId);
+
+      if (auction.participantsWithBiddingNumbers.length > 0) {
+        for (let index = 0; index < auction.participantsWithBiddingNumbers.length; index++) {
+          const element = auction.participantsWithBiddingNumbers[index];
+          if (element.includes(stringBuyerId)) {
+            needle = true;
+            break;
+          }
+        }
+      }
 
       await sess.withTransaction(async () => {
+
+        if (!needle) {
+          const bidderCounter = await BidderCounter.findOneAndUpdate({ auctionId: item.auctionId }, { $inc: { sequenceValue: 1 } }, { new: true, upsert: true, session: sess });
+
+          auction.participantsWithBiddingNumbers.push(`${stringBuyerId}:BIDDER${prefixWithZero(bidderCounter.sequenceValue)}`);
+
+          await auction.save({
+            session: sess
+          });
+        }
 
         await item.save({
           session: sess
