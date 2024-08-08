@@ -9,6 +9,7 @@ export interface IAuction extends Document {
   auctionNumber: string;
   auctionLocation: string;
   numberOfLots: number;
+  participantsWithBiddingNumbers: Array<string>;
   creatorId: Schema.Types.ObjectId;
   categoryId: Schema.Types.ObjectId;
   participationType: participationType;
@@ -32,19 +33,6 @@ export interface IAuctionInput {
   endTime: Date;
 }
 
-export interface IUpdateAuctionInput {
-  title?: string;
-  auctionNumber?: string;
-  auctionLocation?: string;
-  numberOfLots?: number;
-  participationType?: participationType;
-  categoryId?: Schema.Types.ObjectId;
-  terms?: string;
-  startTime?: Date;
-  endTime?: Date;
-  status?: itemStatus;
-}
-
 const schema = new Schema<IAuction>({
   creatorId: { type: Schema.Types.ObjectId, required: true, ref: EModels.ADMIN },
   title: { type: String, required: true, trim: true },
@@ -55,6 +43,7 @@ const schema = new Schema<IAuction>({
   categoryId: { type: Schema.Types.ObjectId, required: true, ref: EModels.CATEGORY },
   terms: { type: String, required: true, trim: true },
   startTime: { type: Date, required: true },
+  participantsWithBiddingNumbers: { type: [String] },
   endTime: { type: Date, required: true },
   status: { type: String, enum: [EAuctionStatus.NOT_BEGUN, EAuctionStatus.ACTIVE, EAuctionStatus.CANCELLED, EAuctionStatus.ENDED]},
   participationType: { type: String, default: EParticipationType.EVERYONE, enum: [EParticipationType.CITIZEN_ONLY, EParticipationType.EVERYONE]},
