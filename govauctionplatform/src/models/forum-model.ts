@@ -1,8 +1,9 @@
 import { Schema, model, Document } from 'mongoose';
-import { EModels, EPushMessageReason, EUserType } from '../globals';
+import { addedToForumTemplate, EModels, EPushMessageReason, EUserType, VERIFIED_EMAIL } from '../globals';
 import { IAuction } from './auction-model';
-import { firebase } from '../index';
+import { firebase, sgMail } from '../index';
 import { InternalServerError, NotFoundError } from '../shared/errors';
+import { IBidder } from './user-model';
 
 export interface IForumComment extends Document {
     forumId: Schema.Types.ObjectId;
@@ -117,6 +118,9 @@ forumSchema.post('save', async function(doc) {
 
           // Check if admin
           if ((user as any).userType !== EUserType.ADMIN) {
+
+            const email = (user as IBidder).email;
+
             // Create notification object
             const newNotificationObject = await doc.$model(EModels.NOTIFICATION_OBJECT).create({
               trigger: notificationTrigger.id,
@@ -141,7 +145,16 @@ forumSchema.post('save', async function(doc) {
               notificationMessage
             }, { session: sess });
 
-            // TODO: Also send to email
+            const title = 'Added to a Forum';
+            const htmlContent = addedToForumTemplate.replace('[UserName]', (user as IBidder).firstName).replace('[AuctionName]', (auction as IAuction).title);
+
+            // Also send to email
+            await sgMail.send({
+              to: email,
+              from: VERIFIED_EMAIL,
+              subject: title,
+              html: htmlContent
+            });
 
             // Check for firebase token
             if ((user as any).firebaseTokenId) {
@@ -151,7 +164,7 @@ forumSchema.post('save', async function(doc) {
                     pmr: EPushMessageReason.NOTIFY_USER_OF_FORUM_PARTICIPATION
                   },
                   notification: {
-                      title: 'Added to a Forum',
+                      title,
                       body: notificationMessage
                   },
                   token: (user as any).firebaseTokenId
