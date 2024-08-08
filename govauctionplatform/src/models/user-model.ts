@@ -1,8 +1,9 @@
-import { ConflictError } from '../shared/errors';
+import { ConflictError, InternalServerError } from '../shared/errors';
 import { Schema, model, Document, Model } from 'mongoose';
-import { adminType, EGenderType, EModels, ENVIRONMENT_PRODUCTION, EUserType, genderType, userType } from '../globals';
+import { adminType, EGenderType, EModels, ENVIRONMENT_PRODUCTION, EUserType, genderType, userType, VERIFIED_EMAIL, welcomeBidderEmailTemplate, welcomeSellerEmailTemplate } from '../globals';
 import isEmail from 'validator/lib/isEmail';
 import isURL from 'validator/lib/isURL';
+import { sgMail } from '../index';
 
 export interface IUser extends Document {
   firstName: string;
@@ -150,6 +151,40 @@ userSchema.set('toJSON', {
     delete ret._id;
     delete ret.password;
     delete ret.__t;
+  }
+});
+
+userSchema.post('save', async function (doc, next) {
+  if (doc.isNew) {
+    try {
+
+      const { email, firstName, lastName, userType } = doc;
+
+      if (userType !== EUserType.ADMIN) {
+          let htmlContent = "";
+
+          if (userType === EUserType.BIDDER) {
+            welcomeBidderEmailTemplate.replace('[UserName]', firstName);
+          }
+          if (userType === EUserType.SELLER) {
+            welcomeSellerEmailTemplate.replace('[UserName]', `${firstName} ${lastName}`);
+          }
+  
+          await sgMail.send({
+              to: email,
+              from: VERIFIED_EMAIL,
+              subject: 'Welcome to the Botswana Government Auction Platform',
+              html: htmlContent
+          });
+  
+          console.log(`Welcome email sent to ${email}`);
+          next();
+      } else {
+        next();
+      }
+    } catch (error) {
+      next(new InternalServerError('Error sending welcome email'));
+    }
   }
 });
 
