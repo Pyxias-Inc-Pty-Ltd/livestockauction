@@ -463,7 +463,6 @@ export const welcomeBidderEmailTemplate = `
     <title>Welcome to Botswana Government Auction Platform</title>
   </head>
   <body>
-    <h1>Welcome to the Botswana Government Auction Platform!</h1>
     <p>Dear [UserName],</p>
     <p>We are delighted to have you as a member of our auction platform. Here, you can participate in various government auctions, bid on items, and much more.</p>
     <p>Feel free to explore and start bidding!</p>
@@ -480,7 +479,6 @@ export const welcomeSellerEmailTemplate = `
     <title>Welcome to Botswana Government Auction Platform</title>
   </head>
   <body>
-    <h1>Welcome to the Botswana Government Auction Platform!</h1>
     <p>Dear [UserName],</p>
     <p>We are delighted to have you as a member of our auction platform. Here, you can participate in creating various government auctions, and much more.</p>
     <p>Feel free to start creating auctions!</p>
@@ -497,7 +495,6 @@ export const passwordResetTemplate = `
     <title>Password Reset Request</title>
   </head>
   <body>
-    <h1>Password Reset Request</h1>
     <p>Dear [UserName],</p>
     <p>We received a request to reset your password. Click the link below to set a new password:</p>
     <p><a href="[ResetLink]">Reset Password</a></p>
@@ -515,7 +512,6 @@ export const reservePricePaymentTemplate = `
     <title>Reserve Price Payment Successful</title>
   </head>
   <body>
-    <h1>Reserve Price Payment Successful</h1>
     <p>Dear [UserName],</p>
     <p>We are pleased to inform you that your reserve price payment for the auction item "[ItemName]" has been successfully processed.</p>
     <p>Thank you for your payment. You are now eligible to bid on this item.</p>
@@ -532,7 +528,6 @@ export const purchasePaymentTemplate = `
     <title>Purchase Payment Successful</title>
   </head>
   <body>
-    <h1>Purchase Payment Successful</h1>
     <p>Dear [UserName],</p>
     <p>We are pleased to inform you that your payment for the auction item "[ItemName]" has been successfully processed.</p>
     <p>Thank you for your purchase. The item will be shipped to you soon.</p>
@@ -549,7 +544,6 @@ export const refundTemplate = `
     <title>Refund Processed Successfully</title>
   </head>
   <body>
-    <h1>Refund Processed Successfully</h1>
     <p>Dear [UserName],</p>
     <p>We are pleased to inform you that your refund for the auction item "[ItemName]" has been successfully processed.</p>
     <p>The refunded amount has been credited to your account.</p>
@@ -566,7 +560,6 @@ export const addedToForumTemplate = `
     <title>Added to Auction Forum</title>
   </head>
   <body>
-    <h1>Added to Auction Forum</h1>
     <p>Dear [UserName],</p>
     <p>You have been added to the auction forum for "[AuctionName]". You can now participate in discussions, ask questions, and stay updated with the latest updates.</p>
     <p>Best regards,</p>
@@ -582,7 +575,6 @@ export const winningBidderTemplate = `
     <title>Congratulations! You are the Winning Bidder</title>
   </head>
   <body>
-    <h1>Congratulations! You are the Winning Bidder</h1>
     <p>Dear [UserName],</p>
     <p>We are excited to inform you that you are the winning bidder for the auction item "[ItemName]".</p>
     <p>Please proceed with the payment to complete your purchase.</p>
@@ -599,7 +591,6 @@ export const reservePricePaymentFailedTemplate = `
     <title>Reserve Price Payment Failed</title>
   </head>
   <body>
-    <h1>Reserve Price Payment Failed</h1>
     <p>Dear [UserName],</p>
     <p>We regret to inform you that your reserve price payment for the auction item "[ItemName]" was unsuccessful.</p>
     <p>Please try again or contact support if you need assistance.</p>
@@ -616,7 +607,6 @@ export const purchasePaymentFailedTemplate = `
     <title>Purchase Payment Failed</title>
   </head>
   <body>
-    <h1>Purchase Payment Failed</h1>
     <p>Dear [UserName],</p>
     <p>We regret to inform you that your payment for the auction item "[ItemName]" was unsuccessful.</p>
     <p>Please try again or contact support if you need assistance.</p>
@@ -633,7 +623,6 @@ export const upcomingAuctionTemplate = `
     <title>Upcoming Auction Notification</title>
   </head>
   <body>
-    <h1>Upcoming Auction Notification</h1>
     <p>Dear [UserName],</p>
     <p>We are excited to inform you about an upcoming auction: "[AuctionName]".</p>
     <p>The auction will start on [StartDate] and end on [EndDate]. Don't miss the opportunity to participate and bid on amazing items!</p>
@@ -650,7 +639,6 @@ export const auctionStartedTemplate = `
     <title>Auction Started Notification</title>
   </head>
   <body>
-    <h1>Auction Started</h1>
     <p>Dear [UserName],</p>
     <p>We are pleased to inform you that the auction "[AuctionName]" has started.</p>
     <p>You can now start bidding on your favorite items. The auction will end on [EndDate].</p>
@@ -667,7 +655,6 @@ export const auctionEndedTemplate = `
     <title>Auction Ended Notification</title>
   </head>
   <body>
-    <h1>Auction Ended</h1>
     <p>Dear [UserName],</p>
     <p>We are pleased to inform you that the auction "[AuctionName]" has ended.</p>
     <p>Thank you for your participation. If you have won any items, you will receive further instructions via email.</p>
@@ -684,7 +671,6 @@ export const refundFailedTemplate = `
     <title>Refund Failed</title>
   </head>
   <body>
-    <h1>Refund Failed</h1>
     <p>Dear [UserName],</p>
     <p>We regret to inform you that the refund process for the auction item [ItemName] has failed.</p>
     <p>Please contact our support team for assistance and further information.</p>
