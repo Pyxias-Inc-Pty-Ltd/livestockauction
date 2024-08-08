@@ -1,9 +1,9 @@
 import { Schema, model, Document } from 'mongoose';
-import { EModels, EPaymentStatus, EPushMessageReason, ETransactionType, paymentStatus, transactionType } from '../globals';
-import { firebase } from '../index';
+import { EModels, EPaymentStatus, EPushMessageReason, ETransactionType, paymentStatus, purchasePaymentFailedTemplate, purchasePaymentTemplate, refundFailedTemplate, refundTemplate, reservePricePaymentFailedTemplate, reservePricePaymentTemplate, transactionType, VERIFIED_EMAIL } from '../globals';
+import { firebase, sgMail } from '../index';
 import { InternalServerError, NotFoundError } from '../shared/errors';
-import { IUser } from './user-model';
 import { IItem } from './item-model';
+import { IBidder } from './user-model';
 
 export interface ITransaction extends Document {
   itemId: Schema.Types.ObjectId;
@@ -94,26 +94,31 @@ schema.post('save', async function (doc) {
         throw new NotFoundError('Item not found');
       }
 
-      const firebaseTokenId = (buyer as any).firebaseTokenId;
+      const firebaseTokenId = (buyer as IBidder).firebaseTokenId;
+      const email = (buyer as IBidder).email;
       let notificationTrigger = null;
       let notificationMessage = "";
       let pmr = "";
+      let htmlContent = "";
 
       switch (doc.transactionType) {
         case "RESERVATION":
           pmr = doc.status === EPaymentStatus.COMPLETED ? EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_RESERVE_PRICE_PAYMENT : EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_RESERVE_PRICE_PAYMENT;
           notificationTrigger = await doc.$model(EModels.NOTIFICATION_TRIGGER).findOne({ name: doc.status === EPaymentStatus.COMPLETED ? EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_RESERVE_PRICE_PAYMENT : EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_RESERVE_PRICE_PAYMENT }, { _id: 1 }).session(sess);
           notificationMessage = `Your payment for reservation of "${(item as any).title}" has ${doc.status === EPaymentStatus.COMPLETED ? 'been completed successfully' : 'failed'}.`;
+          htmlContent = doc.status === EPaymentStatus.COMPLETED ? reservePricePaymentTemplate.replace('[UserName]', (buyer as IBidder).firstName).replace('[ItemName]', (item as IItem).title) : reservePricePaymentFailedTemplate.replace('[UserName]', (buyer as IBidder).firstName).replace('[ItemName]', (item as IItem).title);
           break;
         case "PURCHASE":
           pmr = doc.status === EPaymentStatus.COMPLETED ? EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_PURCHASE_PAYMENT : EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_PURCHASE_PAYMENT;
           notificationTrigger = await doc.$model(EModels.NOTIFICATION_TRIGGER).findOne({ name: doc.status === EPaymentStatus.COMPLETED ? EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_PURCHASE_PAYMENT : EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_PURCHASE_PAYMENT }, { _id: 1 }).session(sess);
           notificationMessage = `Your payment for purchase of "${(item as any).title}" has ${doc.status === EPaymentStatus.COMPLETED ? 'been completed successfully' : 'failed'}.`;
+          htmlContent = doc.status === EPaymentStatus.COMPLETED ? purchasePaymentTemplate.replace('[UserName]', (buyer as IBidder).firstName).replace('[ItemName]', (item as IItem).title) : purchasePaymentFailedTemplate.replace('[UserName]', (buyer as IBidder).firstName).replace('[ItemName]', (item as IItem).title);
           break;
         default: // Assumes REFUND
           pmr = doc.status === EPaymentStatus.COMPLETED ? EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_REFUND : EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_REFUND;
           notificationTrigger = await doc.$model(EModels.NOTIFICATION_TRIGGER).findOne({ name: doc.status === EPaymentStatus.COMPLETED ? EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_REFUND : EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_REFUND }, { _id: 1 }).session(sess);
           notificationMessage = `Your refund for "${(item as any).title}" has ${doc.status === EPaymentStatus.COMPLETED ? 'been completed successfully' : 'failed'}.`;
+          htmlContent = doc.status === EPaymentStatus.COMPLETED ? refundTemplate.replace('[UserName]', (buyer as IBidder).firstName).replace('[ItemName]', (item as IItem).title) : refundFailedTemplate.replace('[UserName]', (buyer as IBidder).firstName).replace('[ItemName]', (item as IItem).title);
           break;
       }
 
@@ -143,7 +148,15 @@ schema.post('save', async function (doc) {
         notificationMessage
       }], { session: sess });
 
-      // TODO: Also send to email
+      const title = `Transaction ${doc.status === EPaymentStatus.COMPLETED ? 'completed' : 'failed'}`;
+
+      // Also send to email
+      await sgMail.send({
+        to: email,
+        from: VERIFIED_EMAIL,
+        subject: title,
+        html: htmlContent
+      });
 
       // Check for firebase token
       if (firebaseTokenId) {
@@ -153,7 +166,7 @@ schema.post('save', async function (doc) {
             pmr
           },
           notification: {
-            title: `Transaction ${doc.status === EPaymentStatus.COMPLETED ? 'completed' : 'failed'}`,
+            title,
             body: notificationMessage
           },
           token: firebaseTokenId
