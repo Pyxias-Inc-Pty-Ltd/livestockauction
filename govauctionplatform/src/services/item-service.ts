@@ -220,7 +220,7 @@ async function setWinningBidder(input: { itemId: string | Schema.Types.ObjectId,
     conditions.set('itemId', item.id);
 
     // Get bids
-    const bids = await bidService.getBids(conditions);
+    const bids = await bidService.getBids(item.id.toString(), conditions);
 
     // Check length
     if (bids.length < 1) {

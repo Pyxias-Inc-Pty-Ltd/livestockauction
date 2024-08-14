@@ -6,6 +6,8 @@ export interface IBid extends Document {
   userId: Schema.Types.ObjectId;
   bidAmount: number;
   bidTime: Date;
+  bidNumber: string;
+  _bidNumber?: string; // For internal use
   createdDate: any;
   updatedDate: any;
 }
@@ -21,13 +23,22 @@ const schema = new Schema<IBid>({
   userId: { type: Schema.Types.ObjectId, required: true, ref: EModels.USER },
   itemId: { type: Schema.Types.ObjectId, required: true, ref: EModels.ITEM },
   bidAmount: { type: Number, required: true },
-  bidTime: { type: Date, required: true }
+  bidTime: { type: Date, required: true },
+  _bidNumber: { type: String } // Internal storage for the virtual, not exposed directly
 }, {
   timestamps: {
     createdAt: "createdDate",
     updatedAt: "updatedDate"
   }
 });
+
+schema.virtual('bidNumber')
+  .get(function() {
+    return this._bidNumber;
+  })
+  .set(function(value: string) {
+    this._bidNumber = value;
+  });
 
 schema.set('toJSON', {
   virtuals: true,

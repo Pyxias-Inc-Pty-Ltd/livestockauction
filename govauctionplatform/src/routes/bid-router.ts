@@ -72,13 +72,12 @@ router.get(p.getBids, BidderOnly(), async (req: Request, res: Response) => {
     conditions.set('limit', parseInt(limit as string));
     conditions.set('sortBy', sortBy);
     conditions.set('sortOrder', sortOrder);
-    conditions.set('itemId', itemId);
 
     if (lastDocumentId) {
       conditions.set('lastDocumentId', lastDocumentId);
     }
 
-    const bids = await bidService.getBids(conditions);
+    const bids = await bidService.getBids(itemId as string, conditions);
     return res.status(OK).json({bids});
   } catch (error) {
     throw error;

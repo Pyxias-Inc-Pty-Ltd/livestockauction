@@ -5,6 +5,7 @@ import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { ClientSession, Schema, startSession } from 'mongoose';
 import { EBidSortType, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
 import { isMongoId } from "validator";
+import auctionService from "./auction-service";
 
 /**
  * Add a bid.
@@ -123,7 +124,7 @@ async function getWinningBid(itemId: string | Schema.Types.ObjectId): Promise<IB
     conditions.set('sortOrder', ESortOrderType.DESC);
     conditions.set('itemId', itemId);
 
-    const bids = await getBids(conditions);
+    const bids = await getBids(itemId.toString(), conditions);
 
     return bids.length > 0 ? bids[0] : null;
   } catch (error) {
@@ -134,16 +135,38 @@ async function getWinningBid(itemId: string | Schema.Types.ObjectId): Promise<IB
 /**
  * Get bids.
  * 
+ * @param itemId
  * @param conditions
  * @param projection
  * @returns 
  */
-async function getBids(conditions: Map<string, any>, projection?: any): Promise<IBid[]> {
+async function getBids(itemId: string, conditions: Map<string, any>, projection?: any): Promise<IBid[]> {
   try {
-
     let _limit: number = LIST_LIMIT_NUMBER;
 
-    //set custom limit
+    const item = await itemService.getById(itemId, { auctionId: 1 });
+
+    // Check if exists
+    if (!item) {
+      throw new NotFoundError("Item not found");
+    }
+
+    const auction = await auctionService.getById(item.auctionId, { participantsWithBiddingNumbers: 1 });
+
+    // Check if exists
+    if (!auction) {
+      throw new NotFoundError("Auction not found");
+    }
+
+    // Convert participantsWithBiddingNumbers array to a Map for quick lookup
+    const biddingNumbersMap = new Map(
+      auction.participantsWithBiddingNumbers.map(entry => {
+        const [userId, bidNumber] = entry.split(":");
+        return [userId, bidNumber];
+      })
+    );
+
+    // Set custom limit
     if (conditions.get('limit') && conditions.get('limit') >= 1) {
       if (conditions.get('limit') > MAX_LIST_LIMIT_NUMBER) {
         throw new ForbiddenError(`limit must not exceed ${MAX_LIST_LIMIT_NUMBER}`);
@@ -154,12 +177,10 @@ async function getBids(conditions: Map<string, any>, projection?: any): Promise<
     // Query builder
     const q = Bid.find({}, projection);
 
-    // Filters
-    if (conditions.get('itemId')) {
-      q.where({itemId: conditions.get('itemId')});
-    }
+    // Apply Filters
+    q.where({ itemId });
 
-    // Range
+    // Apply Date Range
     if (conditions.get('startDate') && conditions.get('endDate')) {
       q.and([{ 'createdDate': { $gte: new Date(conditions.get('startDate')) } }, { 'createdDate': { $lte: new Date(conditions.get('endDate')) } }]);
     } else if (conditions.get('startDate')) {
@@ -168,17 +189,17 @@ async function getBids(conditions: Map<string, any>, projection?: any): Promise<
       q.where({ 'createdDate': { $lte: new Date(conditions.get('endDate')) } });
     }
 
-    // Sort
+    // Apply Sort
     if (conditions.get('sortBy')) {
       if (conditions.get('sortBy') === EBidSortType.DATE) {
-        q.sort({'bidTime': conditions.get('sortOrder')});
+        q.sort({ 'bidTime': conditions.get('sortOrder') });
       }
       if (conditions.get('sortBy') === EBidSortType.AMOUNT) {
-        q.sort({'bidAmount': conditions.get('sortOrder')});
+        q.sort({ 'bidAmount': conditions.get('sortOrder') });
       }
     }
 
-    // Pagination
+    // Apply Pagination
     if (conditions.get('lastDocumentId')) {
       // Check the sort order
       if (conditions.get('sortOrder') === ESortOrderType.ASC || conditions.get('sortOrder') === ESortOrderType.asc) {
@@ -188,10 +209,23 @@ async function getBids(conditions: Map<string, any>, projection?: any): Promise<
       }
     }
 
-    // Limit
+    // Apply Limit
     q.limit(_limit);
 
-    return await q;
+    // Execute the query
+    const bids = await q.exec();
+
+    // Only set bidNumber if participantsWithBiddingNumbers is not empty
+    if (auction.participantsWithBiddingNumbers.length > 0) {
+      bids.forEach((bid: IBid) => {
+        const bidNumber = biddingNumbersMap.get(bid.userId.toString());
+        if (bidNumber) {
+          bid.bidNumber = bidNumber;
+        }
+      });
+    }
+
+    return bids;
 
   } catch (error) {
     // Rethrow error
