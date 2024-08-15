@@ -132,6 +132,21 @@ const onConnection = (socket: Socket) => {
       }
     }
   });
+  socket.on(ESocketEventCode.RETRACT_BID, async function (data: any, cb: any) {
+    try {
+      const bid = await bidHandler.retractBid(socket, data);
+      console.log("ESocketEventCode.RETRACT_BID: ", data);
+      console.log("ESocketEventCode.RETRACTED_BID: ", `${bid.itemId.toString()}-bid`, bid);
+      socket.to(`${bid.itemId.toString()}-bid`).emit(ESocketEventCode.RETRACTED_BID, bid.id.toString());
+      cb({ status: OK });
+    } catch (error) {
+      if (error instanceof CustomError) {
+        cb({ status: error.HttpStatus, msg: error.message });
+      } else {
+        cb({ status: INTERNAL_SERVER_ERROR });
+      }
+    }
+  });
 };
 
 // Listen for events
