@@ -178,7 +178,7 @@ async function getBids(itemId: string, conditions: Map<string, any>, projection?
     const q = Bid.find({}, projection);
 
     // Apply Filters
-    q.where({ itemId });
+    q.where({ itemId, isRetracted: false });
 
     // Apply Date Range
     if (conditions.get('startDate') && conditions.get('endDate')) {
