@@ -413,7 +413,9 @@ export enum ESocketEventCode {
   POLL_PAID_TRANSACTION = "e:7",
   DELETE_BID = "e:8",
   CREATE_FORUM_COMMENT = "e:9",
-  BROADCAST_FORUM_COMMENT = "e:10"
+  BROADCAST_FORUM_COMMENT = "e:10",
+  RETRACT_BID = "e:11",
+  RETRACTED_BID = "e:12"
 }
 
 export enum EParticipationType {
