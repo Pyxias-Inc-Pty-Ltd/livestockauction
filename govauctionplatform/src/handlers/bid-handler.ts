@@ -16,15 +16,12 @@ export default {
       throw error;
     }
   },
-  deleteBid: async function (socket: any, data: string): Promise<undefined> {
+  retractBid: async function (socket: any, data: string): Promise<IBid> {
     try {
       const bidder = socket.user as IBidder;
+      console.log("retractBid: ", data);
 
-      await bidService.deleteBid(bidder, data);
-
-      // TODO: Remove
-      console.log("deleteBid: ", data);
-      return;
+      return await bidService.retractBid(bidder, data);
     } catch (error) {
       throw error;
     }
