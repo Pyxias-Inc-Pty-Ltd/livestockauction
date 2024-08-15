@@ -70,6 +70,46 @@ async function createBid(currentUser: IBidder, input: IBidInput): Promise<IBid> 
   }
 }
 
+// /**
+//  * Retract a bid.
+//  * 
+//  * @param currentUser 
+//  * @param bidId 
+//  * @returns 
+//  */
+// async function retractBid(currentUser: IBidder, bidId: string | Schema.Types.ObjectId): Promise<void> {
+//   const session = await startSession();
+//   session.startTransaction();
+
+//   try {
+//     const bid = await Bid.findOne({ _id: bidId, userId: currentUser.id }).session(session);
+//     if (!bid) throw new NotFoundError('Bid not found');
+
+//     const item = await itemService.getById(bid.itemId);
+//     if (!item) throw new NotFoundError('Item not found');
+
+//     // Check auction status
+//     if (item.status !== 'ACTIVE') throw new ForbiddenError('Cannot retract bid after auction has ended or if it is not active');
+
+//     // Remove bid and update item
+//     await bid.remove({ session });
+
+//     const highestRemainingBid = await Bid.findOne({ itemId: bid.itemId })
+//       .sort({ bidAmount: -1 })
+//       .session(session);
+
+//     item.currentBid = highestRemainingBid ? highestRemainingBid.bidAmount : item.startingBid;
+//     await item.save({ session });
+
+//     await session.commitTransaction();
+//   } catch (error) {
+//     await session.abortTransaction();
+//     throw error;
+//   } finally {
+//     session.endSession();
+//   }
+// }
+
 /**
  * Retract a bid.
  * 
@@ -77,12 +117,9 @@ async function createBid(currentUser: IBidder, input: IBidInput): Promise<IBid> 
  * @param bidId 
  * @returns 
  */
-async function retractBid(currentUser: IBidder, bidId: string | Schema.Types.ObjectId): Promise<void> {
-  const session = await startSession();
-  session.startTransaction();
-
+async function retractBid(currentUser: IBidder, bidId: string | Schema.Types.ObjectId): Promise<IBid> {
   try {
-    const bid = await Bid.findOne({ _id: bidId, userId: currentUser.id }).session(session);
+    const bid = await Bid.findOne({ _id: bidId, userId: currentUser.id });
     if (!bid) throw new NotFoundError('Bid not found');
 
     const item = await itemService.getById(bid.itemId);
@@ -91,22 +128,11 @@ async function retractBid(currentUser: IBidder, bidId: string | Schema.Types.Obj
     // Check auction status
     if (item.status !== 'ACTIVE') throw new ForbiddenError('Cannot retract bid after auction has ended or if it is not active');
 
-    // Remove bid and update item
-    await bid.remove({ session });
+    bid.isRetracted = true;
 
-    const highestRemainingBid = await Bid.findOne({ itemId: bid.itemId })
-      .sort({ bidAmount: -1 })
-      .session(session);
-
-    item.currentBid = highestRemainingBid ? highestRemainingBid.bidAmount : item.startingBid;
-    await item.save({ session });
-
-    await session.commitTransaction();
+    return await bid.save();
   } catch (error) {
-    await session.abortTransaction();
     throw error;
-  } finally {
-    session.endSession();
   }
 }
 
@@ -252,26 +278,8 @@ async function getById(id: string | Schema.Types.ObjectId, projection?: any): Pr
   }
 }
 
-/**
- * Delete a bid by id.
- * 
- * @param bidId 
- * @param projection
- * @returns 
- */
-async function deleteBid(currentUser: IBidder, bidId: string | Schema.Types.ObjectId): Promise<void> {
-  try {
-    if (isMongoId(bidId.toString())) {
-      await Bid.findOneAndDelete({ _id: bidId, userId: currentUser.id });
-    }
-  } catch (error) {
-    throw error;
-  }
-}
-
 // Export default
 export default {
-  deleteBid,
   createBid,
   getBids,
   getWinningBid,
