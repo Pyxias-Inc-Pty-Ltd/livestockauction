@@ -4,6 +4,7 @@ import { EModels } from '../globals';
 export interface IBid extends Document {
   itemId: Schema.Types.ObjectId;
   userId: Schema.Types.ObjectId;
+  isRetracted: boolean;
   bidAmount: number;
   bidTime: Date;
   bidNumber: string;
@@ -22,6 +23,7 @@ export interface IBidInput {
 const schema = new Schema<IBid>({
   userId: { type: Schema.Types.ObjectId, required: true, ref: EModels.USER },
   itemId: { type: Schema.Types.ObjectId, required: true, ref: EModels.ITEM },
+  isRetracted: { type: Boolean, default: false, required: true },
   bidAmount: { type: Number, required: true },
   bidTime: { type: Date, required: true },
   _bidNumber: { type: String } // Internal storage for the virtual, not exposed directly
