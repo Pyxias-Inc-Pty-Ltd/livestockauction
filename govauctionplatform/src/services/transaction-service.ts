@@ -756,8 +756,9 @@ async function getTransactions(conditions: Map<string, any>, projection?: any): 
   try {
 
     let _limit: number = LIST_LIMIT_NUMBER;
+    let _skip: number = 0;
 
-    //set custom limit
+    // Set custom limit
     if (conditions.get('limit') && conditions.get('limit') >= 1) {
       if (conditions.get('limit') > MAX_LIST_LIMIT_NUMBER) {
         throw new ForbiddenError(`limit must not exceed ${MAX_LIST_LIMIT_NUMBER}`);
@@ -765,33 +766,41 @@ async function getTransactions(conditions: Map<string, any>, projection?: any): 
       _limit = conditions.get('limit');
     }
 
+    // Set custom skip
+    if (conditions.get('skip') && conditions.get('skip') >= 0) {
+      _skip = conditions.get('skip');
+    }
+
     // Query builder
     const q = Transaction.find({}, projection);
 
     // Filters
     if (conditions.get('itemId')) {
-      q.where({itemId: conditions.get('itemId')});
+      q.where({ itemId: conditions.get('itemId') });
     }
 
     if (conditions.get('buyerId')) {
-      q.where({buyerId: conditions.get('buyerId')});
+      q.where({ buyerId: conditions.get('buyerId') });
     }
 
     if (conditions.get('sellerId')) {
-      q.where({sellerId: conditions.get('sellerId')});
+      q.where({ sellerId: conditions.get('sellerId') });
     }
 
     if (conditions.get('status')) {
-      q.where({status: conditions.get('status')});
+      q.where({ status: conditions.get('status') });
     }
 
     if (conditions.get('transactionType')) {
-      q.where({transactionType: conditions.get('transactionType')});
+      q.where({ transactionType: conditions.get('transactionType') });
     }
 
     // Range
     if (conditions.get('startDate') && conditions.get('endDate')) {
-      q.and([{ 'createdDate': { $gte: new Date(conditions.get('startDate')) } }, { 'createdDate': { $lte: new Date(conditions.get('endDate')) } }]);
+      q.and([
+        { 'createdDate': { $gte: new Date(conditions.get('startDate')) } },
+        { 'createdDate': { $lte: new Date(conditions.get('endDate')) } }
+      ]);
     } else if (conditions.get('startDate')) {
       q.where({ 'createdDate': { $gte: new Date(conditions.get('startDate')) } });
     } else if (conditions.get('endDate')) {
@@ -801,15 +810,17 @@ async function getTransactions(conditions: Map<string, any>, projection?: any): 
     // Sort
     if (conditions.get('sortBy')) {
       if (conditions.get('sortBy') === ETransactionSortType.DATE) {
-        q.sort({'_id': conditions.get('sortOrder')});
+        q.sort({ '_id': conditions.get('sortOrder') });
       }
       if (conditions.get('sortBy') === ETransactionSortType.AMOUNT) {
-        q.sort({'amount': conditions.get('sortOrder')});
+        q.sort({ 'amount': conditions.get('sortOrder') });
       }
     }
 
-    // Pagination
-    if (conditions.get('lastDocumentId')) {
+    // Pagination - Skip or Last Document ID
+    if (_skip > 0) {
+      q.skip(_skip);
+    } else if (conditions.get('lastDocumentId')) {
       // Check the sort order
       if (conditions.get('sortOrder') === ESortOrderType.ASC || conditions.get('sortOrder') === ESortOrderType.asc) {
         q.where("_id").gt(conditions.get('lastDocumentId'));
@@ -821,10 +832,10 @@ async function getTransactions(conditions: Map<string, any>, projection?: any): 
     // Limit
     q.limit(_limit);
 
-    // Populate buyerId and itemId
+    // Populate buyerId, itemId, and sellerId
     q.populate('buyerId')
-    .populate('itemId')
-    .populate('sellerId');
+      .populate('itemId')
+      .populate('sellerId');
 
     return await q;
 
