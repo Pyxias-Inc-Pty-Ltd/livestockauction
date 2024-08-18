@@ -821,6 +821,11 @@ async function getTransactions(conditions: Map<string, any>, projection?: any): 
     // Limit
     q.limit(_limit);
 
+    // Populate buyerId and itemId
+    q.populate('buyerId')
+    .populate('itemId')
+    .populate('sellerId');
+
     return await q;
 
   } catch (error) {
