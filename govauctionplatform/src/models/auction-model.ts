@@ -1,6 +1,6 @@
 import { ConflictError } from '../shared/errors';
 import { Schema, model, Document } from 'mongoose';
-import { itemStatus, EModels, EAuctionStatus, participationType, EParticipationType } from '../globals';
+import { EModels, EAuctionStatus, participationType, EParticipationType, auctionStatus } from '../globals';
 import { generateSlug } from '../shared/functions';
 
 export interface IAuction extends Document {
@@ -16,7 +16,7 @@ export interface IAuction extends Document {
   terms: string;
   startTime: Date;
   endTime: Date;
-  status: itemStatus;
+  status: auctionStatus;
   createdDate: any;
   updatedDate: any;
 }
