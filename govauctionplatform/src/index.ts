@@ -13,6 +13,7 @@ import * as admin from 'firebase-admin';
 import authHandler from './handlers/auth-handler';
 import { CustomError } from './shared/errors';
 import { MailService } from '@sendgrid/mail';
+import { runSchedulers } from './scheduler';
 
 const { OK, INTERNAL_SERVER_ERROR, CREATED } = StatusCodes;
 
@@ -168,7 +169,10 @@ httpServer.listen(port, async () => {
     // Start connection to mongodb
     await connect(SERVICE_URLS.mongoDBURI);
     logger.info('Connection to mongodb established');
-    
+
+    // Run schedulers
+    runSchedulers();
+
   } catch (error) {
     logger.err(error);
   }
