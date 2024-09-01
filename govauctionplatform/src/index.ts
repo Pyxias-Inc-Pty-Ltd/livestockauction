@@ -32,7 +32,7 @@ const httpServer = createServer(app);
 export const io = new Server(httpServer, { 
   cors: {
     credentials: true,
-    origin: ['http://localhost:5173', 'https://livestock-auction-demo.netlify.app', SERVICE_URLS.clientURI]
+    origin: ['http://localhost:5173', SERVICE_URLS.clientURI]
   }
 });
 
