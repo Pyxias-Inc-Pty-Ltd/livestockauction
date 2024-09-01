@@ -4,6 +4,7 @@ import { itemStatus, EModels, EItemStatus, genderType, EGenderType } from '../gl
 import { generateSlug } from '../shared/functions';
 import { uniqBy } from 'lodash';
 import { ICategory } from './category-model';
+import { IAuction } from './auction-model';
 
 export interface IItem extends Document {
   creatorId: Schema.Types.ObjectId;
@@ -127,6 +128,17 @@ schema.set('toJSON', {
 
 schema.pre('save', async function () {
   const doc = this;
+
+  if (doc.isNew) {
+    const auction = await doc.$model(EModels.AUCTION).findById({auction: doc.auctionId}, {globallyEligibleBidders: 1}) as IAuction | null;
+
+    // Check if exists
+    if (!auction) {
+      throw new NotFoundError('Auction not found');
+    }
+
+    doc.eligibleBidders = auction.globallyEligibleBidders;
+  }
 
   if (doc.isNew || doc.isModified('title')) {
     doc.titleSlug = generateSlug(doc.title);
