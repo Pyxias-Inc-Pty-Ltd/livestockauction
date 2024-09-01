@@ -36,6 +36,16 @@ router.post(p.createAuction, SuperAdminOnly(), async (req: Request, res: Respons
       terms: Joi.string().required().messages({
         'any.required': '"terms" is a required field'
       }),
+      hasRegistrationFee: Joi.boolean().required().messages({
+        'any.required': '"hasRegistrationFee" is a required field'
+      }),
+      registrationFee: Joi.number().min(0).when('hasRegistrationFee', {
+        is: true,
+        then: Joi.required().messages({
+          'any.required': '"registrationFee" is a required field'
+        }),
+        otherwise: Joi.optional()
+      }),
       categoryId: mongoIdValidation.required().messages({
         'any.required': '"categoryId" is a required field'
       }),
