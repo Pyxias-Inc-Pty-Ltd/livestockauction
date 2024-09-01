@@ -9,6 +9,8 @@ export interface IAuction extends Document {
   auctionNumber: string;
   auctionLocation: string;
   numberOfLots: number;
+  hasRegistrationFee: boolean;
+  registrationFee?: number;
   participantsWithBiddingNumbers: Array<string>;
   creatorId: Schema.Types.ObjectId;
   categoryId: Schema.Types.ObjectId;
@@ -24,6 +26,8 @@ export interface IAuction extends Document {
 export interface IAuctionInput {
   title: string;
   auctionNumber: string;
+  hasRegistrationFee: boolean;
+  registrationFee?: number;
   auctionLocation: string;
   participationType: participationType;
   creatorId: Schema.Types.ObjectId;
@@ -40,6 +44,10 @@ const schema = new Schema<IAuction>({
   auctionNumber: { type: String, trim: true, required: true },
   auctionLocation: { type: String, trim: true },
   numberOfLots: { type: Number, default: 0, min: 0, required: true },
+  hasRegistrationFee: { type: Boolean, default: false, required: true },
+  registrationFee: { type: Number, min: 0, required: function (): boolean {
+    return (this as IAuction).hasRegistrationFee;
+  } },
   categoryId: { type: Schema.Types.ObjectId, required: true, ref: EModels.CATEGORY },
   terms: { type: String, required: true, trim: true },
   startTime: { type: Date, required: true },
