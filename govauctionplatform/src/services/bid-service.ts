@@ -33,9 +33,11 @@ async function createBid(currentUser: IBidder, input: IBidInput): Promise<IBid> 
     if (item.status === 'ENDED') throw new ForbiddenError('Auction has already ended');
     if (item.status === 'CANCELLED') throw new ForbiddenError('Auction has been cancelled');
 
-    // Validate bid amount
-    if (input.bidAmount <= item.startingBid) throw new ForbiddenError('Bid amount must be higher than the starting bid');
-    if (item.currentBid && input.bidAmount <= item.currentBid) throw new ForbiddenError('Bid amount must be higher than the current bid');
+    if (!item.isBidIncrementedManually) {
+      // Validate bid amount
+      if (input.bidAmount <= item.startingBid) throw new ForbiddenError('Bid amount must be higher than the starting bid');
+      if (item.currentBid && input.bidAmount <= item.currentBid) throw new ForbiddenError('Bid amount must be higher than the current bid');
+    }
 
     const newBid = new Bid(input);
     newBid.userId = currentUser.id;
