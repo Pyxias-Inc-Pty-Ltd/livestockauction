@@ -12,6 +12,7 @@ export interface IAuction extends Document {
   hasRegistrationFee: boolean;
   registrationFee?: number;
   participantsWithBiddingNumbers: Array<string>;
+  globallyEligibleBidders: Array<string>;
   creatorId: Schema.Types.ObjectId;
   categoryId: Schema.Types.ObjectId;
   participationType: participationType;
@@ -52,6 +53,7 @@ const schema = new Schema<IAuction>({
   terms: { type: String, required: true, trim: true },
   startTime: { type: Date, required: true },
   participantsWithBiddingNumbers: { type: [String] },
+  globallyEligibleBidders: { type: [String] },
   endTime: { type: Date, required: true },
   status: { type: String, enum: [EAuctionStatus.NOT_BEGUN, EAuctionStatus.ACTIVE, EAuctionStatus.CANCELLED, EAuctionStatus.ENDED]},
   participationType: { type: String, default: EParticipationType.EVERYONE, enum: [EParticipationType.CITIZEN_ONLY, EParticipationType.EVERYONE]},
@@ -66,6 +68,7 @@ schema.set('toJSON', {
   virtuals: true,
   versionKey: false,
   transform: function (doc, ret) {
+    delete ret.globallyEligibleBidders;
     delete ret._id;
     delete ret.__t;
   }
@@ -76,6 +79,10 @@ schema.pre('save', async function () {
 
   if (doc.isNew || doc.isModified('title')) {
     doc.titleSlug = generateSlug(doc.title);
+  }
+
+  if (this.isModified('globallyEligibleBidders')) {
+    await doc.$model(EModels.ITEM).updateMany({auctionId: doc._id}, {$set: { eligibleBidders: doc.globallyEligibleBidders }});
   }
 });
 
