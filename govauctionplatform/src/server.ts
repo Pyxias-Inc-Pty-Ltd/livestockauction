@@ -26,7 +26,7 @@ const app = express();
 // Common middlewares
 
 // TODO: Configure PRE-FLIGHT CORS (Set allowed origins)
-app.use(cors({origin: ['http://localhost:5173', 'https://livestock-auction-demo.netlify.app', SERVICE_URLS.clientURI], credentials: true}));
+app.use(cors({origin: ['http://localhost:5173', SERVICE_URLS.clientURI], credentials: true}));
 app.use(express.json());
 app.use(express.urlencoded({extended: true}));
 
