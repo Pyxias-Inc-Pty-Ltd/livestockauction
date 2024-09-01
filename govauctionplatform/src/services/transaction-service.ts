@@ -541,6 +541,11 @@ async function processSuccessfulPaymentFromTingg (input: { accountNumber: string
         throw new NotFoundError('Auction not found');
       }
 
+      // Check if auction has registration fee
+      if (auction.hasRegistrationFee) {
+        auction.globallyEligibleBidders.push(stringBuyerId);
+      }
+
       // Insert buyer into list of eligible bidders
       item.eligibleBidders.push(stringBuyerId);
 
@@ -561,6 +566,10 @@ async function processSuccessfulPaymentFromTingg (input: { accountNumber: string
 
           auction.participantsWithBiddingNumbers.push(`${stringBuyerId}:BIDDER${prefixWithZero(bidderCounter.sequenceValue)}`);
 
+          await auction.save({
+            session: sess
+          });
+        } else if (auction.hasRegistrationFee) {
           await auction.save({
             session: sess
           });
@@ -665,6 +674,11 @@ async function processSuccessfulPaymentFromUniPay(input: { payload: string, tran
         throw new NotFoundError('Auction not found');
       }
 
+      // Check if auction has registration fee
+      if (auction.hasRegistrationFee) {
+        auction.globallyEligibleBidders.push(stringBuyerId);
+      }
+
       // Insert buyer into list of eligible bidders
       item.eligibleBidders.push(stringBuyerId);
 
@@ -685,6 +699,10 @@ async function processSuccessfulPaymentFromUniPay(input: { payload: string, tran
 
           auction.participantsWithBiddingNumbers.push(`${stringBuyerId}:BIDDER${prefixWithZero(bidderCounter.sequenceValue)}`);
 
+          await auction.save({
+            session: sess
+          });
+        } else if (auction.hasRegistrationFee) {
           await auction.save({
             session: sess
           });
