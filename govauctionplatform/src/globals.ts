@@ -415,7 +415,9 @@ export enum ESocketEventCode {
   CREATE_FORUM_COMMENT = "e:9",
   BROADCAST_FORUM_COMMENT = "e:10",
   RETRACT_BID = "e:11",
-  RETRACTED_BID = "e:12"
+  RETRACTED_BID = "e:12",
+  CREATE_NEW_MANUAL_BID_AMOUNT = "e:13",
+  BROADCAST_NEW_MANUAL_BID_AMOUNT = "e:14"
 }
 
 export enum EParticipationType {
