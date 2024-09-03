@@ -167,29 +167,29 @@ router.delete(p.deleteItem, SuperAdminOnly(), async (req: Request, res: Response
   }
 });
 
-/**
- * Set new bid amount manually
- */
-router.put(p.setNewBidAmountManually, SuperAdminOnly(), async (req: Request, res: Response) => {
-  try {
-    const schema = Joi.object().keys({
-      itemId: mongoIdValidation.required().messages({
-        'any.required': '"itemId" is a required field'
-      }),
-      amount: Joi.number().required().messages({
-        'any.required': '"amount" is a required field'
-      })
-    }).required();
+// /**
+//  * Set new bid amount manually
+//  */
+// router.put(p.setNewBidAmountManually, SuperAdminOnly(), async (req: Request, res: Response) => {
+//   try {
+//     const schema = Joi.object().keys({
+//       itemId: mongoIdValidation.required().messages({
+//         'any.required': '"itemId" is a required field'
+//       }),
+//       amount: Joi.number().required().messages({
+//         'any.required': '"amount" is a required field'
+//       })
+//     }).required();
     
-    // Validate schema against input
-    Joi.assert(req.body, schema);
+//     // Validate schema against input
+//     Joi.assert(req.body, schema);
 
-    const item = await itemService.setNewBidAmountManually(req.body as any);
-    return res.status(OK).json({ item });
-  } catch (error) {
-    throw error;
-  }
-});
+//     const item = await itemService.setNewBidAmountManually(req.body as any);
+//     return res.status(OK).json({ item });
+//   } catch (error) {
+//     throw error;
+//   }
+// });
 
 /**
  * Get manual bid amount
