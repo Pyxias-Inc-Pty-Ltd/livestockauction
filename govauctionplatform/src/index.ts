@@ -9,6 +9,7 @@ import { ESocketEventCode, SERVICE_URLS, FIREBASE_SERVICE_ACCOUNT_CREDENTIALS, S
 import bidHandler from './handlers/bid-handler';
 import transactionHandler from './handlers/transaction-handler';
 import messageHandler from './handlers/message-handler';
+import itemHandler from './handlers/item-handler';
 import * as admin from 'firebase-admin';
 import authHandler from './handlers/auth-handler';
 import { CustomError } from './shared/errors';
@@ -82,6 +83,20 @@ const onConnection = (socket: Socket) => {
     try {
       bidHandler.joinBiddingRoomChat(socket, data);
       cb({ status: OK });
+    } catch (error) {
+      if (error instanceof CustomError) {
+        cb({ status: error.HttpStatus, msg: error.message });
+      } else {
+        cb({ status: INTERNAL_SERVER_ERROR });
+      }
+    }
+  });
+  socket.on(ESocketEventCode.CREATE_NEW_MANUAL_BID_AMOUNT, async function (data, cb) {
+    try {
+      console.log("ESocketEventCode.CREATE_NEW_MANUAL_BID_AMOUNT: ", data);
+      const item = await itemHandler.setNewBidAmountManually(socket, data);
+      socket.to(`${item._id.toString()}-bid`).emit(ESocketEventCode.BROADCAST_NEW_MANUAL_BID_AMOUNT, item.manualBidAmount);
+      cb({ status: CREATED });
     } catch (error) {
       if (error instanceof CustomError) {
         cb({ status: error.HttpStatus, msg: error.message });
