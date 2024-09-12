@@ -7,6 +7,7 @@ import { parsePhoneNumber } from 'libphonenumber-js';
 import * as luxon from 'luxon';
 import { COUNTRY_PHONE_CODES } from '../globals';
 import { randomBytes } from 'crypto';
+import youtubeDataAPIConfig from '../config/youtube';
 
 export const isoAlpha2CountryValidation
   = Joi.string().regex(/^[A-Z]{2}$/);
@@ -338,4 +339,32 @@ export function prefixWithZero(input: number): string {
     return '0' + input;
   }
   return input.toString();
+}
+
+export async function createYoutubeBroadcast (title: string, scheduledStartTime: string, scheduledEndTime: string) {
+  const yt = await youtubeDataAPIConfig.getAuth();
+
+  const response = await yt.liveBroadcasts.insert({
+    part: 'snippet,contentDetails,status',
+    requestBody: {
+      snippet: {
+        title,
+        scheduledStartTime,
+        scheduledEndTime
+      },
+      status: {
+        privacyStatus: 'public'
+      },
+      contentDetails: {
+        enableAutoStart: true
+      }
+    }
+  });
+
+  const stream = await yt.liveStreams.list({
+    part: 'snippet',
+    id: response.data.id
+  });
+  
+  console.log(stream.data);
 }
