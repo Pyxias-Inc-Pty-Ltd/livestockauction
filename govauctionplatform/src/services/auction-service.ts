@@ -1,5 +1,5 @@
 import { IAdmin } from "../models/user-model";
-import { isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
+import { createYoutubeBroadcast, isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession, Types } from 'mongoose';
@@ -40,6 +40,10 @@ async function createAuction(currentUser: IAdmin, input: IAuctionInput): Promise
     // Check if exists
     if (!category) {
       throw new NotFoundError('Category not found');
+    }
+
+    if (newAuction.isBeingLivestreamed) {
+      await createYoutubeBroadcast(newAuction.title, new Date(newAuction.startTime).toISOString(), new Date(newAuction.endTime).toISOString());
     }
 
     // Start session and mongo acid transaction
