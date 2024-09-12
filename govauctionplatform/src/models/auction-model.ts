@@ -22,7 +22,7 @@ export interface IAuction extends Document {
   endTime: Date;
   status: auctionStatus;
   isBeingLivestreamed: boolean;
-  livestreamUrl?: string;
+  streamKey?: string;
   createdDate: any;
   updatedDate: any;
 }
@@ -38,7 +38,7 @@ export interface IAuctionInput {
   categoryId: Schema.Types.ObjectId;
   terms: string;
   isBeingLivestreamed: boolean;
-  livestreamUrl?: string;
+  streamKey?: string;
   startTime: Date;
   endTime: Date;
 }
@@ -63,20 +63,9 @@ const schema = new Schema<IAuction>({
   status: { type: String, enum: [EAuctionStatus.NOT_BEGUN, EAuctionStatus.ACTIVE, EAuctionStatus.CANCELLED, EAuctionStatus.ENDED]},
   participationType: { type: String, default: EParticipationType.EVERYONE, enum: [EParticipationType.CITIZEN_ONLY, EParticipationType.EVERYONE]},
   isBeingLivestreamed: { type: Boolean, required: true , default: false},
-  livestreamUrl: {type: String, required: function (): boolean {
+  streamKey: {type: String, required: function (): boolean {
     return (this as IAuction).isBeingLivestreamed;
-  }, validate: {
-    msg: 'Valid URL must be supplied.',
-      validator: function (v: string): boolean {
-        // Be less stringent in development
-        if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) { 
-          return isURL(v, {protocols: ['https']});
-        } else {
-          return true;
-        }
-      }
-    }
-  },
+  }},
 }, {
   timestamps: {
     createdAt: "createdDate",
