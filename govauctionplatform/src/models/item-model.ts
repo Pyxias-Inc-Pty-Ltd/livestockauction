@@ -130,7 +130,7 @@ schema.pre('save', async function () {
   const doc = this;
 
   if (doc.isNew) {
-    const auction = await doc.$model(EModels.AUCTION).findById({auction: doc.auctionId}, {globallyEligibleBidders: 1}) as IAuction | null;
+    const auction = await doc.$model(EModels.AUCTION).findById(doc.auctionId, {globallyEligibleBidders: 1}) as IAuction | null;
 
     // Check if exists
     if (!auction) {
@@ -146,7 +146,7 @@ schema.pre('save', async function () {
 
   if (doc.isNew || doc.isModified('gender') || doc.isModified('isLivestock')) {
     if (doc.isLivestock && doc.gender === 'FEMALE') {
-      const category = await doc.$model(EModels.CATEGORY).findById({phone: doc.categoryId}, {nameSlug: 1}) as ICategory | null;
+      const category = await doc.$model(EModels.CATEGORY).findById(doc.categoryId, {nameSlug: 1}) as ICategory | null;
 
       // Check if exists
       if (!category) {
