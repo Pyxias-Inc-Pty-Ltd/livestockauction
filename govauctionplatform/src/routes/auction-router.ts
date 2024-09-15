@@ -39,6 +39,13 @@ router.post(p.createAuction, SuperAdminOnly(), async (req: Request, res: Respons
       isBeingLivestreamed: Joi.boolean().required().messages({
         'any.required': '"isBeingLivestreamed" is a required field'
       }),
+      streamUrl: Joi.string().uri().when('isBeingLivestreamed', {
+        is: true,
+        then: Joi.required().messages({
+          'any.required': '"streamUrl" is a required field'
+        }),
+        otherwise: Joi.optional()
+      }),
       hasRegistrationFee: Joi.boolean().required().messages({
         'any.required': '"hasRegistrationFee" is a required field'
       }),
