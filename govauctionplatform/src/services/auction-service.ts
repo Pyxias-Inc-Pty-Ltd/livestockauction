@@ -42,10 +42,6 @@ async function createAuction(currentUser: IAdmin, input: IAuctionInput): Promise
       throw new NotFoundError('Category not found');
     }
 
-    if (newAuction.isBeingLivestreamed) {
-      await createYoutubeBroadcast(newAuction.title, new Date(newAuction.startTime).toISOString(), new Date(newAuction.endTime).toISOString());
-    }
-
     // Start session and mongo acid transaction
     sess = await startSession();
 
