@@ -1,5 +1,5 @@
 import { IAdmin } from "../models/user-model";
-import { createYoutubeBroadcast, isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
+import { isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession, Types } from 'mongoose';
