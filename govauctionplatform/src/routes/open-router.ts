@@ -7,7 +7,6 @@ import transactionService from '../services/transaction-service';
 import auctionService from '../services/auction-service';
 import categoryService from '../services/category-service';
 import itemService from '../services/item-service';
-import breedService from '../services/breed-service';
 import {
   ESortOrderType,
   EAuctionSortType,
@@ -56,29 +55,6 @@ router.get(p.getCategoryById, async (req: Request, res: Response) => {
     const { id } = req.query;
     const category = await categoryService.getById(id as string);
     return res.status(OK).json({ category });
-  } catch (error) {
-    throw error;
-  }
-});
-
-/**
- * Get a breed by id.
- */
-router.get(p.getBreedById, async (req: Request, res: Response) => {
-  try {
-    // Query checks
-    const qSchema = Joi.object().keys({
-      id: Joi.string().required().messages({
-        'any.required': '"id" is a required field'
-      })
-    }).required();
-
-    // Validate schema against query
-    Joi.assert(req.query, qSchema);
-
-    const { id } = req.query;
-    const breed = await breedService.getById(id as string);
-    return res.status(OK).json({ breed });
   } catch (error) {
     throw error;
   }

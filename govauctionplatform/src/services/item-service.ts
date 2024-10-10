@@ -1,10 +1,10 @@
-import { IAdmin, IUser } from "../models/user-model";
+import { IAdmin } from "../models/user-model";
 import { IItem, IItemInput, Item } from "../models/item-model";
-import { isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
+import { formatBAITSAnimalEID, getAnimalBreedById, getAnimalByEID, isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
 import { ForbiddenError, InternalServerError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { Schema } from 'mongoose';
-import { EItemSortType, EItemStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { EGenderType, EItemSortType, EItemStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
 import auctionService from "./auction-service";
 import { ClientSession, startSession } from 'mongoose';
 import bidService from "./bid-service";
@@ -21,6 +21,17 @@ async function createItem(currentUser: IAdmin, input: IItemInput): Promise<IItem
 
   try {
     const newItem = new Item(input);
+
+    if (newItem.isLivestock) {
+      const formattedEID = formatBAITSAnimalEID(input.animalEID!)
+      const animalData = await getAnimalByEID(formattedEID);
+      const breedData = await getAnimalBreedById(animalData.AnimalBreedID);
+
+      newItem.dob = animalData.DateOfBirth;
+      newItem.gender = animalData.Gender === "Female" ? EGenderType.FEMALE : EGenderType.MALE;
+      newItem.breed = breedData.AnimalBreedDescription;
+      newItem.baitsDump = JSON.stringify(animalData);
+    }
 
     newItem.creatorId = currentUser.id;
 
@@ -182,8 +193,7 @@ async function getManualBidAmount(itemId: string | Schema.Types.ObjectId): Promi
 async function getById(id: string | Schema.Types.ObjectId, projection?: any): Promise<IItem | null> {
   try {
     if (isMongoId(id.toString())) {
-      const item = await Item.findById(id, projection)
-        .populate('breedId');
+      const item = await Item.findById(id, projection);
       return item;
     } else {
       return null;

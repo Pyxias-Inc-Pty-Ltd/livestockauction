@@ -18,7 +18,8 @@ export interface IItem extends Document {
   studRegistrationNumber?: string;
   numberOfCalvesBorn?: number;
   gender?: genderType;
-  breedId?: Schema.Types.ObjectId;
+  breed?: string;
+  animalEID?: string;
   title: string;
   description: string;
   terms: string;
@@ -36,6 +37,7 @@ export interface IItem extends Document {
   endTime: Date;
   version: number;
   status: itemStatus;
+  baitsDump?: string;
   createdDate: any;
   updatedDate: any;
 }
@@ -54,9 +56,11 @@ export interface IItemInput {
   studRegistrationNumber?: string;
   isLivestock: boolean;
   gender?: genderType;
-  breedId?: Schema.Types.ObjectId;
+  animalEID?: string;
+  breed?: string;
   title: string;
   description: string;
+  baitsDump?: string;
   terms: string;
   startingBid: number;
   status: itemStatus;
@@ -73,6 +77,7 @@ const schema = new Schema<IItem>({
   sellerId: { type: Schema.Types.ObjectId, required: true, ref: EModels.SELLER },
   winningBidder: { type: Schema.Types.ObjectId, ref: EModels.BIDDER },
   title: { type: String, required: true, trim: true },
+  baitsDump: {type: String, trim: true},
   titleSlug: {type: String, trim: true},
   description: { type: String, required: true, trim: true },
   terms: { type: String, required: true, trim: true },
@@ -91,10 +96,13 @@ const schema = new Schema<IItem>({
   status: { type: String, enum: [EItemStatus.NOT_BEGUN, EItemStatus.ACTIVE, EItemStatus.CANCELLED, EItemStatus.ENDED]},
   eligibleBidders: [String],
   isLivestock: { type: Boolean, default: true, required: true },
+  animalEID: {type: String, trim: true, required: function (): boolean {
+    return (this as IItem).isLivestock;
+  }},
   gender: { type: String, enum: [EGenderType.FEMALE, EGenderType.MALE, EGenderType.MIXED], required: function (): boolean {
     return (this as IItem).isLivestock;
   } },
-  breedId: { type: Schema.Types.ObjectId, ref: EModels.BREED, required: function (): boolean {
+  breed: { type: String, trim: true, required: function (): boolean {
     return (this as IItem).isLivestock;
   } },
   isAStud: { type: Boolean, default: false, required: function (): boolean {

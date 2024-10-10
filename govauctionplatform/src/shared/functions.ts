@@ -4,15 +4,18 @@ import isEmail from 'validator/lib/isEmail';
 import isMongoId from 'validator/lib/isMongoId'
 import isISO8601 from 'validator/lib/isISO8601';
 import { parsePhoneNumber } from 'libphonenumber-js';
+import { compare, genSalt, hash } from 'bcrypt';
 import * as luxon from 'luxon';
-import { COUNTRY_PHONE_CODES } from '../globals';
+import { BAITS_API_TOKEN, COUNTRY_PHONE_CODES, SALT_ROUNDS, SERVICE_URLS } from '../globals';
 import { randomBytes } from 'crypto';
+import { InternalServerError, NotFoundError } from './errors';
+import * as axios from 'axios';
 
 export const isoAlpha2CountryValidation
   = Joi.string().regex(/^[A-Z]{2}$/);
 export const isoAlpha3CurrencyValidation
   = Joi.string().regex(/^[A-Z]{3}$/);
-  export const iataCodeValidation
+export const iataCodeValidation
   = Joi.string().regex(/^[A-Z]{3}$/);
 export const parcelDimensionValidation
   = Joi.number().greater(-1);
@@ -74,7 +77,7 @@ export const emailValidation
       return v;
     }
   });
-  export const userNameValidation
+export const userNameValidation
   = Joi.string().custom((v: string, helper) => {
     // Check length
     if (v.length < 5 || v.length > 15) {
@@ -87,7 +90,7 @@ export const emailValidation
     }
     return v;
   });
-  export const phoneValidation
+export const phoneValidation
   = Joi.string().custom((v: string, helper) => {
     try {
       const phoneNumberTokens = v.split(' ');
@@ -105,7 +108,7 @@ export const emailValidation
       if (!needle) {
         throw new Error('Invalid phone');
       } else {
-        const phoneNumber = parsePhoneNumber(v, needle.iso as any);   
+        const phoneNumber = parsePhoneNumber(v, needle.iso as any);
         // Check if phone number is valid
         if (!phoneNumber.isValid()) {
           throw new Error('Invalid phone');
@@ -122,7 +125,7 @@ export const emailValidation
 export const isoDateValidation
   = Joi.string().custom((v: string, helper) => {
     if (!isISO8601(v)) {
-      return helper.message({custom: 'Invalid ISO8601 date'});
+      return helper.message({ custom: 'Invalid ISO8601 date' });
     } else {
       return v;
     }
@@ -138,24 +141,24 @@ export const mongoIdValidation
 export const isStringNumberLike
   = Joi.string().custom((v: any, helper) => {
     if (isNaN(v)) {
-      return helper.message({custom: 'Value not number like'});
+      return helper.message({ custom: 'Value not number like' });
     } else {
       return v;
     }
   });
-  export const isArrayLike
+export const isArrayLike
   = Joi.string().custom((v: any, helper) => {
     if (typeof v === 'string') {
 
       if (v.charAt(0) !== '[') {
-        return helper.message({custom: 'Value not array like'});
+        return helper.message({ custom: 'Value not array like' });
       }
       if (v.charAt(v.length - 1) !== ']') {
-        return helper.message({custom: 'Value not array like'});
+        return helper.message({ custom: 'Value not array like' });
       }
       return v;
     } else {
-      return helper.message({custom: 'Value not a string array'});
+      return helper.message({ custom: 'Value not a string array' });
     }
   });
 export const isStringBooleanLike
@@ -165,7 +168,7 @@ export const isStringBooleanLike
     } else if (v.toLowerCase() === "false") {
       return v;
     } else {
-      return helper.message({custom: 'Value not boolean like'});
+      return helper.message({ custom: 'Value not boolean like' });
     }
   });
 
@@ -173,7 +176,7 @@ export const isStringBooleanLike
  * Sorts an array of numbers by asc order
  * @param list
  */
-export function sortNumberListAsc (list: Array<number>): Array<number> {
+export function sortNumberListAsc(list: Array<number>): Array<number> {
   return list.sort((a, b) => {
     if (a < b) {
       return -1;
@@ -201,7 +204,7 @@ export function formatTimeGoogleCalendar(date: Date): string {
  * @param v 
  * @returns true or false
  */
-function isLatitudeCoordinate (v: number): boolean {
+function isLatitudeCoordinate(v: number): boolean {
   return (v > -90) && (v < 90);
 }
 
@@ -211,7 +214,7 @@ function isLatitudeCoordinate (v: number): boolean {
  * @param v 
  * @returns true or false
  */
-function isLongitudeCoordinate (v: number): boolean {
+function isLongitudeCoordinate(v: number): boolean {
   return (v > -180) && (v < 180);
 }
 
@@ -219,7 +222,7 @@ function isLongitudeCoordinate (v: number): boolean {
  * Creates a slug from a string value e.g. Hello world becomes hello_world
  * @param { string } v The value to create a slug from
  */
-export function generateSlug (v: string): string {
+export function generateSlug(v: string): string {
   // Check if string
   if (Object.prototype.toString.call(v) !== "[object String]") {
     throw new Error("Argument supplied must be a string");
@@ -321,7 +324,7 @@ export function formatPhoneTinggNumber(phoneNumber: string): string {
  * @returns 
  */
 export function generateUniPayAppPaymentURL(applicationId: string): string {
-  const payload = {"a":"d","b":`${applicationId}:null`};
+  const payload = { "a": "d", "b": `${applicationId}:null` };
   const jsonString = JSON.stringify(payload);
   const base64Encoded = Buffer.from(jsonString).toString('base64');
   return `https://unipay.africa/misc/${base64Encoded}`;
@@ -338,4 +341,240 @@ export function prefixWithZero(input: number): string {
     return '0' + input;
   }
   return input.toString();
+}
+
+/**
+ * Fetches animal data from the BAITS API by Electronic Identification (EID) tag number.
+ *
+ * This function uses Axios to make an asynchronous GET request to the BAITS API.
+ *
+ * @param {string} tagNumber - The Electronic Identification (EID) tag number of the animal.
+ * @return {Promise<object>} A promise that resolves with the animal data object on success,
+ * or rejects with an error object. The structure of the animal data object depends on the BAITS API response.
+ * @throws {NotFoundError}  If the BAITS API returns a 404 status code (resource not found).
+ * @throws {Error}  If the BAITS API returns any other unexpected status code or there's an error during the request.
+ */
+export async function getAnimalByEID(tagNumber: string): Promise<any> {
+  try {
+    const response = await axios.default.get(
+      `${SERVICE_URLS.baits3URICore}/GetAnimalByEID`,
+      {
+        params: { TagNumber: tagNumber },
+        headers: {
+          'x-api-key': BAITS_API_TOKEN
+        }
+      }
+    );
+
+    if (response.status === 200) {
+      return response.data; // Return the animal data from BAITS API
+    } else if (response.status === 404) {
+      throw new NotFoundError('Resource not found on BAITS API');
+    } else {
+      throw new Error('Invalid response from BAITS API');
+    }
+  } catch (error) {
+    throw error; // Rethrow the error for the caller to handle
+  }
+}
+
+/**
+ * Fetches animal data from the BAITS API by Modisar Animal ID.
+ *
+ * This function uses Axios to make an asynchronous GET request to the BAITS API.
+ *
+ * @param {string} modisarId - The Modisar Animal ID.
+ * @return {Promise<object>} A promise that resolves with the animal data object on success,
+ * or rejects with an error object. The structure of the animal data object depends on the BAITS API response.
+ * @throws {NotFoundError}  If the BAITS API returns a 404 status code (resource not found).
+ * @throws {Error}  If the BAITS API returns any other unexpected status code or there's an error during the request.
+ */
+export async function getAnimalByModisarId(modisarId: string): Promise<any> {
+  try {
+    const response = await axios.default.get(
+      `${SERVICE_URLS.baits3URICore}/Animals/${modisarId}/details`,
+      {
+        headers: {
+          'x-api-key': BAITS_API_TOKEN
+        }
+      }
+    );
+
+    if (response.status === 200) {
+      return response.data; // Return the animal data from BAITS API
+    } else if (response.status === 404) {
+      throw new NotFoundError('Resource not found on BAITS API');
+    } else {
+      throw new Error('Invalid response from BAITS API');
+    }
+  } catch (error) {
+    throw error; // Rethrow the error for the caller to handle
+  }
+}
+
+/**
+ * Fetches animal breed data from the BAITS API by breed ID.
+ *
+ * This function uses Axios to make an asynchronous GET request to the BAITS API.
+ *
+ * @param {number} breedId - The unique identifier of the animal breed.
+ * @return {Promise<object>} A promise that resolves with the animal breed data object on success,
+ * or rejects with an error object. The structure of the breed data object depends on the BAITS API response.
+ * @throws {NotFoundError}  If the BAITS API returns a 404 status code (resource not found).
+ * @throws {Error}  If the BAITS API returns any other unexpected status code or there's an error during the request.
+ */
+export async function getAnimalBreedById(breedId: number): Promise<any> {
+  try {
+    const response = await axios.default.get(
+      `${SERVICE_URLS.baits3URICore}/AnimalBreeds/${breedId}`,
+      {
+        headers: {
+          'x-api-key': BAITS_API_TOKEN
+        }
+      }
+    );
+
+    if (response.status === 200) {
+      return response.data; // Return the breed data from BAITS API
+    } else if (response.status === 404) {
+      throw new NotFoundError('Resource not found on BAITS API');
+    } else {
+      throw new Error('Invalid response from BAITS API');
+    }
+  } catch (error) {
+    throw error; // Rethrow the error for the caller to handle
+  }
+}
+
+/**
+ * Fetches keeper information from the BAITS API by their registration number.
+ *
+ * This function uses Axios to make an asynchronous GET request to the BAITS API.
+ *
+ * @param {string} keeperRegNumber - The unique registration number of the keeper.
+ * @return {Promise<object>} A promise that resolves with the keeper data object on success,
+ * or rejects with an error object. The structure of the keeper data object depends on the BAITS API response.
+ * @throws {NotFoundError}  If the BAITS API returns a 404 status code (resource not found).
+ * @throws {Error}  If the BAITS API returns any other unexpected status code or there's an error during the request.
+ */
+export async function getKeeperByRegNumber(keeperRegNumber: string): Promise<any> {
+  try {
+    const response = await axios.default.get(
+      `${SERVICE_URLS.baits3URICore}/Keepers/KeeperID-byKeeperRegNumber`,
+      {
+        params: { KeeperRegNumber: keeperRegNumber },
+        headers: {
+          'x-api-key': BAITS_API_TOKEN
+        }
+      }
+    );
+
+    console.log("Logged Response: ", response.status);
+
+    if (response.status === 200) {
+      return response.data; // Return the breed data from BAITS API
+    } else if (response.status === 404) {
+      throw new NotFoundError('Resource not found on BAITS API');
+    } else {
+      throw new InternalServerError('Invalid response from BAITS API');
+    }
+  } catch (error) {
+    throw error; // Rethrow the error for the caller to handle
+  }
+}
+
+/**
+ * Fetches farmer information from the BAITS API by keeper ID.
+ *
+ * This function uses Axios to make an asynchronous GET request to the BAITS API.
+ *
+ * @param {number} keeperId - The unique identifier of the keeper.
+ * @return {Promise<object>} A promise that resolves with the farmer data object on success,
+ * or rejects with an error object. The structure of the farmer data object depends on the BAITS API response.
+ * @throws {NotFoundError}  If the BAITS API returns a 404 status code (resource not found).
+ * @throws {Error}  If the BAITS API returns any other unexpected status code or there's an error during the request.
+ */
+export async function getFarmerByKeeperId(keeperId: number): Promise<any> {
+  try {
+    const response = await axios.default.get(
+      `${SERVICE_URLS.baits3URICore}/Keepers/${keeperId}`,
+      {
+        headers: {
+          'x-api-key': BAITS_API_TOKEN
+        }
+      }
+    );
+
+    if (response.status === 200) {
+      return response.data; // Return the breed data from BAITS API
+    } else if (response.status === 404) {
+      throw new NotFoundError('Resource not found on BAITS API');
+    } else {
+      throw new InternalServerError('Invalid response from BAITS API');
+    }
+  } catch (error) {
+    throw error; // Rethrow the error for the caller to handle
+  }
+}
+
+/**
+ * Formats a BAITS Animal EID by inserting a space after the 4th character.
+ * 
+ * The input string should be exactly 16 characters long. If the length is
+ * not 16 characters, an error is thrown.
+ * 
+ * @param {string} eid - The BAITS Animal EID string to format.
+ * @return {string} - The formatted EID with a space between the 4th and 5th character.
+ * @throws {Error} - If the input EID is not 16 characters long.
+ * 
+ */
+export function formatBAITSAnimalEID(eid: string): string {
+  if (eid.length !== 16) {
+    throw new Error('Invalid EID format. EID must be 16 characters long.');
+  }
+
+  // Insert a space after the 4th character
+  return `${eid.slice(0, 4)} ${eid.slice(4)}`;
+}
+
+/**
+ * Generates a 6-digit OTP (One-Time Password) code using crypto.randomBytes.
+ *
+ * @return {string} A 6-digit OTP code.
+ */
+export function generateOTP(): string {
+  // Generate random bytes
+  const randomBuffer = randomBytes(4); // 4 bytes is enough to generate a large random number
+
+  // Convert to a numeric value (using base 10)
+  const otp = parseInt(randomBuffer.toString('hex'), 16) % 1000000; // Ensures it's a 6-digit number
+
+  // Ensure OTP is padded to 6 digits
+  return otp.toString().padStart(6, '0');
+}
+
+/**
+ * Hashes a given OTP using bcrypt.
+ *
+ * The function generates a salt using the specified number of salt rounds and then hashes the OTP.
+ * 
+ * @param {string} otp - The One-Time Password (OTP) to be hashed.
+ * @return {Promise<string>} - The hashed OTP.
+ */
+export async function hashOTP(otp: string): Promise<string> {
+  const salt = await genSalt(SALT_ROUNDS);
+  return await hash(otp, salt);
+}
+
+/**
+ * Verifies an OTP by comparing the input OTP to the stored hashed OTP.
+ * 
+ * This function uses bcrypt's `compare` method to securely compare the input OTP with the stored hash.
+ *
+ * @param {string} inputOTP - The OTP provided by the user to verify.
+ * @param {string} storedHash - The hashed OTP stored in the database.
+ * @return {Promise<boolean>} - Returns `true` if the OTP matches the hash, otherwise `false`.
+ */
+export async function verifyOTP(inputOTP: string, storedHash: string): Promise<boolean> {
+  return await compare(inputOTP, storedHash);
 }

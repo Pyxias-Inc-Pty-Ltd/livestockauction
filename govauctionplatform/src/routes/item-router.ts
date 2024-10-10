@@ -69,24 +69,10 @@ router.post(p.createItem, SuperAdminOnly(), async (req: Request, res: Response) 
       isLivestock: Joi.boolean().required().messages({
         'any.required': '"isLivestock" is a required field'
       }),
-      dob: Joi.string().isoDate().when('isLivestock', {
+      animalEID: Joi.string().when('isLivestock', {
         is: true,
         then: Joi.required().messages({
-          'any.required': '"dob" is a required field'
-        }),
-        otherwise: Joi.optional()
-      }),
-      gender: Joi.string().valid(EGenderType.FEMALE, EGenderType.MALE, EGenderType.MIXED).when('isLivestock', {
-        is: true,
-        then: Joi.required().messages({
-          'any.required': '"gender" is a required field'
-        }),
-        otherwise: Joi.optional()
-      }),
-      breedId: mongoIdValidation.when('isLivestock', {
-        is: true,
-        then: Joi.required().messages({
-          'any.required': '"breedId" is a required field'
+          'any.required': '"animalEID" is a required field'
         }),
         otherwise: Joi.optional()
       }),

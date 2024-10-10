@@ -1,4 +1,4 @@
-import { IBidder } from '../models/user-model';
+import { IAdmin, IBidder } from '../models/user-model';
 import transactionService from '../services/transaction-service';
 import { BidderOnly, SuperAdminOnly } from '../shared/middleware';
 import * as Joi from 'joi';
@@ -94,7 +94,7 @@ router.post(p.initiatePurchaseItemUsingBuyoutPrice, BidderOnly(), async (req: Re
 /**
  * Get transactions.
  */
-router.get(p.getTransactions, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.get(p.getTransactions, SuperAdminOnly(), BidderOnly(), async (req: Request, res: Response) => {
   try {
 
     const conditions = new Map<string, any>();
@@ -150,7 +150,7 @@ router.get(p.getTransactions, SuperAdminOnly(), async (req: Request, res: Respon
       conditions.set('status', status);
     }
 
-    const transactions = await transactionService.getTransactions(conditions);
+    const transactions = await transactionService.getTransactions(req.user as IAdmin | IBidder, conditions);
     return res.status(OK).json({transactions});
   } catch (error) {
     throw error;

@@ -1,4 +1,4 @@
-import { IBidder } from "../models/user-model";
+import { IAdmin, IBidder } from "../models/user-model";
 import { ForbiddenError, InternalServerError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession } from 'mongoose';
@@ -771,7 +771,7 @@ async function getById(id: string | Schema.Types.ObjectId, projection?: any): Pr
  * @param projection
  * @returns 
  */
-async function getTransactions(conditions: Map<string, any>, projection?: any): Promise<ITransaction[]> {
+async function getTransactions(currentUser: IAdmin | IBidder, conditions: Map<string, any>, projection?: any): Promise<ITransaction[]> {
   try {
 
     let _limit: number = LIST_LIMIT_NUMBER;
@@ -798,8 +798,12 @@ async function getTransactions(conditions: Map<string, any>, projection?: any): 
       q.where({ itemId: conditions.get('itemId') });
     }
 
-    if (conditions.get('buyerId')) {
-      q.where({ buyerId: conditions.get('buyerId') });
+    if (currentUser.userType === "BIDDER") {
+      q.where({ buyerId: currentUser._id });
+    } else {
+      if (conditions.get('buyerId')) {
+        q.where({ buyerId: conditions.get('buyerId') });
+      }
     }
 
     if (conditions.get('sellerId')) {

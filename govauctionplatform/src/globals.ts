@@ -39,6 +39,7 @@ export const FIREBASE_SERVICE_ACCOUNT_CREDENTIALS = JSON.stringify({
 export const EXPRESS_SESSION_SECRET = process.env.EXPRESS_SESSION_SECRET as string;
 const MONGO_DB_PASS = process.env.MONGO_DB_PASS as string;
 const MONGO_DB_USER = process.env.MONGO_DB_USER as string;
+export const BAITS_API_TOKEN = process.env.BAITS_API_TOKEN as string;
 // export const UNIPAY_APP_AUTH_TOKEN = process.env.UNIPAY_APP_AUTH_TOKEN as string;
 export const UNIPAY_APP_AUTH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWJqZWN0IjoiNjY3YzVmOTMwM2YzZjEyODRhMWI0OGVhIiwic2NvcGUiOiJBUEkiLCJpYXQiOjE3MTk0MjY5NjN9.xi1tGljRdbpFzamQlD1G4TVYK1gWt6xyEAXrT4MVpko";
 export const SEND_GRID_API_KEY = "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";
@@ -46,7 +47,8 @@ export const SERVICE_URLS: {[key: string]: string} = {
   mongoDBURI: `mongodb://localhost:27017/bwgovauctionplatform?retryWrites=true&w=majority`,
   tinggCreatePaymentLinkURI: "https://paybylink-apis.pay.tingg.africa/paybylink-apis/public/bill/create",
   unipayInitiatePaymentApplication: "http://164.92.135.170:8888/api/applications/initiatePaymentApplicationByApp",
-  clientURI: "https://onlineauction-uat.gov.bw"
+  clientURI: "https://onlineauction-uat.gov.bw",
+  baits3URICore: "http://bifrost-baits3.gov.bw:90/api/core/v1/api"
 }
 
 export const COUNTRY_PHONE_CODES = [{"country":"Afghanistan","code":"93","iso":"AF"},
@@ -334,7 +336,6 @@ export enum ETransactionType {
 
 export enum EModels {
   ADMIN = "Admin",
-  BREED = "Breed",
   USER = "User",
   BIDDER = "Bidder",
   SELLER = "Seller",
@@ -435,10 +436,6 @@ export enum EGenderType {
   MALE = "MALE",
   FEMALE = "FEMALE",
   MIXED = "MIXED"
-}
-
-export enum EBreedSortType {
-  NAME = "NAME"
 }
 
 export enum EAnimalSpecies {
@@ -679,6 +676,23 @@ export const refundFailedTemplate = `
     <p>Dear [UserName],</p>
     <p>We regret to inform you that the refund process for the auction item [ItemName] has failed.</p>
     <p>Please contact our support team for assistance and further information.</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
+export const keeperIDVerificationTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>BAITS Keeper ID Verification</title>
+  </head>
+  <body>
+    <p>Dear[UserName],</p>
+    <p>Your One-Time Password (OTP) for Keeper ID verification is <strong>[otp]</strong>.</p>
+    <p>Please enter this OTP on the verification page to complete your verification process.</p>
+    <p>If you did not request this, please ignore this email.</p>
     <p>Best regards,</p>
     <p>The Botswana Government Auction Platform Team</p>
   </body>

@@ -1,10 +1,10 @@
-import { SuperAdminOnly } from '../shared/middleware';
+import { BidderOnly, SuperAdminOnly } from '../shared/middleware';
 import { Request, Response, Router } from 'express';
 import * as Joi from 'joi';
 import StatusCodes from 'http-status-codes';
 import { isStringNumberLike, mongoIdValidation, phoneValidation } from '../shared/functions';
 import userService from '../services/user-service';
-import { IAdmin, IUser } from '../models/user-model';
+import { IAdmin, IBidder, IUser } from '../models/user-model';
 import { InternalServerError } from '../shared/errors';
 import { ESortOrderType, EUserSortType, EUserType } from '../globals';
 
@@ -27,7 +27,9 @@ export const p = {
   deleteAdminById: '/deleteAdminById',
   deleteBidderById: '/deleteBidderById',
   setFirebaseTokenId: '/setFirebaseTokenId',
-  getUserById: '/getUserById'
+  getUserById: '/getUserById',
+  beginBAITSKeeperIDVerification: '/beginBAITSKeeperIDVerification',
+  finishBAITSKeeperIDVerification: '/finishBAITSKeeperIDVerification'
 } as const;
 
 /**
@@ -94,6 +96,52 @@ router.post(p.createSeller, SuperAdminOnly(), async (req: Request, res: Response
 
     const user = await userService.createSeller(req.user as IAdmin, req.body as any);
     return res.status(CREATED).json({user});
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Begin BAITS keeper Id verification
+ */
+router.post(p.beginBAITSKeeperIDVerification, BidderOnly(), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      keeperId: Joi.string().required().messages({
+        'any.required': '"keeperId" is a required field'
+      })
+    }).required();
+    
+    // Validate schema against input
+    Joi.assert(req.body, schema);
+
+    const { keeperId } = req.body;
+
+    await userService.beginBAITSKeeperIDVerification(req.user as IBidder, keeperId);
+    return res.status(OK).json({"message":"ok"});
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Finish BAITS keeper Id verification
+ */
+router.post(p.finishBAITSKeeperIDVerification, BidderOnly(), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      otp: Joi.string().required().messages({
+        'any.required': '"otp" is a required field'
+      })
+    }).required();
+    
+    // Validate schema against input
+    Joi.assert(req.body, schema);
+
+    const { otp } = req.body;
+
+    const result = await userService.finishBAITSKeeperIDVerification(req.user as IBidder, otp);
+    return res.status(OK).json({"result":result});
   } catch (error) {
     throw error;
   }

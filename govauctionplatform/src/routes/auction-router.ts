@@ -164,7 +164,7 @@ router.get(p.getAuctionReport, SuperAdminOnly(), async (req: Request, res: Respo
 /**
  * Get a list of required attributes
  */
-router.get(p.getRequiredAttributes, SuperAdminOnly(), SellerOnly(), async (req: Request, res: Response) => {
+router.get(p.getRequiredAttributes, SuperAdminOnly(), async (req: Request, res: Response) => {
   try {
     const requiredAttributes = await auctionService.getRequiredAttributes();
     return res.status(OK).json({ requiredAttributes });

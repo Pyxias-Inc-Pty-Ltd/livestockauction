@@ -1,9 +1,10 @@
 import { ConflictError, ForbiddenError } from "../shared/errors";
 import { IAdmin, IUser, User, IAdminInput, Admin, IBidder, IBidderInput, Bidder, ISeller, ISellerInput, Seller } from "../models/user-model";
-import { EAdminType, ESortOrderType, EUserSortType, EUserType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, SALT_ROUNDS } from "../globals";
+import { EAdminType, ESortOrderType, EUserSortType, EUserType, keeperIDVerificationTemplate, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, SALT_ROUNDS, VERIFIED_EMAIL } from "../globals";
 import { genSalt, hash } from 'bcrypt';
-import { generateRandomPassword } from "../shared/functions";
+import { generateOTP, generateRandomPassword, getFarmerByKeeperId, getKeeperByRegNumber, hashOTP, verifyOTP } from "../shared/functions";
 import { Schema } from "mongoose";
+import { sgMail } from "src";
 
 /**
  * Get a user by id.
@@ -252,11 +253,74 @@ async function getUserReport() {
   }
 }
 
+/**
+ * Begin BAITS keeper verification.
+ * 
+ * @param currentUser
+ * @param keeperId
+ * @returns 
+ */
+async function beginBAITSKeeperIDVerification(currentUser: IBidder, keeperId: string): Promise<void> {
+  try {
+    const keeper = await getKeeperByRegNumber(keeperId);
+    const farmer = await getFarmerByKeeperId(keeper.KeeperID);
+    const otp = generateOTP();
+
+    console.log('otp: ', otp)
+    
+    let htmlContent = "";
+
+    htmlContent = keeperIDVerificationTemplate.replace('[UserName]', currentUser.firstName);
+    htmlContent = keeperIDVerificationTemplate.replace('[otp]', otp);
+
+    currentUser.keeperIdHash = await hashOTP(otp);
+    currentUser.keeperId = keeperId;
+
+    await currentUser.save();
+
+    if (farmer.EmailID) {
+      await sgMail.send({
+        to: farmer.EmailID,
+        from: VERIFIED_EMAIL,
+        subject: 'BAITS Keeper ID verification',
+        html: htmlContent
+      });
+    }
+
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Ends the BAITS keeper verification cycle.
+ * 
+ * @param currentUser
+ * @param otp
+ * @returns 
+ */
+async function finishBAITSKeeperIDVerification(currentUser: IBidder, otp: string): Promise<boolean> {
+  try {
+    const result = await verifyOTP(otp, currentUser.keeperIdHash);
+
+    if (result) {
+      currentUser.isKeeperIdVerified = true;
+      await currentUser.save();
+    }
+    
+    return result;
+  } catch (error) {
+    throw error;
+  }
+}
+
 // Export default
 export default {
   getUserReport,
   getAdmins,
   setFirebaseTokenId,
+  beginBAITSKeeperIDVerification,
+  finishBAITSKeeperIDVerification,
   createInitAdmin,
   createBidder,
   createSeller,
