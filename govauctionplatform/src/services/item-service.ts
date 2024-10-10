@@ -246,6 +246,7 @@ async function setWinningBidder(input: { itemId: string | Schema.Types.ObjectId,
     }
 
     item.winningBidder = input.bidderId as any;
+    item.status = EItemStatus.ENDED;
 
     return await item.save();
 
