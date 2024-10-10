@@ -213,9 +213,6 @@ router.post(p.createBidder, async (req: Request, res: Response) => {
       }),
       postalAddress: Joi.string().required().messages({
         'any.required': '"postalAddress" is a required field'
-      }),
-      keeperId: Joi.string().required().messages({
-        'any.required': '"keeperId" is a required field'
       })
     }).required();
     
@@ -235,11 +232,47 @@ router.post(p.createBidder, async (req: Request, res: Response) => {
 router.post(p.processSuccessfulPaymentFromTingg, async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
+      amount: Joi.number().required().messages({
+        'any.required': '"amount" is a required field'
+      }),
+      serviceCode: Joi.string().required().messages({
+        'any.required': '"serviceCode" is a required field'
+      }),
+      checkoutRequestID: Joi.number().required().messages({
+        'any.required': '"checkoutRequestID" is a required field'
+      }),
       accountNumber: Joi.string().required().messages({
         'any.required': '"accountNumber" is a required field'
       }),
+      customerName: Joi.string().required().messages({
+        'any.required': '"customerName" is a required field'
+      }),
+      billingServiceID: Joi.number().required().messages({
+        'any.required': '"billingServiceID" is a required field'
+      }),
+      payerTransactionIDs: Joi.array().items(Joi.string()).required().messages({
+        'any.required': '"payerTransactionIDs" is a required field'
+      }),
+      paybylinkTransactionID: Joi.string().required().messages({
+        'any.required': '"paybylinkTransactionID" is a required field'
+      }),
+      billID: Joi.number().required().messages({
+        'any.required': '"billID" is a required field'
+      }),
       paymentMethod: Joi.string().required().messages({
         'any.required': '"paymentMethod" is a required field'
+      }),
+      currency: Joi.string().required().messages({
+        'any.required': '"currency" is a required field'
+      }),
+      msisdn: Joi.string().required().messages({
+        'any.required': '"msisdn" is a required field'
+      }),
+      paymentDate: Joi.number().required().messages({
+        'any.required': '"paymentDate" is a required field'
+      }),
+      paymentStatus: Joi.number().required().messages({
+        'any.required': '"paymentStatus" is a required field'
       })
     }).required();
     

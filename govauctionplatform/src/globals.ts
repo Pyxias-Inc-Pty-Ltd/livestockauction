@@ -43,7 +43,7 @@ const MONGO_DB_USER = process.env.MONGO_DB_USER as string;
 export const UNIPAY_APP_AUTH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWJqZWN0IjoiNjY3YzVmOTMwM2YzZjEyODRhMWI0OGVhIiwic2NvcGUiOiJBUEkiLCJpYXQiOjE3MTk0MjY5NjN9.xi1tGljRdbpFzamQlD1G4TVYK1gWt6xyEAXrT4MVpko";
 export const SEND_GRID_API_KEY = "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";
 export const SERVICE_URLS: {[key: string]: string} = {
-  mongoDBURI: `mongodb+srv://${MONGO_DB_USER}:${MONGO_DB_PASS}@cluster0.5odo36p.mongodb.net/bwgovauctionplatform?retryWrites=true&w=majority`,
+  mongoDBURI: `mongodb://localhost:27017/bwgovauctionplatform?retryWrites=true&w=majority`,
   tinggCreatePaymentLinkURI: "https://paybylink-apis.pay.tingg.africa/paybylink-apis/public/bill/create",
   unipayInitiatePaymentApplication: "http://164.92.135.170:8888/api/applications/initiatePaymentApplicationByApp",
   clientURI: "https://onlineauction-uat.gov.bw"
@@ -352,7 +352,8 @@ export enum EModels {
   NOTIFICATION = "Notification",
   NOTIFICATION_OBJECT = "NotificationObject",
   NOTIFICATION_CHANGE = "NotificationChange",
-  NOTIFICATION_TRIGGER= "NotificationTrigger"
+  NOTIFICATION_TRIGGER= "NotificationTrigger",
+  REQUIRED_ATTRIBUTE = "RequiredAttribute"
 }
 
 export enum ESortOrderType {

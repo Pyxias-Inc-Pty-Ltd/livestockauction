@@ -2,7 +2,7 @@ import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isoDateValidation, mongoIdValidation } from '../shared/functions';
-import { SuperAdminOnly, BidderOnly, SellerOnly } from '../shared/middleware';
+import { SuperAdminOnly, SellerOnly } from '../shared/middleware';
 import { IAdmin } from '../models/user-model';
 import auctionService from '../services/auction-service';
 import { EParticipationType } from '../globals';
@@ -14,8 +14,10 @@ const { OK, CREATED } = StatusCodes;
 // Paths
 export const p = {
   createAuction: '/createAuction',
+  createRequiredAttribute: '/createRequiredAttribute',
   deleteAuction: '/deleteAuction',
-  getAuctionReport: '/getAuctionReport'
+  getAuctionReport: '/getAuctionReport',
+  getRequiredAttributes: '/getRequiredAttributes'
 } as const;
 
 /**
@@ -67,6 +69,11 @@ router.post(p.createAuction, SuperAdminOnly(), async (req: Request, res: Respons
       }),
       participationType: Joi.string().valid(EParticipationType.CITIZEN_ONLY, EParticipationType.EVERYONE).required().messages({
         'any.required': '"participationType" is a required field'
+      }),
+      requiredAttributes: Joi.array().items(mongoIdValidation).messages({
+        'array.base': '"requiredAttributes" should be an array of valid MongoDB IDs'
+      }).required().default([]).messages({
+        'any.required': '"requiredAttributes" is a required field'
       })
     }).required();
     
@@ -75,6 +82,28 @@ router.post(p.createAuction, SuperAdminOnly(), async (req: Request, res: Respons
 
     const auction = await auctionService.createAuction(req.user as IAdmin, req.body as any);
     return res.status(CREATED).json({auction});
+  } catch (error) {
+    throw error;
+  }
+});
+
+
+/**
+ * Create a required attribute
+ */
+router.post(p.createRequiredAttribute, SuperAdminOnly(), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      name: Joi.string().required().messages({
+        'any.required': '"name" is a required field'
+      })
+    }).required();
+    
+    // Validate schema against input
+    Joi.assert(req.body, schema);
+
+    const requiredAttribute = await auctionService.createRequiredAttribute(req.user as IAdmin, req.body as any);
+    return res.status(CREATED).json({requiredAttribute});
   } catch (error) {
     throw error;
   }
@@ -127,6 +156,18 @@ router.get(p.getAuctionReport, SuperAdminOnly(), async (req: Request, res: Respo
     const report = await auctionService.getAuctionReport(auctionId as string);
 
     return res.status(OK).json({ report });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Get a list of required attributes
+ */
+router.get(p.getRequiredAttributes, SuperAdminOnly(), SellerOnly(), async (req: Request, res: Response) => {
+  try {
+    const requiredAttributes = await auctionService.getRequiredAttributes();
+    return res.status(OK).json({ requiredAttributes });
   } catch (error) {
     throw error;
   }

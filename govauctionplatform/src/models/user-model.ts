@@ -49,7 +49,9 @@ export interface IBidder extends IUser {
   gender: genderType;
   physicalAddress: string;
   postalAddress: string;
-  keeperId: string;
+  keeperId?: string;
+  isKeeperIdVerified: boolean;
+  keeperIdHash: string;
 }
 
 export interface IBidderInput {
@@ -59,7 +61,6 @@ export interface IBidderInput {
   gender: genderType;
   physicalAddress: string;
   postalAddress: string;
-  keeperId: string;
   email: string;
   phone: string;
   password: string;
@@ -83,6 +84,7 @@ export interface IUpdateBidderInput {
   physicalAddress?: string;
   postalAddress?: string;
   keeperId?: string;
+  keeperIdHash?: string;
 }
 
 export interface IAdmin extends IUser {
@@ -222,6 +224,7 @@ const bidderSchema = new Schema<IBidder>({
   lastName: {type: String, required: true, trim: true},
   phone: {type: String, trim: true, required: true},
   password: {type: String, trim: true},
+  isKeeperIdVerified: {type: Boolean, required: true, default: false},
   tz: {type: String, trim: true, required: true},
   locale: {type: String, trim: true, required: true},
   photoUrl: {type: String, validate: {
@@ -242,7 +245,8 @@ const bidderSchema = new Schema<IBidder>({
   gender: {type: String, required: true, enum: [EGenderType.FEMALE, EGenderType.MALE]},
   physicalAddress: {type: String, required: true, trim: true},
   postalAddress: {type: String, required: true, trim: true},
-  keeperId: {type: String, required: true, trim: true, unique: true}
+  keeperId: {type: String, trim: true},
+  keeperIdHash: {type: String}
 }, {
   timestamps: {
     createdAt: "createdDate",

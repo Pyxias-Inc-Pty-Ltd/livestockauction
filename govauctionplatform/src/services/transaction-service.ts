@@ -117,8 +117,9 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
       }
 
       const { data } = await queryResponse.json();
+      
 
-      (savedReservation.metadata as Map<string, string>).set('paymentLink', `https://billpay.tingg.africa/${data.billID}`);
+      (savedReservation.metadata as Map<string, string>).set('paymentLink', `https://billpay.tingg.africa/${data.uniqueHash}`);
       savedReservation.externalReference = data.uniqueHash;
 
     } else {

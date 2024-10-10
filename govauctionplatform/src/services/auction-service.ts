@@ -4,7 +4,7 @@ import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession, Types } from 'mongoose';
 import { EAuctionSortType, EAuctionStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
-import { Auction, IAuction, IAuctionInput } from "../models/auction-model";
+import { Auction, IAuction, IAuctionInput, IRequiredAttribute, IRequiredAttributeInput, RequiredAttribute } from "../models/auction-model";
 import categoryService from "./category-service";
 import forumService from "./forum-service";
 import { Item } from "../models/item-model";
@@ -65,6 +65,23 @@ async function createAuction(currentUser: IAdmin, input: IAuctionInput): Promise
       // End session
       await sess.endSession();
     }
+  }
+}
+
+/**
+ * Add a required attribute.
+ * 
+ * @param input
+ * @returns 
+ */
+async function createRequiredAttribute(currentUser: IAdmin, input: IRequiredAttributeInput): Promise<IRequiredAttribute> {
+  try {
+    const newRequiredAttribute = new RequiredAttribute(input);
+
+    return await newRequiredAttribute.save();
+
+  } catch (error) {
+    throw error;
   }
 }
 
@@ -227,6 +244,25 @@ async function getAuctions(conditions: Map<string, any>, projection?: any): Prom
 
     // Limit
     q.limit(_limit);
+
+    return await q;
+
+  } catch (error) {
+    // Rethrow error
+    throw error;
+  }
+}
+
+/**
+ * Get required attributes.
+ * 
+ * @returns 
+ */
+async function getRequiredAttributes(): Promise<IRequiredAttribute[]> {
+  try {
+
+    // Query builder
+    const q = RequiredAttribute.find();
 
     return await q;
 
@@ -453,5 +489,7 @@ export default {
   getById,
   getAuctions,
   searchAuctions,
-  getAuctionReport
+  getAuctionReport,
+  createRequiredAttribute,
+  getRequiredAttributes
 } as const;
