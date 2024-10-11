@@ -4,8 +4,8 @@ import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isoDateValidation, mongoIdValidation, urlValidation } from '../shared/functions';
 import { SuperAdminOnly, BidderOnly } from '../shared/middleware';
-import { IAdmin } from '../models/user-model';
-import { EGenderType } from '../globals';
+import { IAdmin, IBidder } from '../models/user-model';
+import { EGenderType, EItemSortType, ESortOrderType, MAX_LIST_LIMIT_NUMBER } from '../globals';
 
 // Constants
 const router = Router();
@@ -16,8 +16,49 @@ export const p = {  createItem: '/createItem',
   setWinningBidder: '/setWinningBidder',
   deleteItem: '/deleteItem',
   setNewBidAmountManually: '/setNewBidAmountManually',
-  getManualBidAmount: '/getManualBidAmount'
+  getManualBidAmount: '/getManualBidAmount',
+  getItemsWon: '/getItemsWon'
 } as const;
+
+/**
+ * Get items won by the bidder.
+ */
+router.get(p.getItemsWon, BidderOnly(), async (req: Request, res: Response) => {
+  try {
+    const conditions = new Map<string, any>();
+    // Query checks
+    const qSchema = Joi.object().keys({
+      sortOrder: Joi.string().required().valid(ESortOrderType.ASC, ESortOrderType.DESC, ESortOrderType.asc, ESortOrderType.desc).messages({
+        'any.required': '"sortOrder" is a required field'
+      }),
+      sortBy: Joi.string().required().valid(EItemSortType.DATE).messages({
+        'any.required': '"sortBy" is a required field'
+      }),
+      limit: Joi.number().integer().min(1).max(MAX_LIST_LIMIT_NUMBER).required().messages({
+        'any.required': '"limit" is a required field'
+      }),
+      lastDocumentId: mongoIdValidation
+    }).required();
+    
+    // Validate schema against query
+    Joi.assert(req.query, qSchema);
+
+    const { limit, sortBy, sortOrder, lastDocumentId } = req.query;
+  
+    conditions.set('limit', parseInt(limit as string));
+    conditions.set('sortBy', sortBy);
+    conditions.set('sortOrder', sortOrder);
+
+    if (lastDocumentId) {
+      conditions.set('lastDocumentId', lastDocumentId);
+    }
+
+    const items = await itemService.getItemsWon(req.user as IBidder, conditions);
+    return res.status(OK).json({items});
+  } catch (error) {
+    throw error;
+  }
+});
 
 /**
  * Create an item
