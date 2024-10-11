@@ -1,4 +1,4 @@
-import { IAdmin } from "../models/user-model";
+import { IAdmin, IBidder } from "../models/user-model";
 import { IItem, IItemInput, Item } from "../models/item-model";
 import { formatBAITSAnimalEID, getAnimalBreedById, getAnimalByEID, isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
 import { ForbiddenError, InternalServerError, NotFoundError } from "../shared/errors";
@@ -267,6 +267,23 @@ async function updateItemWithBid(item: IItem, newBidAmount: number, session: Cli
 }
 
 /**
+ * Get items won by a bidder.
+ * 
+ * @param currentUser
+ * @param conditions
+ * @param projection
+ * @returns 
+ */
+async function getItemsWon(currentUser: IBidder, conditions: Map<string, any>, projection?: any): Promise<IItem[]> {
+  // Ensure the winningBidder condition is set
+  conditions.set('status', EItemStatus.ENDED);
+  conditions.set('winningBidder', currentUser.id);
+  
+  // Call getItems with the modified conditions
+  return await getItems(conditions, projection);
+}
+
+/**
  * Get items.
  * 
  * @param conditions
@@ -296,6 +313,10 @@ async function getItems(conditions: Map<string, any>, projection?: any): Promise
 
     if (conditions.get('auctionId')) {
       q.where({auctionId: conditions.get('auctionId')});
+    }
+
+    if (conditions.get('winningBidder')) {
+      q.where({winningBidder: conditions.get('winningBidder')});
     }
 
     if (conditions.get('status')) {
@@ -353,5 +374,6 @@ export default {
   setNewBidAmountManually,
   deleteItem,
   getById,
-  getItems
+  getItems,
+  getItemsWon
 } as const;
