@@ -507,19 +507,19 @@ async function processSuccessfulPaymentFromTingg (input: { accountNumber: string
     // Start session and mongo acid transaction
     sess = await startSession();
 
+    // Find item
+    const item = await itemService.getById(transaction.itemId);
+
+    // Check if exists
+    if (!item) {
+      throw new NotFoundError('Item not found');
+    }
+
     // Check transaction type
     if (transaction.transactionType === 'RESERVATION') {
 
       transaction.status = 'COMPLETED';
       transaction.paymentMethod = input.paymentMethod;
-
-      // Find item
-      const item = await itemService.getById(transaction.itemId);
-
-      // Check if exists
-      if (!item) {
-        throw new NotFoundError('Item not found');
-      }
 
       const forum = await forumService.getForumByAuctionId(item.auctionId);
 
@@ -592,11 +592,17 @@ async function processSuccessfulPaymentFromTingg (input: { accountNumber: string
 
     } else if (transaction.transactionType === 'PURCHASE') {
 
+      item.isPurchased = true;
       transaction.status = 'COMPLETED';
       transaction.paymentMethod = input.paymentMethod;
 
       await sess.withTransaction(async () => {
-        await transaction.save();
+        await transaction.save({
+          session: sess
+        });
+        await item.save({
+          session: sess
+        });
       });
 
     }
@@ -639,20 +645,20 @@ async function processSuccessfulPaymentFromUniPay(input: { payload: string, tran
     // Start session and mongo acid transaction
     sess = await startSession();
 
+    // Find item
+    const item = await itemService.getById(transaction.itemId);
+
+    // Check if exists
+    if (!item) {
+      throw new NotFoundError('Item not found');
+    }
+
     // Check transaction type
     if (transaction.transactionType === 'RESERVATION') {
 
       transaction.status = 'COMPLETED';
       transaction.paymentMethod = paymentMethod;
       transaction.externalReference = input.transaction.id;
-
-      // Find item
-      const item = await itemService.getById(transaction.itemId);
-
-      // Check if exists
-      if (!item) {
-        throw new NotFoundError('Item not found');
-      }
 
       const forum = await forumService.getForumByAuctionId(item.auctionId);
 
@@ -721,12 +727,18 @@ async function processSuccessfulPaymentFromUniPay(input: { payload: string, tran
 
     } else if (transaction.transactionType === 'PURCHASE') {
 
+      item.isPurchased = true;
       transaction.status = 'COMPLETED';
       transaction.paymentMethod = paymentMethod;
       transaction.externalReference = input.transaction.id;
 
       await sess.withTransaction(async () => {
-        await transaction.save();
+        await transaction.save({
+          session: sess
+        });
+        await item.save({
+          session: sess
+        });
       });
 
     }
