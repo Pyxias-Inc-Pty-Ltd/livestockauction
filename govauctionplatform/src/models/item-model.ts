@@ -38,6 +38,7 @@ export interface IItem extends Document {
   version: number;
   status: itemStatus;
   baitsDump?: string;
+  isPurchased: boolean;
   createdDate: any;
   updatedDate: any;
 }
@@ -61,6 +62,7 @@ export interface IItemInput {
   title: string;
   description: string;
   baitsDump?: string;
+  isPurchased?: boolean;
   terms: string;
   startingBid: number;
   status: itemStatus;
@@ -82,6 +84,7 @@ const schema = new Schema<IItem>({
   description: { type: String, required: true, trim: true },
   terms: { type: String, required: true, trim: true },
   startingBid: { type: Number, required: true },
+  isPurchased: { type: Boolean, default: false, required: true },
   bidIncrement: { type: Number, required: function (): boolean {
     return !(this as IItem).isBidIncrementedManually;
   } },
