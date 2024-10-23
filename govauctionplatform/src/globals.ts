@@ -47,7 +47,7 @@ export const SERVICE_URLS: {[key: string]: string} = {
   mongoDBURI: `mongodb://localhost:27017/bwgovauctionplatform?retryWrites=true&w=majority`,
   tinggCreatePaymentLinkURI: "https://paybylink-apis.pay.tingg.africa/paybylink-apis/public/bill/create",
   unipayInitiatePaymentApplication: "http://164.92.135.170:8888/api/applications/initiatePaymentApplicationByApp",
-  clientURI: "https://onlineauction-uat.gov.bw",
+  clientURI: "https://auctiondev.xyz",
   baits3URICore: "http://bifrost-baits3.gov.bw:90/api/core/v1/api"
 }
 
