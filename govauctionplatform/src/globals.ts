@@ -48,7 +48,8 @@ export const SERVICE_URLS: {[key: string]: string} = {
   tinggCreatePaymentLinkURI: "https://paybylink-apis.pay.tingg.africa/paybylink-apis/public/bill/create",
   unipayInitiatePaymentApplication: "http://164.92.135.170:8888/api/applications/initiatePaymentApplicationByApp",
   clientURI: "https://auctiondev.xyz",
-  baits3URICore: "http://bifrost-baits3.gov.bw:90/api/core/v1/api"
+  baits3URICore: "http://bifrost-baits3.gov.bw:90/api/core/v1/api",
+  animalhealthURI: "https://lms.auctiondev.xyz"
 }
 
 export const COUNTRY_PHONE_CODES = [{"country":"Afghanistan","code":"93","iso":"AF"},
