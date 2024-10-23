@@ -378,6 +378,28 @@ export async function getAnimalByEID(tagNumber: string): Promise<any> {
   }
 }
 
+// TODO: Remove this function once we have a new API endpoint for fetching animal data from HMS
+export async function getAnimalByEIDFromHMS(tagNumber: string): Promise<any> {
+  try {
+    const response = await axios.default.get(
+      `${SERVICE_URLS.animalhealthURI}/open/getAnimalByEID`,
+      {
+        params: { eid: tagNumber }
+      }
+    );
+
+    if (response.status === 200) {
+      return response.data; // Return the animal data from HMS API
+    } else if (response.status === 404) {
+      throw new NotFoundError('Resource not found on HMS API');
+    } else {
+      throw new Error('Invalid response from HMS API');
+    }
+  } catch (error) {
+    throw error; // Rethrow the error for the caller to handle
+  }
+}
+
 /**
  * Fetches animal data from the BAITS API by Modisar Animal ID.
  *
