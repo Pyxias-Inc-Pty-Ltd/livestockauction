@@ -1,5 +1,5 @@
 import { IAdmin } from "../models/user-model";
-import { isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
+import { generateAuctionNumber, isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession, Types } from 'mongoose';
@@ -23,6 +23,8 @@ async function createAuction(currentUser: IAdmin, input: IAuctionInput): Promise
     const newAuction = new Auction(input);
 
     newAuction.creatorId = currentUser.id;
+    const currentCount = await Auction.count();
+    newAuction.auctionNumber = generateAuctionNumber(currentCount);
 
     if (!isBeforeStartDate(new Date(), new Date(input.startTime))) {
       throw new ForbiddenError('Start time must not come before the current time');
