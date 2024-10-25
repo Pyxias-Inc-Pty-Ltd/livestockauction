@@ -600,3 +600,19 @@ export async function hashOTP(otp: string): Promise<string> {
 export async function verifyOTP(inputOTP: string, storedHash: string): Promise<boolean> {
   return await compare(inputOTP, storedHash);
 }
+
+/**
+ * Generates a unique auction number based on the current date and auction count.
+ * 
+ * @param {number} currentCount - The current count of auctions.
+ * @returns {string} - The generated auction number.
+ */
+export function generateAuctionNumber(currentCount: number): string {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  const count = (currentCount + 1).toString().padStart(3, '0');
+
+  return `${year}${month}${day}${count}`;
+}
