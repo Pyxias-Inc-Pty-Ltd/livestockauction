@@ -248,9 +248,9 @@ async function setWinningBidder(input: { itemId: string | Schema.Types.ObjectId,
     const highestBid = bids[0];
 
     // Check if bidder supplied is the highest bidder
-    if (highestBid.userId.toString() !== input.bidderId.toString()) {
-      throw new ForbiddenError('Bidder supplied is not the highest bidder');
-    }
+    // if (highestBid.userId.toString() !== input.bidderId.toString()) {
+    //   throw new ForbiddenError('Bidder supplied is not the highest bidder');
+    // }
 
     item.winningBidder = input.bidderId as any;
     item.status = EItemStatus.ENDED;
