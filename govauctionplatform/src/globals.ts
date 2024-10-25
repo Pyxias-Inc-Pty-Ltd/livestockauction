@@ -420,7 +420,9 @@ export enum ESocketEventCode {
   RETRACT_BID = "e:11",
   RETRACTED_BID = "e:12",
   CREATE_NEW_MANUAL_BID_AMOUNT = "e:13",
-  BROADCAST_NEW_MANUAL_BID_AMOUNT = "e:14"
+  BROADCAST_NEW_MANUAL_BID_AMOUNT = "e:14",
+  REFRESH_AFTER_WINNING = "e:15",
+  BROADCAST_REFRESH_AFTER_WINNING = "e:16"
 }
 
 export enum EParticipationType {
