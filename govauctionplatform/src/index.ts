@@ -105,6 +105,19 @@ const onConnection = (socket: Socket) => {
       }
     }
   });
+  socket.on(ESocketEventCode.REFRESH_AFTER_WINNING, async function (data, cb) {
+    try {
+      console.log("ESocketEventCode.REFRESH_AFTER_WINNING: ", data);
+      socket.to(`${data.itemId}-bid`).emit(ESocketEventCode.BROADCAST_REFRESH_AFTER_WINNING, data.itemId);
+      cb({ status: OK });
+    } catch (error) {
+      if (error instanceof CustomError) {
+        cb({ status: error.HttpStatus, msg: error.message });
+      } else {
+        cb({ status: INTERNAL_SERVER_ERROR });
+      }
+    }
+  });
   socket.on(ESocketEventCode.CREATE_CHAT_MESSAGE, async function (data, cb) {
     try {
       console.log("ESocketEventCode.CREATE_CHAT_MESSAGE: ", data);
