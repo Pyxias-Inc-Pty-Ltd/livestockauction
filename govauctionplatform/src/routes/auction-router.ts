@@ -29,9 +29,6 @@ router.post(p.createAuction, SuperAdminOnly(), async (req: Request, res: Respons
       title: Joi.string().required().messages({
         'any.required': '"title" is a required field'
       }),
-      auctionNumber: Joi.string().required().messages({
-        'any.required': '"auctionNumber" is a required field'
-      }),
       auctionLocation: Joi.string().required().messages({
         'any.required': '"auctionLocation" is a required field'
       }),
