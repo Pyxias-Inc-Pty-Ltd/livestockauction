@@ -5,7 +5,7 @@ import * as Joi from 'joi';
 import { isoDateValidation, mongoIdValidation, urlValidation } from '../shared/functions';
 import { SuperAdminOnly, BidderOnly } from '../shared/middleware';
 import { IAdmin, IBidder } from '../models/user-model';
-import { EGenderType, EItemSortType, ESortOrderType, MAX_LIST_LIMIT_NUMBER } from '../globals';
+import { EItemSortType, ESortOrderType, MAX_LIST_LIMIT_NUMBER } from '../globals';
 
 // Constants
 const router = Router();
@@ -17,8 +17,7 @@ export const p = {  createItem: '/createItem',
   deleteItem: '/deleteItem',
   setNewBidAmountManually: '/setNewBidAmountManually',
   getManualBidAmount: '/getManualBidAmount',
-  getItemsWon: '/getItemsWon',
-  getItemById: '/getItemById'
+  getItemsWon: '/getItemsWon'
 } as const;
 
 /**
@@ -164,30 +163,6 @@ router.put(p.setWinningBidder, async (req: Request, res: Response) => {
 
     const item = await itemService.setWinningBidder(req.body as any);
     return res.status(CREATED).json({item});
-  } catch (error) {
-    throw error;
-  }
-});
-
-/**
- * Get item by id
- */
-router.get(p.getItemById, async (req: Request, res: Response) => {
-  try {
-    // Query checks
-    const qSchema = Joi.object().keys({
-      id: mongoIdValidation.required().messages({
-        'any.required': '"id" is a required field'
-      })
-    }).required();
-    
-    // Validate schema against query
-    Joi.assert(req.query, qSchema);
-
-    const { id } = req.query;
-
-    const item = await itemService.getById(id as string);
-    return res.status(OK).json({item});
   } catch (error) {
     throw error;
   }
