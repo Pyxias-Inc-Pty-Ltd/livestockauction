@@ -37,6 +37,21 @@ async function getByEmail(email: string): Promise<IUser | null> {
 }
 
 /**
+ * Get a user by phone.
+ * 
+ * @param phone 
+ * @returns 
+ */
+async function getByPhone(phone: string): Promise<IUser | null> {
+  try {
+    return await User.findOne({ phone });
+  } catch (error) {
+    // Rethrow error
+    throw error;
+  }
+}
+
+/**
  * Add the initial admin.
  * 
  * @param input
@@ -270,7 +285,7 @@ async function beginBAITSKeeperIDVerification(currentUser: IBidder, keeperId: st
     
     let htmlContent = "";
 
-    htmlContent = keeperIDVerificationTemplate.replace('[UserName]', currentUser.firstName);
+    htmlContent = keeperIDVerificationTemplate.replace('[UserName]', currentUser.isOrganization ? currentUser.name as string : currentUser.firstName as string);
     htmlContent = keeperIDVerificationTemplate.replace('[otp]', otp);
 
     currentUser.keeperIdHash = await hashOTP(otp);
@@ -325,6 +340,7 @@ export default {
   createBidder,
   createSeller,
   getByEmail,
+  getByPhone,
   getUsers,
   getById
 } as const;
