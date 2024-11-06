@@ -6,12 +6,12 @@ import isURL from 'validator/lib/isURL';
 import { sgMail } from '../index';
 
 export interface IUser extends Document {
-  firstName: string;
-  lastName: string;
+  firstName?: string;
+  lastName?: string;
   photoUrl?: string;
   userType: userType;
   phone: string;
-  email: string;
+  email?: string;
   tz: string;
   locale: string;
   firebaseTokenId: string;
@@ -21,14 +21,14 @@ export interface IUser extends Document {
 }
 
 export interface ISeller extends IUser {
+  name: string;
 }
 
 export interface ISellerInput {
   email: string;
   phone: string;
   password: string;
-  firstName: string;
-  lastName: string;
+  name: string;
   locale: string;
   tz: string;
 }
@@ -43,6 +43,8 @@ export interface IUpdateSellerInput {
 }
 
 export interface IBidder extends IUser {
+  name?: string;
+  isOrganization: boolean;
   identityNumber: string;
   nationality: string;
   dob: Date;
@@ -55,17 +57,19 @@ export interface IBidder extends IUser {
 }
 
 export interface IBidderInput {
+  isOrganization: boolean;
   identityNumber: string;
-  nationality: string;
-  dob: Date;
-  gender: genderType;
+  nationality?: string;
+  dob?: Date;
+  gender?: genderType;
   physicalAddress: string;
   postalAddress: string;
-  email: string;
+  email?: string;
   phone: string;
   password: string;
-  firstName: string;
-  lastName: string;
+  firstName?: string;
+  lastName?: string;
+  name?: string;
   locale: string;
   tz: string;
 }
@@ -88,7 +92,10 @@ export interface IUpdateBidderInput {
 }
 
 export interface IAdmin extends IUser {
+  firstName: string;
+  lastName: string;
   adminType: adminType;
+  email: string;
 }
 
 export interface IAdminInput {
@@ -113,15 +120,15 @@ export interface IUpdateAdminInput {
 
 const userSchema = new Schema<IUser>({
   userType: {type: String, required: true, enum: [EUserType.ADMIN, EUserType.BIDDER]},
-  email: {type: String, unique: true, required: true, validate: {
+  email: {type: String, unique: true, sparse: true, validate: {
     msg: 'Valid email must be supplied.',
       validator: function (v: string): boolean {
         return isEmail(v);
       }
     }
   },
-  firstName: {type: String, required: true, trim: true},
-  lastName: {type: String, required: true, trim: true},
+  firstName: {type: String, trim: true},
+  lastName: {type: String, trim: true},
   phone: {type: String, trim: true, required: true},
   password: {type: String, trim: true},
   tz: {type: String, trim: true, required: true},
@@ -166,62 +173,25 @@ userSchema.pre('save', async function(next) {
   next();
 });
 
-userSchema.post('save', async function (doc, next) {
-  if (this.$locals.isNew) {
-    try {
-
-      const { email, firstName, lastName, userType } = doc;
-
-      if (userType !== EUserType.ADMIN) {
-          let htmlContent = "";
-
-          if (userType === EUserType.BIDDER) {
-            htmlContent = welcomeBidderEmailTemplate.replace('[UserName]', firstName);
-          }
-          if (userType === EUserType.SELLER) {
-            htmlContent = welcomeSellerEmailTemplate.replace('[UserName]', `${firstName} ${lastName}`);
-          }
-
-          await sgMail.send({
-              to: email,
-              from: VERIFIED_EMAIL,
-              subject: 'Welcome to the Botswana Government Auction Platform',
-              html: htmlContent
-          });
-
-          next();
-      } else {
-        next();
-      }
-    } catch (error) {
-      next(new InternalServerError('Error sending welcome email'));
-    }
-  }
-});
-
-userSchema.post('save', function(error: any, doc: any, next: any) {
-  if (error.name === 'MongoServerError' && error.code === 11000) {
-    if (error.message.includes('email_1')) {
-      next(new ConflictError('A user with this email already exists'));
-    } else {
-      next(new ConflictError('Duplicate key error'));
-    }
-  } else {
-    next();
-  }
-});
-
 const bidderSchema = new Schema<IBidder>({
   userType: {type: String, required: true, default: EUserType.BIDDER, enum: [EUserType.BIDDER]},
-  email: {type: String, unique: true, required: true, validate: {
+  email: {type: String, unique: true, sparse: true, validate: {
     msg: 'Valid email must be supplied.',
       validator: function (v: string): boolean {
         return isEmail(v);
       }
     }
   },
-  firstName: {type: String, required: true, trim: true},
-  lastName: {type: String, required: true, trim: true},
+  isOrganization: {type: Boolean, default: false},
+  firstName: { type: String, required: function(): boolean {
+    return !(this as IBidder).isOrganization;
+  }, trim: true },
+  lastName: { type: String, required: function(): boolean {
+    return !(this as IBidder).isOrganization;
+  }, trim: true },
+  name: { type: String, required: function(): boolean {
+    return (this as IBidder).isOrganization;
+  }, trim: true },
   phone: {type: String, trim: true, required: true},
   password: {type: String, trim: true},
   isKeeperIdVerified: {type: Boolean, required: true, default: false},
@@ -241,8 +211,15 @@ const bidderSchema = new Schema<IBidder>({
   },
   identityNumber: {type: String, required: true, trim: true, unique: true},
   nationality: {type: String, required: true, trim: true},
-  dob: {type: Date, required: true},
-  gender: {type: String, required: true, enum: [EGenderType.FEMALE, EGenderType.MALE]},
+  dob: {
+    type: Date,
+    required: function(this: IBidder) { return !this.isOrganization; }
+  },
+  gender: {
+    type: String,
+    required: function(this: IBidder) { return !this.isOrganization; },
+    enum: [EGenderType.FEMALE, EGenderType.MALE]
+  },
   physicalAddress: {type: String, required: true, trim: true},
   postalAddress: {type: String, required: true, trim: true},
   keeperId: {type: String, trim: true},
@@ -264,6 +241,32 @@ bidderSchema.set('toJSON', {
   }
 });
 
+bidderSchema.post('save', async function (doc, next) {
+  if (this.$locals.isNew) {
+    try {
+
+      const { email, phone, firstName, name, isOrganization } = doc;
+
+      const htmlContent = welcomeBidderEmailTemplate.replace('[UserName]', isOrganization ? name as string : firstName as string);
+      
+      if (!isOrganization) {
+        // TODO: Send to phone via SMS
+      } else {
+        await sgMail.send({
+            to: email,
+            from: VERIFIED_EMAIL,
+            subject: 'Welcome to the Botswana Government Auction Platform',
+            html: htmlContent
+        });
+      }
+
+      next();
+    } catch (error) {
+      next(new InternalServerError('Error sending welcome email'));
+    }
+  }
+});
+
 const sellerSchema = new Schema<ISeller>({
   userType: {type: String, required: true, default: EUserType.SELLER, enum: [EUserType.SELLER]},
   email: {type: String, unique: true, required: true, validate: {
@@ -273,8 +276,7 @@ const sellerSchema = new Schema<ISeller>({
       }
     }
   },
-  firstName: {type: String, required: true, trim: true},
-  lastName: {type: String, required: true, trim: true},
+  name: {type: String, required: true, trim: true},
   phone: {type: String, trim: true, required: true},
   password: {type: String, trim: true},
   tz: {type: String, trim: true, required: true},
@@ -305,6 +307,28 @@ sellerSchema.set('toJSON', {
     delete ret._id;
     delete ret.password;
     delete ret.__t;
+  }
+});
+
+sellerSchema.post('save', async function (doc, next) {
+  if (this.$locals.isNew) {
+    try {
+
+      const { email, name } = doc;
+
+      const htmlContent = welcomeBidderEmailTemplate.replace('[UserName]', name);
+    
+      await sgMail.send({
+          to: email,
+          from: VERIFIED_EMAIL,
+          subject: 'Welcome to the Botswana Government Auction Platform',
+          html: htmlContent
+      });
+
+      next();
+    } catch (error) {
+      next(new InternalServerError('Error sending welcome email'));
+    }
   }
 });
 
