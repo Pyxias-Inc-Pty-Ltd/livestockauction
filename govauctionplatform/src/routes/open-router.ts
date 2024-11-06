@@ -151,44 +151,78 @@ router.post(p.createInitAdmin, async (req: Request, res: Response) => {
 router.post(p.createBidder, async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
-      email: Joi.string().required().messages({
-        'any.required': '"email" is a required field'
-      }), // TODO: Validate email
-      firstName: Joi.string().required().messages({
-        'any.required': '"firstName" is a required field'
-      }),
-      lastName: Joi.string().required().messages({
-        'any.required': '"lastName" is a required field'
-      }),
-      password: Joi.string().required().messages({
-        'any.required': '"password" is a required field'
-      }),
-      tz: Joi.string().required().messages({
-        'any.required': '"tz" is a required field'
-      }),
-      phone: phoneValidation.required().messages({
-        'any.required': '"phone" is a required field'
-      }),
-      locale: Joi.string().required().messages({
-        'any.required': '"locale" is a required field'
+      isOrganization: Joi.boolean().required().messages({
+        'any.required': '"isOrganization" is a required field'
       }),
       identityNumber: Joi.string().required().messages({
         'any.required': '"identityNumber" is a required field'
       }),
-      nationality: isoAlpha2CountryValidation.required().messages({
-        'any.required': '"nationality" is a required field'
+      nationality: Joi.when('isOrganization', {
+        is: false,
+        then: isoAlpha2CountryValidation.required().messages({
+          'any.required': '"nationality" is a required field'
+        }),
+        otherwise: isoAlpha2CountryValidation
       }),
-      dob: Joi.string().isoDate().required().messages({
-        'any.required': '"dob" is a required field'
+      dob: Joi.when('isOrganization', {
+        is: false,
+        then: Joi.date().required().messages({
+          'any.required': '"dob" is a required field'
+        }),
+        otherwise: Joi.date()
       }),
-      gender: Joi.string().valid(EGenderType.FEMALE, EGenderType.MALE).required().messages({
-        'any.required': '"gender" is a required field'
+      gender: Joi.when('isOrganization', {
+        is: false,
+        then: Joi.string().valid(EGenderType.FEMALE, EGenderType.MALE).required().messages({
+          'any.required': '"gender" is a required field'
+        }),
+        otherwise: Joi.string().valid(EGenderType.FEMALE, EGenderType.MALE)
       }),
       physicalAddress: Joi.string().required().messages({
         'any.required': '"physicalAddress" is a required field'
       }),
       postalAddress: Joi.string().required().messages({
         'any.required': '"postalAddress" is a required field'
+      }),
+      email: Joi.when('isOrganization', {
+        is: true,
+        then: Joi.string().required().messages({
+          'any.required': '"email" is a required field'
+        }),
+        otherwise: Joi.string()
+      }),
+      phone: phoneValidation.required().messages({
+        'any.required': '"phone" is a required field'
+      }),
+      password: Joi.string().required().messages({
+        'any.required': '"password" is a required field'
+      }),
+      firstName: Joi.when('isOrganization', {
+        is: false,
+        then: Joi.string().required().messages({
+          'any.required': '"firstName" is a required field'
+        }),
+        otherwise: Joi.string()
+      }),
+      lastName: Joi.when('isOrganization', {
+        is: false,
+        then: Joi.string().required().messages({
+          'any.required': '"lastName" is a required field'
+        }),
+        otherwise: Joi.string()
+      }),
+      name: Joi.when('isOrganization', {
+        is: true,
+        then: Joi.string().required().messages({
+          'any.required': '"name" is a required field'
+        }),
+        otherwise: Joi.string()
+      }),
+      locale: Joi.string().required().messages({
+        'any.required': '"locale" is a required field'
+      }),
+      tz: Joi.string().required().messages({
+        'any.required': '"tz" is a required field'
       })
     }).required();
     
