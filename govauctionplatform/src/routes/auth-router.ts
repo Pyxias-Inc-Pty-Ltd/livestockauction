@@ -29,16 +29,25 @@ passport.use(new LocalStrategy({
 }, async function (username: string, password: string, cb: any) {
   try {
 
-    // Find account by email
-    const user = await userService.getByEmail(username);
+    // Find account by email or phone
+    const [emailUser, phoneUser] = await Promise.all([userService.getByEmail(username), userService.getByPhone(username)]);
 
     // Check if exists
-    if (user) {
+    if (emailUser) {
       // Verify password
-      const isValid = await compare(password, user.password);
+      const isValid = await compare(password, emailUser.password);
 
       if (isValid) {
-        return cb(null, user.toJSON());
+        return cb(null, emailUser.toJSON());
+      } else {
+        return cb(null, false);
+      }
+    } else if (phoneUser) {
+      // Verify password
+      const isValid = await compare(password, phoneUser.password);
+
+      if (isValid) {
+        return cb(null, phoneUser.toJSON());
       } else {
         return cb(null, false);
       }
