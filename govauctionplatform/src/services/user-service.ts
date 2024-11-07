@@ -44,6 +44,7 @@ async function getByEmail(email: string): Promise<IUser | null> {
  */
 async function getByPhone(phone: string): Promise<IUser | null> {
   try {
+    console.log("getByPhone: ", phone);
     return await User.findOne({ phone });
   } catch (error) {
     // Rethrow error
