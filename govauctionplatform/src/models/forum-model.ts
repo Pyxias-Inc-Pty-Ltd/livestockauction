@@ -146,7 +146,7 @@ forumSchema.post('save', async function(doc) {
             }, { session: sess });
 
             const title = 'Added to a Forum';
-            const htmlContent = addedToForumTemplate.replace('[UserName]', (user as IBidder).firstName).replace('[AuctionName]', (auction as IAuction).title);
+            const htmlContent = addedToForumTemplate.replace('[UserName]', (user as IBidder).isOrganization ? (user as IBidder).name as string : (user as IBidder).firstName as string).replace('[AuctionName]', (auction as IAuction).title);
 
             // Also send to email
             await sgMail.send({
