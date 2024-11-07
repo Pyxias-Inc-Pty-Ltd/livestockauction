@@ -29,8 +29,13 @@ passport.use(new LocalStrategy({
 }, async function (username: string, password: string, cb: any) {
   try {
 
+    console.log("username: ", username);
+
     // Find account by email or phone
     const [emailUser, phoneUser] = await Promise.all([userService.getByEmail(username), userService.getByPhone(username)]);
+
+    console.log("phoneUser: ", phoneUser, "emailUser: ", emailUser);
+
 
     // Check if exists
     if (emailUser) {
