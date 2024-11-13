@@ -1,6 +1,6 @@
 import { IAdmin, IBidder } from "../models/user-model";
 import { IItem, IItemInput, Item } from "../models/item-model";
-import { formatBAITSAnimalEID, getAnimalBreedById, getAnimalByEID, getAnimalByEIDFromHMS, isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
+import { formatBAITSAnimalEID, getAnimalBreedById, getAnimalByEID, isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
 import { ForbiddenError, InternalServerError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { Schema } from 'mongoose';
@@ -23,21 +23,14 @@ async function createItem(currentUser: IAdmin, input: IItemInput): Promise<IItem
     const newItem = new Item(input);
 
     if (newItem.isLivestock) {
-      // const formattedEID = formatBAITSAnimalEID(input.animalEID!)
-      // const animalData = await getAnimalByEID(formattedEID);
-      const animalData = await getAnimalByEIDFromHMS(input.animalEID!);
-      // const breedData = await getAnimalBreedById(animalData.AnimalBreedID);
+      const formattedEID = formatBAITSAnimalEID(input.animalEID!);
+      const animalData = await getAnimalByEID(formattedEID);
+      const breedData = await getAnimalBreedById(animalData.AnimalBreedID);
 
-      // newItem.dob = animalData.DateOfBirth;
-      // newItem.gender = animalData.Gender === "Female" ? EGenderType.FEMALE : EGenderType.MALE;
-      // newItem.breed = breedData.AnimalBreedDescription;
-      // newItem.baitsDump = JSON.stringify(animalData);
-
-
-      newItem.dob = animalData.animal.DateOfBirth;
-      newItem.gender = animalData.animal.Gender === "Female" ? EGenderType.FEMALE : EGenderType.MALE;
-      newItem.breed = animalData.animal.AnimalBreedID.AnimalBreedDescription;
-      newItem.baitsDump = JSON.stringify(animalData.animal);
+      newItem.dob = animalData.DateOfBirth;
+      newItem.gender = animalData.Gender === "Female" ? EGenderType.FEMALE : EGenderType.MALE;
+      newItem.breed = breedData.AnimalBreedDescription;
+      newItem.baitsDump = JSON.stringify(animalData);
     }
 
     newItem.creatorId = currentUser.id;
