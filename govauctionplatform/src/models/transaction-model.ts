@@ -44,7 +44,7 @@ const schema = new Schema<ITransaction>({
   paymentMethod: { type: String, trim: true },
   metadata: { type: Map },
   currency: { type: String, trim: true, required: true },
-  status: { type: String, default: EPaymentStatus.PENDING, enum: [EPaymentStatus.COMPLETED, EPaymentStatus.FAILED, EPaymentStatus.PENDING] },
+  status: { type: String, default: EPaymentStatus.PENDING, enum: [EPaymentStatus.CANCELLED, EPaymentStatus.COMPLETED, EPaymentStatus.FAILED, EPaymentStatus.PENDING] },
   relatedTransaction: { type: Schema.Types.ObjectId, ref: EModels.TRANSACTION },
   externalReference: { type: String, trim: true },
   transactionType: { type: String, required: true, enum: [ETransactionType.PURCHASE, ETransactionType.REFUND, ETransactionType.RESERVATION] }
