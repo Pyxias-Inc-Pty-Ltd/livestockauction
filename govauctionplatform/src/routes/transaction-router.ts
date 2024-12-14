@@ -110,7 +110,7 @@ router.get(p.getTransactions, SuperAdminOnly(), BidderOnly(), async (req: Reques
       buyerId: mongoIdValidation,
       sellerId: mongoIdValidation,
       transactionType: Joi.string().valid(ETransactionType.PURCHASE, ETransactionType.REFUND, ETransactionType.RESERVATION),
-      status: Joi.string().valid(EPaymentStatus.COMPLETED, EPaymentStatus.FAILED, EPaymentStatus.PENDING),
+      status: Joi.string().valid(EPaymentStatus.CANCELLED, EPaymentStatus.COMPLETED, EPaymentStatus.FAILED, EPaymentStatus.PENDING),
       limit: isStringNumberLike.required().messages({
         'any.required': '"limit" is a required field'
       }),
