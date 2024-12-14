@@ -4,7 +4,7 @@ export type transactionType = "REFUND" | "PURCHASE" | "RESERVATION";
 export type itemStatus = "NOT_BEGUN" | "ACTIVE" | "ENDED" | "CANCELLED";
 export type auctionStatus = "NOT_BEGUN" | "ACTIVE" | "ENDED" | "CANCELLED";
 export type animalSpecies = "BOVINE" | "EQUINE" | "CAPRINE" | "OVINE" | "PORCINE";
-export type paymentStatus = "PENDING" | "FAILED" | "COMPLETED";
+export type paymentStatus = "PENDING" | "FAILED" | "COMPLETED" | "CANCELLED";
 export type paymentProvider = "CELLULANT" | "UNIPAY" | "PAY_GATE";
 export type genderType = "MALE" | "FEMALE" | "MIXED";
 export type participationType = "CITIZEN_ONLY" | "EVERYONE";
@@ -37,8 +37,8 @@ export const FIREBASE_SERVICE_ACCOUNT_CREDENTIALS = JSON.stringify({
   "universe_domain": "googleapis.com"
 });
 export const EXPRESS_SESSION_SECRET = process.env.EXPRESS_SESSION_SECRET as string;
-const MONGO_DB_PASS = process.env.MONGO_DB_PASS as string;
-const MONGO_DB_USER = process.env.MONGO_DB_USER as string;
+export const PAYGATE_ID = process.env.PAYGATE_ID as string;
+export const PAYGATE_ENCRYPTION_KEY = process.env.PAYGATE_ENCRYPTION_KEY as string;
 export const BAITS_API_TOKEN = process.env.BAITS_API_TOKEN as string;
 // export const UNIPAY_APP_AUTH_TOKEN = process.env.UNIPAY_APP_AUTH_TOKEN as string;
 export const UNIPAY_APP_AUTH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWJqZWN0IjoiNjY3YzVmOTMwM2YzZjEyODRhMWI0OGVhIiwic2NvcGUiOiJBUEkiLCJpYXQiOjE3MTk0MjY5NjN9.xi1tGljRdbpFzamQlD1G4TVYK1gWt6xyEAXrT4MVpko";
@@ -47,6 +47,7 @@ export const SERVICE_URLS: {[key: string]: string} = {
   mongoDBURI: `mongodb+srv://services:2UwPNeILZenk4Y69@cluster0.5odo36p.mongodb.net/bwgovauctionplatform?retryWrites=true&w=majority`,
   tinggCreatePaymentLinkURI: "https://paybylink-apis.pay.tingg.africa/paybylink-apis/public/bill/create",
   unipayInitiatePaymentApplication: "http://164.92.135.170:8888/api/applications/initiatePaymentApplicationByApp",
+  paygateBaseURI: "https://secure.paygate.co.za/payweb3",
   clientURI: "https://auctiondev.xyz",
   baits3URICore: "http://bifrost-baits3.gov.bw:90/api/core/v1/api",
   animalhealthURI: "https://lmsserv.auctiondev.xyz"
@@ -326,7 +327,8 @@ export enum EAccessScope {
 export enum EPaymentStatus {
   PENDING = "PENDING",
   FAILED = "FAILED",
-  COMPLETED = "COMPLETED"
+  COMPLETED = "COMPLETED",
+  CANCELLED = "CANCELLED"
 }
 
 export enum ETransactionType {
