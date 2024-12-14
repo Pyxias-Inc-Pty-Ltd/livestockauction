@@ -26,6 +26,7 @@ export const p = {
   createInitAdmin: '/createInitAdmin',
   processSuccessfulPaymentFromTingg: '/processSuccessfulPaymentFromTingg',
   processSuccessfulPaymentFromUniPay: '/processSuccessfulPaymentFromUniPay',
+  processSuccessfulPaymentFromPayGate: '/processSuccessfulPaymentFromPayGate',
   getItems: '/getItems',
   getAuctions: '/getAuctions',
   searchAuctions: '/searchAuctions',
@@ -325,6 +326,41 @@ router.post(p.processSuccessfulPaymentFromUniPay, async (req: Request, res: Resp
     Joi.assert(req.body, schema);
 
     const transaction = await transactionService.processSuccessfulPaymentFromUniPay(req.body as any);
+    return res.status(CREATED).json({transaction});
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Process successful payment from UniPay
+ */
+router.post(p.processSuccessfulPaymentFromPayGate, async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      status: Joi.string().valid(EUniPayPaymentStatus.ACCEPTED).required().messages({
+        'any.required': '"status" is a required field'
+      }),
+      payload: Joi.string().required().messages({
+        'any.required': '"payload" is a required field'
+      }),
+      transaction: Joi.object().keys({
+        id: mongoIdValidation.required().messages({
+          'any.required': '"id" is a required field'
+        }),
+        currency: isoAlpha3CurrencyValidation.required().messages({
+          'any.required': '"currency" is a required field'
+        }),
+        amount: Joi.number().required().messages({
+          'any.required': '"amount" is a required field'
+        })
+      }).required()
+    }).required();
+    
+    // Validate schema against input
+    Joi.assert(req.body, schema);
+
+    const transaction = await transactionService.processSuccessfulPaymentFromPayGate(req.body as any);
     return res.status(CREATED).json({transaction});
   } catch (error) {
     throw error;
