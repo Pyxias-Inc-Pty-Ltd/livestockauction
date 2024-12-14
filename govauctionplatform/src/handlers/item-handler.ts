@@ -1,6 +1,5 @@
 import itemService from '../services/item-service';
 import { IItem } from '../models/item-model';
-import { IUser } from '../models/user-model';
 
 export default {
   setNewBidAmountManually: async function (socket: any, data: { itemId: string, amount: number }): Promise<IItem> {
