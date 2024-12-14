@@ -7,7 +7,7 @@ import itemService from "./item-service";
 import { EPaymentStatus, ESortOrderType, ETransactionSortType, LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, MAX_LIST_LIMIT_NUMBER, paymentProvider, SERVICE_URLS, TINGG_BILLING_SERVICE_ID, transactionType, UNIPAY_APP_AUTH_TOKEN } from "../globals";
 import bidService from "./bid-service";
 import * as luxon from "luxon";
-import { formatPhoneTinggNumber, generateUniPayAppPaymentURL, prefixWithZero } from "../shared/functions";
+import { formatPhoneTinggNumber, generateUniPayAppPaymentURL, generatePayGatePaymentURL, prefixWithZero } from "../shared/functions";
 import tokenService from "./token-service";
 import auctionService from "./auction-service";
 import forumService from "./forum-service";
@@ -122,6 +122,8 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
       (savedReservation.metadata as Map<string, string>).set('paymentLink', `https://billpay.tingg.africa/${data.uniqueHash}`);
       savedReservation.externalReference = data.uniqueHash;
 
+    } else if (input.paymentProvider === 'PAY_GATE') {
+      (savedReservation.metadata as Map<string, string>).set('paymentLink', generatePayGatePaymentURL('DD0C1E91-1F20-9B06-DF03-2106C894F64A', 'b41a77f83a275a849f23e30b4666e837'));
     } else {
 
       // Generate payment link from UniPay
@@ -282,6 +284,8 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
       (savedPurchase.metadata as Map<string, string>).set('paymentLink', `https://billpay.tingg.africa/${data.billID}`);
       savedPurchase.externalReference = data.uniqueHash;
 
+    } else if (input.paymentProvider === 'PAY_GATE') {
+      (savedPurchase.metadata as Map<string, string>).set('paymentLink', generatePayGatePaymentURL('DD0C1E91-1F20-9B06-DF03-2106C894F64A', 'b41a77f83a275a849f23e30b4666e837'));
     } else {
 
       // Generate payment link from UniPay
@@ -427,6 +431,8 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
 
       (savedPurchase.metadata as Map<string, string>).set('paymentLink', `https://billpay.tingg.africa/${data.billID}`);
       savedPurchase.externalReference = data.uniqueHash;
+    } else if (input.paymentProvider === 'PAY_GATE') {
+      (savedPurchase.metadata as Map<string, string>).set('paymentLink', generatePayGatePaymentURL('DD0C1E91-1F20-9B06-DF03-2106C894F64A', 'b41a77f83a275a849f23e30b4666e837'));
     } else {
       // Generate payment link from UniPay
       const queryResponse = await fetch(`${SERVICE_URLS.unipayInitiatePaymentApplication}`, {
@@ -756,6 +762,141 @@ async function processSuccessfulPaymentFromUniPay(input: { payload: string, tran
 }
 
 /**
+ * Process a successful payment from the PayGate platform
+ * 
+ * @param input 
+ */
+async function processSuccessfulPaymentFromPayGate (input: { accountNumber: string, paymentMethod: string }) {
+
+  // let sess: ClientSession | null = null;
+
+  // try {
+
+  //   let needle = false;
+  //   // Find transaction
+  //   const transaction = await getById(input.accountNumber);
+
+  //   // Check if exists
+  //   if (!transaction) {
+  //     throw new NotFoundError('Transaction not found');
+  //   }
+
+  //   // Start session and mongo acid transaction
+  //   sess = await startSession();
+
+  //   // Find item
+  //   const item = await itemService.getById(transaction.itemId);
+
+  //   // Check if exists
+  //   if (!item) {
+  //     throw new NotFoundError('Item not found');
+  //   }
+
+  //   // Check transaction type
+  //   if (transaction.transactionType === 'RESERVATION') {
+
+  //     transaction.status = 'COMPLETED';
+  //     transaction.paymentMethod = input.paymentMethod;
+
+  //     const forum = await forumService.getForumByAuctionId(item.auctionId);
+
+  //     // Check if exists
+  //     if (!forum) {
+  //       throw new NotFoundError('Forum not found');
+  //     }
+
+  //     const stringBuyerId = transaction.buyerId.toString();
+
+  //     // Insert buyer into list of eligible bidders
+  //     item.eligibleBidders.push(stringBuyerId);
+
+  //     forum.participants.push(stringBuyerId);
+
+  //     const auction = await auctionService.getById(item.auctionId);
+
+  //     // Check if exists
+  //     if (!auction) {
+  //       throw new NotFoundError('Auction not found');
+  //     }
+
+  //     // Check if auction has registration fee
+  //     if (auction.hasRegistrationFee) {
+  //       auction.globallyEligibleBidders.push(stringBuyerId);
+  //     }
+
+  //     // Insert buyer into list of eligible bidders
+  //     item.eligibleBidders.push(stringBuyerId);
+
+  //     if (auction.participantsWithBiddingNumbers.length > 0) {
+  //       for (let index = 0; index < auction.participantsWithBiddingNumbers.length; index++) {
+  //         const element = auction.participantsWithBiddingNumbers[index];
+  //         if (element.includes(stringBuyerId)) {
+  //           needle = true;
+  //           break;
+  //         }
+  //       }
+  //     }
+
+  //     await sess.withTransaction(async () => {
+
+  //       if (!needle) {
+  //         const bidderCounter = await BidderCounter.findOneAndUpdate({ auctionId: item.auctionId }, { $inc: { sequenceValue: 1 } }, { new: true, upsert: true, session: sess });
+
+  //         auction.participantsWithBiddingNumbers.push(`${stringBuyerId}:BIDDER${prefixWithZero(bidderCounter.sequenceValue)}`);
+
+  //         await auction.save({
+  //           session: sess
+  //         });
+  //       } else if (auction.hasRegistrationFee) {
+  //         await auction.save({
+  //           session: sess
+  //         });
+  //       }
+
+  //       await forum.save({
+  //         session: sess
+  //       });
+
+  //       await item.save({
+  //         session: sess
+  //       });
+  
+  //       await transaction.save({
+  //         session: sess
+  //       });
+  
+  //     });
+
+  //   } else if (transaction.transactionType === 'PURCHASE') {
+
+  //     item.isPurchased = true;
+  //     transaction.status = 'COMPLETED';
+  //     transaction.paymentMethod = input.paymentMethod;
+
+  //     await sess.withTransaction(async () => {
+  //       await transaction.save({
+  //         session: sess
+  //       });
+  //       await item.save({
+  //         session: sess
+  //       });
+  //     });
+
+  //   }
+
+  //   return transaction;
+
+  // } catch (error) {
+  //   throw error;
+  // } finally {
+  //   if (sess) {
+  //     // End session
+  //     await sess.endSession();
+  //   }
+  // }
+}
+
+/**
  * Get a transaction by id.
  * 
  * @param id 
@@ -886,6 +1027,7 @@ export default {
   pollPaidTransaction,
   processSuccessfulPaymentFromTingg,
   processSuccessfulPaymentFromUniPay,
+  processSuccessfulPaymentFromPayGate,
   initiatePurchaseItemByWinningBidder,
   initiatePurchaseItemUsingBuyoutPrice,
   getTransactions,
