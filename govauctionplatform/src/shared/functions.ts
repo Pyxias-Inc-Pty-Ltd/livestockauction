@@ -7,7 +7,7 @@ import { parsePhoneNumber } from 'libphonenumber-js';
 import { compare, genSalt, hash } from 'bcrypt';
 import * as luxon from 'luxon';
 import { BAITS_API_TOKEN, COUNTRY_PHONE_CODES, SALT_ROUNDS, SERVICE_URLS } from '../globals';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 import { InternalServerError, NotFoundError } from './errors';
 import * as axios from 'axios';
 
@@ -321,13 +321,98 @@ export function formatPhoneTinggNumber(phoneNumber: string): string {
  * Generates a UniPay payment URL
  * 
  * @param applicationId 
- * @returns 
  */
 export function generateUniPayAppPaymentURL(applicationId: string): string {
   const payload = { "a": "d", "b": `${applicationId}:null` };
   const jsonString = JSON.stringify(payload);
   const base64Encoded = Buffer.from(jsonString).toString('base64');
   return `https://unipay.africa/misc/${base64Encoded}`;
+}
+
+/**
+ * Converts the provided payment information to the Paygate format
+ * and generates a checksum for verification.
+ *
+ * @param PAYGATE_ID - The unique identifier for the Paygate merchant.
+ * @param REFERENCE - A unique transaction reference.
+ * @param AMOUNT - The amount to be processed in the transaction.
+ * @param CURRENCY - The currency code (e.g., "ZAR" for South African Rand).
+ * @param RETURN_URL - The URL to return to after processing.
+ * @param TRANSACTION_DATE - The transaction date formatted as "YYYY-MM-DD HH:MM:SS".
+ * @param LOCALE - The locale for the transaction (e.g., "en-za" for South Africa).
+ * @param COUNTRY - The ISO country code (e.g., "ZAF" for South Africa).
+ * @param EMAIL - The email address of the customer.
+ * @param NOTIFY_URL - The URL to receive notifications about the transaction.
+ * @param encryptionKey - The secret key used to generate the checksum.
+ *
+ * @returns A URL-encoded string in the Paygate format.
+ */
+export function convertToPaygateFormat(
+    PAYGATE_ID: string,
+    REFERENCE: string,
+    AMOUNT: number,
+    CURRENCY: string,
+    RETURN_URL: string,
+    TRANSACTION_DATE: Date,
+    LOCALE: string,
+    COUNTRY: string,
+    EMAIL: string,
+    NOTIFY_URL: string,
+    encryptionKey: string
+): string {
+    const amount = AMOUNT * 100;
+    const transactionDate = luxon.DateTime.fromJSDate(TRANSACTION_DATE).toFormat('yyyy-LL-dd HH:mm:ss');
+
+    // Create the checksum string by concatenating the input values
+    const checksumString = `${PAYGATE_ID}${REFERENCE}${amount}${CURRENCY}${RETURN_URL}${transactionDate}${LOCALE}${COUNTRY}${EMAIL}${NOTIFY_URL}${encryptionKey}`;
+
+    // Calculate the MD5 checksum for the concatenated string
+    const CHECKSUM = createHash('md5').update(checksumString).digest('hex');
+
+    // Construct the final query string using URLSearchParams
+    const formattedString = new URLSearchParams({
+        PAYGATE_ID,
+        REFERENCE,
+        AMOUNT: `${amount}`,
+        CURRENCY,
+        RETURN_URL,
+        TRANSACTION_DATE: transactionDate,
+        LOCALE,
+        COUNTRY,
+        EMAIL,
+        NOTIFY_URL,
+        CHECKSUM,
+    }).toString();
+
+    return formattedString;
+}
+
+/**
+ * Formats a PayGate query string into a URL suitable for processing.
+ *
+ * @param {string} baseString - The query string containing PayGate parameters.
+ *                              Example: "PAYGATE_ID=1050469100015&PAY_REQUEST_ID=D7F69068-6E36-E02F-CBD0-FD558C436AF4&REFERENCE=675df518df5dde426982a090&CHECKSUM=8753b7de0e6781762275b1fd6cd8ac0f"
+ * @return {string} A formatted URL including only the PAY_REQUEST_ID and CHECKSUM.
+ *                   Example: "https://secure.paygate.co.za/payweb3/process.trans?PAY_REQUEST_ID=D7F69068-6E36-E02F-CBD0-FD558C436AF4&CHECKSUM=8753b7de0e6781762275b1fd6cd8ac0f"
+ * @throws {Error} If either PAY_REQUEST_ID or CHECKSUM is missing in the input string.
+ */
+export function generatePayGatePaymentURL(baseString: string) {
+  // Define the base URL
+  const baseUrl = `${SERVICE_URLS.paygateBaseURI}/process.trans`;
+
+  // Convert the base string into an object
+  const params = new URLSearchParams(baseString);
+
+  // Extract required parameters
+  const payRequestId = params.get("PAY_REQUEST_ID");
+  const checksum = params.get("CHECKSUM");
+
+  // Construct the formatted URL
+  if (payRequestId && checksum) {
+    return `${baseUrl}?PAY_REQUEST_ID=${encodeURIComponent(payRequestId)}&CHECKSUM=${encodeURIComponent(checksum)}`;
+  } else {
+    throw new Error("Missing required parameters: PAY_REQUEST_ID or CHECKSUM");
+  }
 }
 
 /**
@@ -424,6 +509,70 @@ export async function getAnimalByModisarId(modisarId: string): Promise<any> {
 
     if (response.status === 200) {
       return response.data; // Return the animal data from BAITS API
+    } else if (response.status === 404) {
+      throw new NotFoundError('Resource not found on BAITS API');
+    } else {
+      throw new Error('Invalid response from BAITS API');
+    }
+  } catch (error) {
+    throw error; // Rethrow the error for the caller to handle
+  }
+}
+
+/**
+ * Transfers ownership of animals between keepers.
+ *
+ * This function asynchronously transfers ownership of animals between keepers
+ * by sending a POST request to the BAITS3 URICore API endpoint.
+ *
+ * @param {object} input - The transfer details.
+ * @param {string} input.OfficerID - The ID of the officer performing the transfer.
+ * @param {string} input.CurrentHolding - The current holding location of the animals.
+ * @param {string} input.CurrentKeeperID - The ID of the current keeper.
+ * @param {string} input.NewBrandID - The ID of the new brand for the animals.
+ * @param {string} input.NewBrandShapeID - The ID of the new brand shape for the animals.
+ * @param {string} input.NewKeeperID - The ID of the new keeper.
+ * @param {string} input.Remarks - Any remarks or notes about the transfer.
+ * @param {string[]} input.AnimalTagRegIDs - An array containing the IDs of the animal tags being transferred.
+ * @param {string} input.SupportingDocument - The ID of a supporting document for the transfer (optional).
+ * @return {Promise<any>} A promise that resolves with the response data from the BAITS API on success,
+ * or rejects with an error. The response data format depends on the BAITS API.
+ * @throws {NotFoundError} If the BAITS API returns a 404 Not Found status code.
+ * @throws {Error} If the BAITS API returns any other error status code or an invalid response.
+ */
+export async function transferAnimalBetweenKeepers(input: {
+  OfficerID: string,
+  CurrentHolding: string,
+  CurrentKeeperID: string,
+  NewBrandID: string,
+  NewBrandShapeID: string,
+  NewKeeperID: string,
+  Remarks: string,
+  AnimalTagRegIDs: Array<string>,
+  SupportingDocument: string
+}): Promise<any> {
+  try {
+    const response = await axios.default.post(
+      `${SERVICE_URLS.baits3URICore}/AnimalsOwnershipTransfer?OfficerID=${input.OfficerID}`,
+      {
+        data: {
+          CurrentHolding: input.CurrentHolding,
+          CurrentKeeperID: input.CurrentKeeperID,
+          NewBrandID: input.NewBrandID,
+          NewBrandShapeID: input.NewBrandShapeID,
+          NewKeeperID: input.NewKeeperID,
+          Remarks: input.Remarks,
+          AnimalTagRegIDs: input.AnimalTagRegIDs,
+          SupportingDocument: input.SupportingDocument
+        },
+        headers: {
+          'x-api-key': BAITS_API_TOKEN
+        }
+      }
+    );
+
+    if (response.status === 200) {
+      return response.data; // Return the response data from BAITS API
     } else if (response.status === 404) {
       throw new NotFoundError('Resource not found on BAITS API');
     } else {
