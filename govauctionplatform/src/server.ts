@@ -28,7 +28,7 @@ const app = express();
 // TODO: Configure PRE-FLIGHT CORS (Set allowed origins)
 app.use(cors({origin: ['http://localhost:5173', SERVICE_URLS.clientURI], credentials: true}));
 app.use(express.json());
-app.use(express.urlencoded({extended: true}));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Show routes called in console during development
 if (process.env.NODE_ENV === 'development') {
