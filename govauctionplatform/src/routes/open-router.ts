@@ -333,37 +333,59 @@ router.post(p.processSuccessfulPaymentFromUniPay, async (req: Request, res: Resp
 });
 
 /**
- * Process successful payment from UniPay
+ * Process successful payment from PayGate
  */
 router.post(p.processSuccessfulPaymentFromPayGate, async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
-      status: Joi.string().valid(EUniPayPaymentStatus.ACCEPTED).required().messages({
-        'any.required': '"status" is a required field'
+      PAYGATE_ID: Joi.string().required().messages({
+        'any.required': '"PAYGATE_ID" is a required field',
       }),
-      payload: Joi.string().required().messages({
-        'any.required': '"payload" is a required field'
+      PAY_REQUEST_ID: Joi.string().required().messages({
+        'any.required': '"PAY_REQUEST_ID" is a required field',
       }),
-      transaction: Joi.object().keys({
-        id: mongoIdValidation.required().messages({
-          'any.required': '"id" is a required field'
-        }),
-        currency: isoAlpha3CurrencyValidation.required().messages({
-          'any.required': '"currency" is a required field'
-        }),
-        amount: Joi.number().required().messages({
-          'any.required': '"amount" is a required field'
-        })
-      }).required()
-    }).required();
-    
+      REFERENCE: Joi.string().required().messages({
+        'any.required': '"REFERENCE" is a required field',
+      }),
+      TRANSACTION_STATUS: Joi.string().valid("1", "0").required().messages({
+        'any.required': '"TRANSACTION_STATUS" is a required field',
+      }),
+      RESULT_CODE: Joi.string().required().messages({
+        'any.required': '"RESULT_CODE" is a required field',
+      }),
+      AUTH_CODE: Joi.string().optional(),
+      CURRENCY: Joi.string().required().messages({
+        'any.required': '"CURRENCY" is a required field',
+      }),
+      AMOUNT: Joi.number().required().messages({
+        'any.required': '"AMOUNT" is a required field',
+      }),
+      RESULT_DESC: Joi.string().optional(),
+      TRANSACTION_ID: Joi.string().required().messages({
+        'any.required': '"TRANSACTION_ID" is a required field',
+      }),
+      RISK_INDICATOR: Joi.string().optional(),
+      PAY_METHOD: Joi.string().optional(),
+      PAY_METHOD_DETAIL: Joi.string().optional(),
+      CHECKSUM: Joi.string().required().messages({
+        'any.required': '"CHECKSUM" is a required field',
+      }),
+    });
+
     // Validate schema against input
     Joi.assert(req.body, schema);
 
-    const transaction = await transactionService.processSuccessfulPaymentFromPayGate(req.body as any);
-    return res.status(CREATED).json({transaction});
+    // Log or process the received payment details
+    const paymentDetails = req.body;
+    console.log('Payment details:', paymentDetails);
+
+    // Call your service to handle the successful payment
+    const transaction = await transactionService.processSuccessfulPaymentFromPayGate(paymentDetails);
+
+    return res.status(CREATED).json({ transaction });
   } catch (error) {
-    throw error;
+    console.error('Error processing PayGate payment:', error);
+    return res.status(400).json({ error: error.message });
   }
 });
 
