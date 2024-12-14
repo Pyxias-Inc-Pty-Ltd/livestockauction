@@ -5,7 +5,7 @@ export type itemStatus = "NOT_BEGUN" | "ACTIVE" | "ENDED" | "CANCELLED";
 export type auctionStatus = "NOT_BEGUN" | "ACTIVE" | "ENDED" | "CANCELLED";
 export type animalSpecies = "BOVINE" | "EQUINE" | "CAPRINE" | "OVINE" | "PORCINE";
 export type paymentStatus = "PENDING" | "FAILED" | "COMPLETED";
-export type paymentProvider = "CELLULANT" | "UNIPAY";
+export type paymentProvider = "CELLULANT" | "UNIPAY" | "PAY_GATE";
 export type genderType = "MALE" | "FEMALE" | "MIXED";
 export type participationType = "CITIZEN_ONLY" | "EVERYONE";
 
@@ -432,7 +432,8 @@ export enum EParticipationType {
 
 export enum EPaymentProvider {
   CELLULANT = "CELLULANT",
-  UNIPAY = "UNIPAY"
+  UNIPAY = "UNIPAY",
+  PAY_GATE = "PAY_GATE"
 }
 
 export enum EGenderType {
