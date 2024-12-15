@@ -193,7 +193,7 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
 async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: { itemId: string, paymentProvider: paymentProvider }): Promise<ITransaction> {
   try {
 
-    const result = await Promise.all([itemService.getById(input.itemId, { reservePrice: 1, sellerId: 1, winningBidder: 1 }), tokenService.getActiveToken()]);
+    const result = await Promise.all([itemService.getById(input.itemId, { reservePrice: 1, sellerId: 1, winningBidder: 1, auctionId: 1 }), tokenService.getActiveToken()]);
 
     // Check if exists
     if (!result[0]) {
