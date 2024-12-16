@@ -6,6 +6,14 @@ import { uniqBy } from 'lodash';
 import { ICategory } from './category-model';
 import { IAuction } from './auction-model';
 
+export interface IEligibleBidder {
+  firstName?: string;
+  lastName?: string;
+  name?: string;
+  keeperId: string;
+  bidderNumber: string | null;
+}
+
 export interface IItem extends Document {
   creatorId: Schema.Types.ObjectId;
   auctionId: Schema.Types.ObjectId;
