@@ -1,5 +1,5 @@
-import { IAdmin, IBidder } from "../models/user-model";
-import { IItem, IItemInput, Item } from "../models/item-model";
+import { Bidder, IAdmin, IBidder } from "../models/user-model";
+import { IEligibleBidder, IItem, IItemInput, Item } from "../models/item-model";
 import { formatBAITSAnimalEID, getAnimalBreedById, getAnimalByEID, isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
 import { ForbiddenError, InternalServerError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
@@ -13,7 +13,7 @@ import bidService from "./bid-service";
  * Add an item.
  * 
  * @param input
- * @returns 
+ * @return 
  */
 async function createItem(currentUser: IAdmin, input: IItemInput): Promise<IItem> {
 
@@ -98,7 +98,7 @@ async function createItem(currentUser: IAdmin, input: IItemInput): Promise<IItem
  * 
  * @param id 
  * @param projection
- * @returns 
+ * @return 
  */
 async function deleteItem(currentUser: IAdmin, itemId: string | Schema.Types.ObjectId): Promise<undefined> {
   try {
@@ -131,7 +131,7 @@ async function deleteItem(currentUser: IAdmin, itemId: string | Schema.Types.Obj
  * Sets the new bid amount manually.
  * 
  * @param amount
- * @returns 
+ * @return 
  */
 async function setNewBidAmountManually(input: { itemId: string | Schema.Types.ObjectId, amount: number }): Promise<IItem> {
   try {
@@ -162,7 +162,7 @@ async function setNewBidAmountManually(input: { itemId: string | Schema.Types.Ob
  * Get manual bid amount.
  * 
  * @param amount
- * @returns 
+ * @return 
  */
 async function getManualBidAmount(itemId: string | Schema.Types.ObjectId): Promise<number> {
   try {
@@ -188,7 +188,7 @@ async function getManualBidAmount(itemId: string | Schema.Types.ObjectId): Promi
  * 
  * @param id 
  * @param projection
- * @returns 
+ * @return 
  */
 async function getById(id: string | Schema.Types.ObjectId, projection?: any): Promise<IItem | null> {
   try {
@@ -272,7 +272,7 @@ async function updateItemWithBid(item: IItem, newBidAmount: number, session: Cli
  * @param currentUser
  * @param conditions
  * @param projection
- * @returns 
+ * @return 
  */
 async function getItemsWon(currentUser: IBidder, conditions: Map<string, any>, projection?: any): Promise<IItem[]> {
   // Ensure the winningBidder condition is set
@@ -288,7 +288,7 @@ async function getItemsWon(currentUser: IBidder, conditions: Map<string, any>, p
  * 
  * @param conditions
  * @param projection
- * @returns 
+ * @return
  */
 async function getItems(conditions: Map<string, any>, projection?: any): Promise<IItem[]> {
   try {
@@ -365,6 +365,60 @@ async function getItems(conditions: Map<string, any>, projection?: any): Promise
   }
 }
 
+/**
+ * Get eligible bidders.
+ * 
+ * @param itemId
+ * @return
+ */
+async function getEligibleBidders(itemId: string | Schema.Types.ObjectId): Promise<IEligibleBidder[]> {
+  try {
+    const item = await getById(itemId);
+
+    // Check if exists
+    if (!item) {
+      throw new NotFoundError('Item not found');
+    }
+
+    const auction = await auctionService.getById(item.auctionId, { participantsWithBiddingNumbers: 1 });
+
+    // Check if exists
+    if (!auction) {
+      throw new NotFoundError('Auction not found');
+    }
+
+    const eligibleBidders = await Bidder.find({ _id: { $in: item.eligibleBidders } });
+
+    if (eligibleBidders.length > 0) {
+      // Filter bidders who have bidding numbers in the auction
+      return eligibleBidders
+        .filter((bidder: IBidder) => 
+          auction.participantsWithBiddingNumbers.some(
+            (participant: string) => participant.split(':')[0] === bidder._id.toString()
+          )
+        )
+        .map((bidder: IBidder) => {
+          const participantInfo = auction.participantsWithBiddingNumbers.find(
+            (p: string) => p.split(':')[0] === bidder._id.toString()
+          );
+
+          return {
+            firstName: bidder.firstName,
+            lastName: bidder.lastName,
+            name: bidder.name,
+            keeperId: bidder.keeperId || '',
+            bidderNumber: participantInfo ? participantInfo.split(':')[1] : null
+          };
+        });
+    } else {
+      return [];
+    }
+  } catch (error) {
+    // Rethrow error
+    throw error;
+  }
+}
+
 // Export default
 export default {
   createItem,
@@ -372,6 +426,7 @@ export default {
   updateItemWithBid,
   getManualBidAmount,
   setNewBidAmountManually,
+  getEligibleBidders,
   deleteItem,
   getById,
   getItems,
