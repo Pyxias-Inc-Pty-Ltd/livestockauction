@@ -17,7 +17,8 @@ export const p = {  createItem: '/createItem',
   deleteItem: '/deleteItem',
   setNewBidAmountManually: '/setNewBidAmountManually',
   getManualBidAmount: '/getManualBidAmount',
-  getItemsWon: '/getItemsWon'
+  getItemsWon: '/getItemsWon',
+  getEligibleBidders: '/getEligibleBidders'
 } as const;
 
 /**
@@ -236,6 +237,30 @@ router.get(p.getManualBidAmount, SuperAdminOnly(), BidderOnly(), async (req: Req
 
     const manualBidAmount = await itemService.getManualBidAmount(itemId as string);
     return res.status(OK).json({ manualBidAmount });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Get eligible bidders for an item
+ */
+router.get('/getEligibleBidders', async (req: Request, res: Response) => {
+  try {
+    // Query checks
+    const qSchema = Joi.object().keys({
+      itemId: mongoIdValidation.required().messages({
+        'any.required': '"itemId" is a required field'
+      })
+    }).required();
+    
+    // Validate schema against query
+    Joi.assert(req.query, qSchema);
+
+    const { itemId } = req.query;
+
+    const eligibleBidders = await itemService.getEligibleBidders(itemId as string);
+    return res.status(OK).json({ eligibleBidders });
   } catch (error) {
     throw error;
   }
