@@ -6,6 +6,7 @@ import { IItem } from './item-model';
 import { IBidder } from './user-model';
 
 export interface ITransaction extends Document {
+  auctionId: Schema.Types.ObjectId;
   itemId: Schema.Types.ObjectId;
   buyerId: Schema.Types.ObjectId;
   sellerId: Schema.Types.ObjectId;
@@ -21,6 +22,7 @@ export interface ITransaction extends Document {
 }
 
 export interface ITransactionInput {
+  auctionId: Schema.Types.ObjectId;
   itemId: Schema.Types.ObjectId;
   currency: string;
   buyerId: Schema.Types.ObjectId;
@@ -37,6 +39,7 @@ export interface IUpdateTransactionInput {
 }
 
 const schema = new Schema<ITransaction>({
+  auctionId: { type: Schema.Types.ObjectId, required: true, ref: EModels.AUCTION },
   itemId: { type: Schema.Types.ObjectId, required: true, ref: EModels.ITEM },
   buyerId: { type: Schema.Types.ObjectId, required: true, ref: EModels.BIDDER },
   sellerId: { type: Schema.Types.ObjectId, required: true, ref: EModels.SELLER },
