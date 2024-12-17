@@ -23,20 +23,17 @@ import { BidderCounter } from "../models/bidder-counter";
 async function initiateItemReservation(currentUser: IBidder, input: { itemId: string, paymentProvider: paymentProvider }): Promise<ITransaction> {
   try {
 
-    const result = await Promise.all([itemService.getById(input.itemId, { reservePrice: 1, sellerId: 1, auctionId: 1 }), tokenService.getActiveToken()]);
+    const [item, token] = await Promise.all([itemService.getById(input.itemId, { reservePrice: 1, sellerId: 1, auctionId: 1 }), tokenService.getActiveToken()]);
 
     // Check if exists
-    if (!result[0]) {
+    if (!item) {
       throw new NotFoundError('Item not found');
     }
 
     // Check if exists
-    if (!result[1]) {
+    if (!token) {
       throw new NotFoundError('Token not found');
     }
-
-    const item = result[0];
-    const token = result[1];
 
     // Find auction
     const auction = await auctionService.getById(item.auctionId, { participationType: 1 });
@@ -59,6 +56,7 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
 
     // Create payment transaction
     const paymentInput: ITransactionInput = {
+      auctionId: item.auctionId,
       currency: 'BWP',
       transactionType: 'RESERVATION',
       itemId: item.id,
@@ -193,20 +191,17 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
 async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: { itemId: string, paymentProvider: paymentProvider }): Promise<ITransaction> {
   try {
 
-    const result = await Promise.all([itemService.getById(input.itemId, { reservePrice: 1, sellerId: 1, winningBidder: 1, auctionId: 1 }), tokenService.getActiveToken()]);
+    const [item, token] = await Promise.all([itemService.getById(input.itemId, { reservePrice: 1, sellerId: 1, winningBidder: 1, auctionId: 1 }), tokenService.getActiveToken()]);
 
     // Check if exists
-    if (!result[0]) {
+    if (!item) {
       throw new NotFoundError('Item not found');
     }
 
     // Check if exists
-    if (!result[1]) {
+    if (!token) {
       throw new NotFoundError('Token not found');
     }
-
-    const item = result[0];
-    const token = result[1];
 
     // Check if the bidder is the winner
     if (!item.winningBidder) {
@@ -218,11 +213,16 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
     }
 
     // Find reservation by item
-    const reservation = await Transaction.findOne({ itemId: item._id }, { _id: 1 });
+    const [reservation, auction] = await Promise.all([Transaction.findOne({ itemId: item._id, buyerId: item.winningBidder }, { _id: 1 }), auctionService.getById(item.auctionId, { hasRegistrationFee: 1 })]);
 
     // Check if exists
     if (!reservation) {
       throw new NotFoundError('Transaction not found');
+    }
+
+    // Check if exists
+    if (!auction) {
+      throw new NotFoundError('Auction not found');
     }
 
     const winningBid = await bidService.getWinningBid(input.itemId);
@@ -234,10 +234,22 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
 
     const now = luxon.DateTime.now().setZone(currentUser.tz);
     const endOfDate = now.endOf('day');
-    const amount = winningBid.bidAmount - item.reservePrice;
+    let amount = 0;
+    // TODO: Check for "Registration Fee"
+    if (auction.hasRegistrationFee) {
+      const purchase = await Transaction.findOne({ buyerId: item.winningBidder, auctionId: auction._id, transactionType: "PURCHASE" }, { _id: 1 });
+      if (purchase) {
+        amount = winningBid.bidAmount;
+      } else {
+        amount = winningBid.bidAmount - item.reservePrice;
+      }
+    } else {
+      amount = winningBid.bidAmount - item.reservePrice;
+    }
 
     // Create payment transaction
     const paymentInput: ITransactionInput = {
+      auctionId: item.auctionId,
       currency: 'BWP',
       transactionType: 'PURCHASE',
       itemId: item.id,
@@ -302,7 +314,7 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
       savedPurchase.externalReference = data.uniqueHash;
 
     } else if (input.paymentProvider === 'PAY_GATE') {
-      const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), item.reservePrice, 'BWP', `https://onlineauction-uat.gov.bw/auction/${item.auctionId.toString()}/lot/${item.id.toString()}`, savedPurchase.createdDate, 'en-gb', 'BWA', 'customer@paygate.co.za', 'https://onlineauction-uat.gov.bw/api/open/processSuccessfulPaymentFromPayGate', PAYGATE_ENCRYPTION_KEY);
+      const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), savedPurchase.amount, 'BWP', `https://onlineauction-uat.gov.bw/auction/${item.auctionId.toString()}/lot/${item.id.toString()}`, savedPurchase.createdDate, 'en-gb', 'BWA', 'customer@paygate.co.za', 'https://onlineauction-uat.gov.bw/api/open/processSuccessfulPaymentFromPayGate', PAYGATE_ENCRYPTION_KEY);
 
       const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
         method: "POST",
@@ -373,20 +385,17 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
 
     // TODO: Make sure bidder can not purchase once bidding has begun
 
-    const result = await Promise.all([itemService.getById(input.itemId, { buyoutPrice: 1, sellerId: 1, auctionId: 1 }), tokenService.getActiveToken()]);
+    const [item, token] = await Promise.all([itemService.getById(input.itemId, { buyoutPrice: 1, sellerId: 1, auctionId: 1 }), tokenService.getActiveToken()]);
 
     // Check if exists
-    if (!result[0]) {
+    if (!item) {
       throw new NotFoundError('Item not found');
     }
 
     // Check if exists
-    if (!result[1]) {
+    if (!token) {
       throw new NotFoundError('Token not found');
     }
-
-    const item = result[0];
-    const token = result[1];
 
     // Find auction
     const auction = await auctionService.getById(item.auctionId, { participationType: 1 });
@@ -414,6 +423,7 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
 
     // Create payment transaction
     const paymentInput: ITransactionInput = {
+      auctionId: item.auctionId,
       currency: 'BWP',
       transactionType: 'PURCHASE',
       itemId: item.id,
