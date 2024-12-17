@@ -363,10 +363,14 @@ async function getAuctionReport(auctionId: string | Schema.Types.ObjectId) {
       }
     ]);
 
-    // TODO: Review this aggregation
     // Average Price (by breed and sex)
     const averagePriceByBreedSex = await Item.aggregate([
-      { $match: { auctionId: new Types.ObjectId(auctionId.toString()), isLivestock: true } },
+      { 
+        $match: { 
+          auctionId: new Types.ObjectId(auctionId.toString()), 
+          isLivestock: true 
+        } 
+      },
       {
         $group: {
           _id: { breed: '$breed', gender: '$gender' },
@@ -375,18 +379,9 @@ async function getAuctionReport(auctionId: string | Schema.Types.ObjectId) {
         },
       },
       {
-        $lookup: {
-          from: 'breeds',
-          localField: '_id.breed',
-          foreignField: '_id',
-          as: 'breed',
-        },
-      },
-      { $unwind: '$breed' },
-      {
         $project: {
           _id: 0,
-          breed: '$breed.name',
+          breed: '$_id.breed',
           gender: '$_id.gender',
           averagePrice: 1,
           count: 1,
