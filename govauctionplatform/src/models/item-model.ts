@@ -156,7 +156,7 @@ schema.pre('save', async function () {
       throw new NotFoundError('Auction not found');
     }
 
-    doc.eligibleBidders = auction.globallyEligibleBidders;
+    doc.eligibleBidders = uniqBy(auction.globallyEligibleBidders, (e) => e.toString());
   }
 
   if (doc.isNew || doc.isModified('title')) {
@@ -182,9 +182,11 @@ schema.pre('save', async function () {
 
   // Check if empty
   if (doc.eligibleBidders && doc.eligibleBidders.length > 0) {
+    console.log("Before deduplication:", doc.eligibleBidders);
     doc.eligibleBidders = uniqBy(doc.eligibleBidders, (e) => {
       return e.toString();
     });
+    console.log("After deduplication:", doc.eligibleBidders);
   }
 });
 
