@@ -738,7 +738,6 @@ async function processSuccessfulPaymentFromUniPay(input: { payload: string, tran
 
       // Insert buyer into list of eligible bidders
       item.eligibleBidders.push(stringBuyerId);
-
       forum.participants.push(stringBuyerId);
 
       const auction = await auctionService.getById(item.auctionId);
@@ -752,9 +751,6 @@ async function processSuccessfulPaymentFromUniPay(input: { payload: string, tran
       if (auction.hasRegistrationFee) {
         auction.globallyEligibleBidders.push(stringBuyerId);
       }
-
-      // Insert buyer into list of eligible bidders
-      item.eligibleBidders.push(stringBuyerId);
 
       if (auction.participantsWithBiddingNumbers.length > 0) {
         for (let index = 0; index < auction.participantsWithBiddingNumbers.length; index++) {
@@ -918,6 +914,16 @@ async function processSuccessfulPaymentFromPayGate(input: {
         auction.globallyEligibleBidders.push(stringBuyerId);
       }
 
+      if (auction.participantsWithBiddingNumbers.length > 0) {
+        for (let index = 0; index < auction.participantsWithBiddingNumbers.length; index++) {
+          const element = auction.participantsWithBiddingNumbers[index];
+          if (element.includes(stringBuyerId)) {
+            needle = true;
+            break;
+          }
+        }
+      }
+
       if (!needle) {
         const bidderCounter = await BidderCounter.findOneAndUpdate(
           { auctionId: item.auctionId },
@@ -955,7 +961,6 @@ async function processSuccessfulPaymentFromPayGate(input: {
     }
   }
 }
-
 
 /**
  * Get a transaction by id.
