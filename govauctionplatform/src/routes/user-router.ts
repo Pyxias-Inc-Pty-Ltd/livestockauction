@@ -80,11 +80,8 @@ router.post(p.createSeller, SuperAdminOnly(), async (req: Request, res: Response
       email: Joi.string().required().messages({
         'any.required': '"email" is a required field'
       }), // TODO: Validate email
-      firstName: Joi.string().required().messages({
-        'any.required': '"firstName" is a required field'
-      }),
-      lastName: Joi.string().required().messages({
-        'any.required': '"lastName" is a required field'
+      name: Joi.string().required().messages({
+        'any.required': '"name" is a required field'
       }),
       phone: phoneValidation.required().messages({
         'any.required': '"phone" is a required field'
