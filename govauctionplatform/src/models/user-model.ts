@@ -1,4 +1,4 @@
-import { ConflictError, InternalServerError } from '../shared/errors';
+import { InternalServerError } from '../shared/errors';
 import { Schema, model, Document, Model } from 'mongoose';
 import { adminType, EGenderType, EModels, ENVIRONMENT_PRODUCTION, EUserType, genderType, userType, VERIFIED_EMAIL, welcomeBidderEmailTemplate, welcomeSellerEmailTemplate } from '../globals';
 import isEmail from 'validator/lib/isEmail';
@@ -316,7 +316,7 @@ sellerSchema.post('save', async function (doc, next) {
 
       const { email, name } = doc;
 
-      const htmlContent = welcomeBidderEmailTemplate.replace('[UserName]', name);
+      const htmlContent = welcomeSellerEmailTemplate.replace('[UserName]', name);
     
       await sgMail.send({
           to: email,
