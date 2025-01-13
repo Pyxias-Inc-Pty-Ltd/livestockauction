@@ -1,10 +1,10 @@
-import { BidderOnly, SuperAdminOnly } from '../shared/middleware';
+import { BidderOnly, SellerOnly, SuperAdminOnly } from '../shared/middleware';
 import { Request, Response, Router } from 'express';
 import * as Joi from 'joi';
 import StatusCodes from 'http-status-codes';
 import { isStringNumberLike, mongoIdValidation, phoneValidation } from '../shared/functions';
 import userService from '../services/user-service';
-import { IAdmin, IBidder, IUser } from '../models/user-model';
+import { IAdmin, IBidder, ISeller, IUser } from '../models/user-model';
 import { InternalServerError } from '../shared/errors';
 import { ESortOrderType, EUserSortType, EUserType } from '../globals';
 
@@ -29,7 +29,11 @@ export const p = {
   setFirebaseTokenId: '/setFirebaseTokenId',
   getUserById: '/getUserById',
   beginBAITSKeeperIDVerification: '/beginBAITSKeeperIDVerification',
-  finishBAITSKeeperIDVerification: '/finishBAITSKeeperIDVerification'
+  finishBAITSKeeperIDVerification: '/finishBAITSKeeperIDVerification',
+  createAuctionApprover: '/createAuctionApprover',
+  getAuctionApprovers: '/getAuctionApprovers',
+  updateAuctionApproverStatus: '/updateAuctionApproverStatus',
+  getAuctionApproverById: '/getAuctionApproverById'
 } as const;
 
 /**
@@ -80,11 +84,8 @@ router.post(p.createSeller, SuperAdminOnly(), async (req: Request, res: Response
       email: Joi.string().required().messages({
         'any.required': '"email" is a required field'
       }), // TODO: Validate email
-      firstName: Joi.string().required().messages({
-        'any.required': '"firstName" is a required field'
-      }),
-      lastName: Joi.string().required().messages({
-        'any.required': '"lastName" is a required field'
+      name: Joi.string().required().messages({
+        'any.required': '"name" is a required field'
       }),
       phone: phoneValidation.required().messages({
         'any.required': '"phone" is a required field'
@@ -222,6 +223,84 @@ router.get(p.getUserReport, SuperAdminOnly(), async (req: Request, res: Response
   try {
     const report = await userService.getUserReport();
     return res.status(OK).json({ report });
+  } catch (error) {
+    throw error;
+  }
+});
+
+router.post(p.createAuctionApprover, SellerOnly(), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      email: Joi.string().required().messages({
+        'any.required': '"email" is a required field'
+      }),
+      firstName: Joi.string().required().messages({
+        'any.required': '"firstName" is a required field'
+      }),
+      lastName: Joi.string().required().messages({
+        'any.required': '"lastName" is a required field'
+      })
+    }).required();
+    
+    // Validate schema against input
+    Joi.assert(req.body, schema);
+
+    const approver = await userService.createAuctionApprover(req.user as ISeller, req.body);
+    return res.status(CREATED).json({ approver });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Get auction approvers for current seller
+ */
+router.get(p.getAuctionApprovers, SellerOnly(), async (req: Request, res: Response) => {
+  try {
+    const approvers = await userService.getAuctionApproversForSeller((req.user as ISeller).id);
+    return res.status(OK).json({ approvers });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Get auction approvers for current seller
+ */
+router.get(p.getAuctionApprovers, SellerOnly(), async (req: Request, res: Response) => {
+  try {
+    const approvers = await userService.getAuctionApproversForSeller((req.user as ISeller).id);
+    return res.status(OK).json({ approvers });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Update auction approver status
+ */
+router.put(p.updateAuctionApproverStatus, SellerOnly(), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      approverId: mongoIdValidation.required().messages({
+        'any.required': '"approverId" is a required field'
+      }),
+      isActive: Joi.boolean().required().messages({
+        'any.required': '"isActive" is a required field'
+      })
+    }).required();
+    
+    // Validate schema against body
+    Joi.assert(req.body, schema);
+
+    const { approverId, isActive } = req.body;
+    
+    const approver = await userService.updateAuctionApproverStatus(
+      req.user as ISeller,
+      approverId,
+      isActive
+    );
+    return res.status(OK).json({ approver });
   } catch (error) {
     throw error;
   }

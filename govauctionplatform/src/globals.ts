@@ -1,4 +1,4 @@
-export type userType = "BIDDER" | "ADMIN" | "SELLER";
+export type userType = "BIDDER" | "ADMIN" | "SELLER" | "AUCTION_APPROVER";
 export type adminType = "SUPER";
 export type transactionType = "REFUND" | "PURCHASE" | "RESERVATION";
 export type itemStatus = "NOT_BEGUN" | "ACTIVE" | "ENDED" | "CANCELLED";
@@ -313,7 +313,8 @@ export enum EItemStatus {
 export enum EUserType {
   BIDDER = "BIDDER",
   SELLER = "SELLER",
-  ADMIN = "ADMIN"
+  ADMIN = "ADMIN",
+  AUCTION_APPROVER = "AUCTION_APPROVER",
 }
 
 export enum EAdminType {
@@ -342,6 +343,7 @@ export enum EModels {
   USER = "User",
   BIDDER = "Bidder",
   SELLER = "Seller",
+  AUCTION_APPROVER = "AuctionApprover",
   ITEM = "Item",
   AUCTION = "Auction",
   BID = "Bid",
@@ -480,6 +482,29 @@ export const welcomeBidderEmailTemplate = `
   </html>
 `;
 
+export const welcomeAuctionApproverEmailTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Welcome to Botswana Government Auction Platform</title>
+  </head>
+  <body>
+    <p>Dear [UserName],</p>
+    <p>Welcome to the Botswana Government Auction Platform. You have been appointed as an Auction Approver, which grants you the authority to review and approve auctions before they go live on our platform.</p>
+    <p>As an Auction Approver, you play a crucial role in maintaining the quality and integrity of our auctions. You will be responsible for:</p>
+    <ul>
+      <li>Reviewing auction details and specifications</li>
+      <li>Verifying item descriptions and documentation</li>
+      <li>Ensuring compliance with platform guidelines</li>
+      <li>Approving or requesting changes to auction listings</li>
+    </ul>
+    <p>Your commitment to thorough review helps ensure transparency and fairness in our government auction process.</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
 export const welcomeSellerEmailTemplate = `
   <!DOCTYPE html>
   <html>
@@ -488,8 +513,15 @@ export const welcomeSellerEmailTemplate = `
   </head>
   <body>
     <p>Dear [UserName],</p>
-    <p>We are delighted to have you as a member of our auction platform. Here, you can participate in creating various government auctions, and much more.</p>
-    <p>Feel free to start creating auctions!</p>
+    <p>Welcome to the Botswana Government Auction Platform. As a registered seller, you can now create and manage government auction listings on our platform.</p>
+    <p>You can:</p>
+    <ul>
+      <li>Create auction listings</li>
+      <li>Upload item images and documentation</li>
+      <li>Track bidding activities</li>
+      <li>Manage auction approvers</li>
+    </ul>
+    <p>Our support team is here to help if you need any assistance.</p>
     <p>Best regards,</p>
     <p>The Botswana Government Auction Platform Team</p>
   </body>

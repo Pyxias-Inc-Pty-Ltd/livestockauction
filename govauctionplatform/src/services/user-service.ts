@@ -1,5 +1,5 @@
 import { ConflictError, ForbiddenError } from "../shared/errors";
-import { IAdmin, IUser, User, IAdminInput, Admin, IBidder, IBidderInput, Bidder, ISeller, ISellerInput, Seller } from "../models/user-model";
+import { IAdmin, IUser, User, IAdminInput, Admin, IBidder, IBidderInput, Bidder, ISeller, ISellerInput, Seller, AuctionApprover, IAuctionApprover, IAuctionApproverInput } from "../models/user-model";
 import { EAdminType, ESortOrderType, EUserSortType, EUserType, keeperIDVerificationTemplate, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, SALT_ROUNDS, VERIFIED_EMAIL } from "../globals";
 import { genSalt, hash } from 'bcrypt';
 import { generateOTP, generateRandomPassword, getFarmerByKeeperId, getKeeperByRegNumber, hashOTP, verifyOTP } from "../shared/functions";
@@ -329,6 +329,96 @@ async function finishBAITSKeeperIDVerification(currentUser: IBidder, otp: string
   }
 }
 
+/**
+ * Add an auction approver.
+ * 
+ * @param currentUser - The seller creating the auction approver
+ * @param input - Auction approver input data
+ * @returns Promise<IAuctionApprover>
+ */
+async function createAuctionApprover(currentUser: ISeller, input: IAuctionApproverInput): Promise<IAuctionApprover> {
+  try {
+    input.tz = currentUser.tz;
+    input.locale = currentUser.locale;
+
+    const newApprover = new AuctionApprover({
+      ...input,
+      createdBySeller: currentUser.id
+    });
+
+    await newApprover.save();
+
+    return newApprover;
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Get auction approvers for a specific seller.
+ * 
+ * @param sellerId - ID of the seller
+ * @param projection - Optional fields to project
+ * @returns Promise<IAuctionApprover[]>
+ */
+async function getAuctionApproversForSeller(sellerId: string | Schema.Types.ObjectId, projection?: any): Promise<IAuctionApprover[]> {
+  try {
+    return await AuctionApprover.find(
+      { createdBySeller: sellerId, isActive: true }, 
+      projection
+    );
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Update auction approver active status.
+ * 
+ * @param currentUser - The seller making the update
+ * @param approverId - ID of the approver to update
+ * @param isActive - New active status
+ * @returns Promise<IAuctionApprover>
+ */
+async function updateAuctionApproverStatus(
+  currentUser: ISeller,
+  approverId: string | Schema.Types.ObjectId,
+  isActive: boolean
+): Promise<IAuctionApprover | null> {
+  try {
+    const approver = await AuctionApprover.findOne({
+      _id: approverId,
+      createdBySeller: currentUser.id
+    });
+
+    if (!approver) {
+      throw new ConflictError('Auction approver not found or not authorized');
+    }
+
+    approver.isActive = isActive;
+    await approver.save();
+
+    return approver;
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Get an auction approver by ID.
+ * 
+ * @param id - Approver ID
+ * @param projection - Optional fields to project
+ * @returns Promise<IAuctionApprover | null>
+ */
+async function getAuctionApproverById(id: string | Schema.Types.ObjectId, projection?: any): Promise<IAuctionApprover | null> {
+  try {
+    return await AuctionApprover.findById(id, projection);
+  } catch (error) {
+    throw error;
+  }
+}
+
 // Export default
 export default {
   getUserReport,
@@ -339,8 +429,12 @@ export default {
   createInitAdmin,
   createBidder,
   createSeller,
+  createAuctionApprover,
   getByEmail,
   getByPhone,
   getUsers,
-  getById
+  getById,
+  getAuctionApproversForSeller,
+  getAuctionApproverById,
+  updateAuctionApproverStatus
 } as const;

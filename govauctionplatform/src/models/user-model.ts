@@ -1,6 +1,6 @@
-import { ConflictError, InternalServerError } from '../shared/errors';
+import { InternalServerError } from '../shared/errors';
 import { Schema, model, Document, Model } from 'mongoose';
-import { adminType, EGenderType, EModels, ENVIRONMENT_PRODUCTION, EUserType, genderType, userType, VERIFIED_EMAIL, welcomeBidderEmailTemplate, welcomeSellerEmailTemplate } from '../globals';
+import { adminType, EGenderType, EModels, ENVIRONMENT_PRODUCTION, EUserType, genderType, userType, VERIFIED_EMAIL, welcomeAuctionApproverEmailTemplate, welcomeBidderEmailTemplate, welcomeSellerEmailTemplate } from '../globals';
 import isEmail from 'validator/lib/isEmail';
 import isURL from 'validator/lib/isURL';
 import { sgMail } from '../index';
@@ -10,12 +10,12 @@ export interface IUser extends Document {
   lastName?: string;
   photoUrl?: string;
   userType: userType;
-  phone: string;
+  phone?: string;
   email?: string;
   tz: string;
   locale: string;
   firebaseTokenId: string;
-  password: string;
+  password?: string;
   createdDate: any;
   updatedDate: any;
 }
@@ -118,8 +118,25 @@ export interface IUpdateAdminInput {
   lastName?: string;
 }
 
+export interface IAuctionApprover extends IUser {
+  email: string;
+  firstName: string;
+  lastName: string;
+  createdBySeller: Schema.Types.ObjectId;
+  isActive: boolean;
+}
+
+export interface IAuctionApproverInput {
+  createdBySeller: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  locale: string;
+  tz: string;
+}
+
 const userSchema = new Schema<IUser>({
-  userType: {type: String, required: true, enum: [EUserType.ADMIN, EUserType.BIDDER]},
+  userType: {type: String, required: true, enum: [EUserType.ADMIN, EUserType.BIDDER, EUserType.SELLER, EUserType.AUCTION_APPROVER]},
   email: {type: String, unique: true, sparse: true, validate: {
     msg: 'Valid email must be supplied.',
       validator: function (v: string): boolean {
@@ -316,7 +333,7 @@ sellerSchema.post('save', async function (doc, next) {
 
       const { email, name } = doc;
 
-      const htmlContent = welcomeBidderEmailTemplate.replace('[UserName]', name);
+      const htmlContent = welcomeSellerEmailTemplate.replace('[UserName]', name);
     
       await sgMail.send({
           to: email,
@@ -376,9 +393,96 @@ adminSchema.set('toJSON', {
   }
 });
 
+const auctionApproverSchema = new Schema<IAuctionApprover>({
+  userType: {
+    type: String, 
+    required: true, 
+    default: EUserType.AUCTION_APPROVER, 
+    enum: [EUserType.AUCTION_APPROVER]
+  },
+  email: {
+    type: String, 
+    unique: true, 
+    required: true, 
+    validate: {
+      msg: 'Valid email must be supplied.',
+      validator: function (v: string): boolean {
+        return isEmail(v);
+      }
+    }
+  },
+  firstName: {
+    type: String, 
+    required: true, 
+    trim: true
+  },
+  lastName: {
+    type: String, 
+    required: true, 
+    trim: true
+  },
+  tz: {
+    type: String, 
+    trim: true, 
+    required: true
+  },
+  locale: {
+    type: String, 
+    trim: true, 
+    required: true
+  },
+  createdBySeller: {
+    type: Schema.Types.ObjectId,
+    required: true,
+    ref: EModels.SELLER
+  },
+  isActive: {
+    type: Boolean,
+    required: true,
+    default: true
+  }
+}, {
+  timestamps: {
+    createdAt: "createdDate",
+    updatedAt: "updatedDate"
+  }
+});
+
+auctionApproverSchema.set('toJSON', {
+  virtuals: true,
+  versionKey: false,
+  transform: function (doc, ret) {
+    delete ret._id;
+    delete ret.password;
+    delete ret.__t;
+  }
+});
+
+auctionApproverSchema.post('save', async function (doc, next) {
+  if (this.$locals.isNew) {
+    try {
+      const { email, firstName } = doc;
+
+      const htmlContent = welcomeAuctionApproverEmailTemplate.replace('[UserName]', firstName);
+    
+      await sgMail.send({
+          to: email,
+          from: VERIFIED_EMAIL,
+          subject: 'Welcome to the Botswana Government Auction Platform',
+          html: htmlContent
+      });
+
+      next();
+    } catch (error) {
+      next(new InternalServerError('Error sending welcome email'));
+    }
+  }
+});
+
 export const User: Model<IUser> = model(EModels.USER, userSchema);
 
 // Attach discriminators
 export const Admin = User.discriminator(EModels.ADMIN, adminSchema);
 export const Bidder = User.discriminator(EModels.BIDDER, bidderSchema);
 export const Seller = User.discriminator(EModels.SELLER, sellerSchema);
+export const AuctionApprover = User.discriminator(EModels.AUCTION_APPROVER, auctionApproverSchema);
