@@ -85,7 +85,7 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
           "deliveryChannel": "EMAIL",
           "countryCode": "BWA",
           "currencyCode": "BWP",
-          "msisdn": formatPhoneTinggNumber(currentUser.phone),
+          "msisdn": formatPhoneTinggNumber(currentUser.phone?currentUser.phone: ""),
           "dueDate": endOfDate.toMillis(),
           "email": currentUser.email
       }),
@@ -279,7 +279,7 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
           "deliveryChannel": "EMAIL",
           "countryCode": "BWA",
           "currencyCode": "BWP",
-          "msisdn": formatPhoneTinggNumber(currentUser.phone),
+          "msisdn": formatPhoneTinggNumber(currentUser.phone?currentUser.phone:''),
           "dueDate": endOfDate.toMillis(),
           "email": currentUser.email
       }),
@@ -451,7 +451,7 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
           "deliveryChannel": "EMAIL",
           "countryCode": "BWA",
           "currencyCode": "BWP",
-          "msisdn": formatPhoneTinggNumber(currentUser.phone),
+          "msisdn": formatPhoneTinggNumber(currentUser.phone? currentUser.phone: ""),
           "dueDate": endOfDate.toMillis(),
           "email": currentUser.email
       }),
