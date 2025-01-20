@@ -119,6 +119,9 @@ async function createSeller(currentUser: IAdmin, input: ISellerInput): Promise<I
     // Set password
     input.password = hashedSecretInput;
 
+    // TODO: Remove and send password via email, and ask user to change upon inital login
+    console.log("seller password: ", input.password);
+
     const newSeller = new Seller(input);
 
     newSeller.tz = currentUser.tz;
