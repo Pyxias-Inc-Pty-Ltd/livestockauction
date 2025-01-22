@@ -417,6 +417,7 @@ router.get(p.getAuctions, async (req: Request, res: Response) => {
         'any.required': '"sortBy" is a required field'
       }),
       categoryId: mongoIdValidation,
+      creatorId: mongoIdValidation,
       status: Joi.string().valid(EAuctionStatus.ALL, EAuctionStatus.FRONT_VIEW, EAuctionStatus.NOT_BEGUN, EAuctionStatus.ACTIVE, EAuctionStatus.CANCELLED, EAuctionStatus.ENDED),
       limit: isStringNumberLike.required().messages({
         'any.required': '"limit" is a required field'
@@ -427,7 +428,7 @@ router.get(p.getAuctions, async (req: Request, res: Response) => {
     // Validate schema against query
     Joi.assert(req.query, qSchema);
 
-    const { limit, sortBy, sortOrder, lastDocumentId, categoryId, status } = req.query;
+    const { limit, sortBy, sortOrder, lastDocumentId, categoryId, creatorId, status } = req.query;
   
     conditions.set('limit', parseInt(limit as string));
     conditions.set('sortBy', sortBy);
@@ -435,6 +436,10 @@ router.get(p.getAuctions, async (req: Request, res: Response) => {
 
     if (lastDocumentId) {
       conditions.set('lastDocumentId', lastDocumentId);
+    }
+
+    if (creatorId) {
+      conditions.set('creatorId', creatorId);
     }
 
     if (categoryId) {
