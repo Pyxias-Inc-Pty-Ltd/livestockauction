@@ -204,6 +204,10 @@ async function getAuctions(conditions: Map<string, any>, projection?: any): Prom
     const q = Auction.find({}, projection);
 
     // Filters
+    if (conditions.get('creatorId')) {
+      q.where({creatorId: conditions.get('creatorId')});
+    }
+
     if (conditions.get('categoryId')) {
       q.where({categoryId: conditions.get('categoryId')});
     }
