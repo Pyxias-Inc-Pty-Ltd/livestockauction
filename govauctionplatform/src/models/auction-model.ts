@@ -95,7 +95,7 @@ requiredAttributeSchema.post('save', function(error: any, doc: any, next: any) {
 });
 
 const auctionSchema = new Schema<IAuction>({
-  creatorId: { type: Schema.Types.ObjectId, required: true, ref: EModels.ADMIN },
+  creatorId: { type: Schema.Types.ObjectId, required: true, ref: EModels.USER },
   title: { type: String, required: true, trim: true },
   titleSlug: {type: String, trim: true, sparse: true, unique: true},
   auctionNumber: { type: String, trim: true, required: true },
