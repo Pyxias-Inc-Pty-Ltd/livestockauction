@@ -114,13 +114,13 @@ async function createBidder(input: IBidderInput): Promise<IBidder> {
 async function createSeller(currentUser: IAdmin, input: ISellerInput): Promise<ISeller> {
   try {
     const salt = await genSalt(SALT_ROUNDS);
-    const hashedSecretInput = await hash(generateRandomPassword(), salt);
+    const randPass = generateRandomPassword(10);
 
     // Set password
-    input.password = hashedSecretInput;
+    input.password = await hash(randPass, salt);
 
     // TODO: Remove and send password via email, and ask user to change upon inital login
-    console.log("seller password: ", input.password);
+    console.log("seller password: ", randPass);
 
     const newSeller = new Seller(input);
 
