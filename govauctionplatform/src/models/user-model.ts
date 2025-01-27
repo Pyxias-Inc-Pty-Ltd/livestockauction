@@ -15,7 +15,7 @@ export interface IUser extends Document {
   tz: string;
   locale: string;
   firebaseTokenId: string;
-  password?: string;
+  password: string;
   createdDate: any;
   updatedDate: any;
 }
@@ -122,6 +122,8 @@ export interface IAuctionApprover extends IUser {
   email: string;
   firstName: string;
   lastName: string;
+  phone?: string;
+  password: string;
   createdBySeller: Schema.Types.ObjectId;
   isActive: boolean;
 }
@@ -129,6 +131,7 @@ export interface IAuctionApprover extends IUser {
 export interface IAuctionApproverInput {
   createdBySeller: string;
   email: string;
+  phone?: string;
   firstName: string;
   lastName: string;
   locale: string;
@@ -411,6 +414,8 @@ const auctionApproverSchema = new Schema<IAuctionApprover>({
       }
     }
   },
+  phone: {type: String, trim: true},
+  password: {type: String, trim: true, required: true},
   firstName: {
     type: String, 
     required: true, 
