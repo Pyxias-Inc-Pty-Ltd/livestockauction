@@ -9,7 +9,7 @@ import userService from '../services/user-service';
  * Check if current user is a super admin
  *
  * @param errorMessage
- * @returns
+ * @return Middleware function
  */
 export function SuperAdminOnly(errorMessage?: string) {
   return function (req: Request, res: Response, next: NextFunction) {
@@ -37,7 +37,7 @@ export function SuperAdminOnly(errorMessage?: string) {
 /**
  * Check if current user is a bidder
  * 
- * @returns 
+ * @return Middleware function
  */
 export function BidderOnly(errorMessage?: string) {
   return function (req: Request, res: Response, next: NextFunction) {
@@ -65,7 +65,7 @@ export function BidderOnly(errorMessage?: string) {
 /**
  * Check if current user is a seller
  * 
- * @returns 
+ * @return Middleware function
  */
 export function SellerOnly(errorMessage?: string) {
   return function (req: Request, res: Response, next: NextFunction) {
@@ -77,6 +77,35 @@ export function SellerOnly(errorMessage?: string) {
               throw new UnauthorizedError(errorMessage);
             } else {
               throw new UnauthorizedError(`User must be of type ${EUserType.SELLER}`);
+            }
+          }
+        } else {
+          res.locals.isSkippable = true;
+        }
+      }
+      next();
+    } catch (error) {
+      next(error);
+    }
+  }
+}
+
+/**
+ * Check if current user is an auction approver
+ * 
+ * @param errorMessage Optional custom error message
+ * @return Middleware function
+ */
+export function AuctionApproverOnly(errorMessage?: string) {
+  return function (req: Request, res: Response, next: NextFunction) {
+    try {
+      if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) {
+        if (((req as any).user as IUser).userType !== EUserType.AUCTION_APPROVER) {
+          if (!res.locals.isSkippable) {
+            if (errorMessage) {
+              throw new UnauthorizedError(errorMessage);
+            } else {
+              throw new UnauthorizedError(`User must be of type ${EUserType.AUCTION_APPROVER}`);
             }
           }
         } else {
