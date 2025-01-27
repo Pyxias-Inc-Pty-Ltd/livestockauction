@@ -8,7 +8,7 @@ export type paymentStatus = "PENDING" | "FAILED" | "COMPLETED" | "CANCELLED";
 export type paymentProvider = "CELLULANT" | "UNIPAY" | "PAY_GATE";
 export type genderType = "MALE" | "FEMALE" | "MIXED";
 export type participationType = "CITIZEN_ONLY" | "EVERYONE";
-
+export type publishedStatus = "PUBLISHED" | "UNPUBLISHED" | "REJECTED";
 export type fauxObject = {[key: string]: any};
 
 export const STATE_JWT_SECRET = process.env.STATE_JWT_SECRET as string;
@@ -319,6 +319,12 @@ export enum EUserType {
 
 export enum EAdminType {
   SUPER = "SUPER"
+}
+
+export enum EPublishedStatus {
+  PUBLISHED = "PUBLISHED",
+  UNPUBLISHED = "UNPUBLISHED",
+  REJECTED = "REJECTED",
 }
 
 export enum EAccessScope {
