@@ -1,9 +1,9 @@
-import { IAdmin } from "../models/user-model";
+import { IAdmin, IAuctionApprover, ISeller } from "../models/user-model";
 import { generateAuctionNumber, isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession, Types } from 'mongoose';
-import { EAuctionSortType, EAuctionStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { EAuctionSortType, EAuctionStatus, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
 import { Auction, IAuction, IAuctionInput, IRequiredAttribute, IRequiredAttributeInput, RequiredAttribute } from "../models/auction-model";
 import categoryService from "./category-service";
 import forumService from "./forum-service";
@@ -189,10 +189,9 @@ async function searchAuctions (input: { term: string }): Promise<IAuction[]> {
  */
 async function getAuctions(conditions: Map<string, any>, projection?: any): Promise<IAuction[]> {
   try {
-
     let _limit: number = LIST_LIMIT_NUMBER;
 
-    //set custom limit
+    // Set custom limit
     if (conditions.get('limit') && conditions.get('limit') >= 1) {
       if (conditions.get('limit') > MAX_LIST_LIMIT_NUMBER) {
         throw new ForbiddenError(`limit must not exceed ${MAX_LIST_LIMIT_NUMBER}`);
@@ -205,26 +204,46 @@ async function getAuctions(conditions: Map<string, any>, projection?: any): Prom
 
     // Filters
     if (conditions.get('creatorId')) {
-      q.where({creatorId: conditions.get('creatorId')});
+      q.where({ creatorId: conditions.get('creatorId') });
     }
 
     if (conditions.get('categoryId')) {
-      q.where({categoryId: conditions.get('categoryId')});
+      q.where({ categoryId: conditions.get('categoryId') });
     }
 
     if (conditions.get('status')) {
       if (conditions.get('status') === EAuctionStatus.ALL) {
-        q.or([{status: EAuctionStatus.ACTIVE}, {status: EAuctionStatus.NOT_BEGUN}, {status: EAuctionStatus.CANCELLED}, {status: EAuctionStatus.ENDED}]);
+        q.or([
+          { status: EAuctionStatus.ACTIVE },
+          { status: EAuctionStatus.NOT_BEGUN },
+          { status: EAuctionStatus.CANCELLED },
+          { status: EAuctionStatus.ENDED }
+        ]);
       } else if (conditions.get('status') === EAuctionStatus.FRONT_VIEW) {
-        q.or([{status: EAuctionStatus.ACTIVE}, {status: EAuctionStatus.NOT_BEGUN}, {status: EAuctionStatus.ENDED}]);
+        q.or([
+          { status: EAuctionStatus.ACTIVE },
+          { status: EAuctionStatus.NOT_BEGUN },
+          { status: EAuctionStatus.ENDED }
+        ]);
       } else {
-        q.where({status: conditions.get('status')});
+        q.where({ status: conditions.get('status') });
       }
+    }
+
+    // Filter by publishedStatus (if provided)
+    if (conditions.get('publishedStatus')) {
+      q.where({ publishedStatus: conditions.get('publishedStatus') });
+    } else {
+      // Default to only published auctions if no publishedStatus is provided
+      q.where({ publishedStatus: EPublishedStatus.PUBLISHED });
     }
 
     // Range
     if (conditions.get('startDate') && conditions.get('endDate')) {
-      q.and([{ 'createdDate': { $gte: new Date(conditions.get('startDate')) } }, { 'createdDate': { $lte: new Date(conditions.get('endDate')) } }]);
+      q.and([
+        { 'createdDate': { $gte: new Date(conditions.get('startDate')) } },
+        { 'createdDate': { $lte: new Date(conditions.get('endDate')) } }
+      ]);
     } else if (conditions.get('startDate')) {
       q.where({ 'createdDate': { $gte: new Date(conditions.get('startDate')) } });
     } else if (conditions.get('endDate')) {
@@ -234,7 +253,7 @@ async function getAuctions(conditions: Map<string, any>, projection?: any): Prom
     // Sort
     if (conditions.get('sortBy')) {
       if (conditions.get('sortBy') === EAuctionSortType.DATE) {
-        q.sort({'_id': conditions.get('sortOrder')});
+        q.sort({ '_id': conditions.get('sortOrder') });
       }
     }
 
@@ -252,13 +271,11 @@ async function getAuctions(conditions: Map<string, any>, projection?: any): Prom
     q.limit(_limit);
 
     return await q;
-
   } catch (error) {
     // Rethrow error
     throw error;
   }
 }
-
 /**
  * Get required attributes.
  * 
@@ -484,6 +501,124 @@ async function getAuctionReport(auctionId: string | Schema.Types.ObjectId) {
   }
 }
 
+/**
+ * Publish an auction
+ */
+async function publishAuction(currentUser: IAuctionApprover, auctionId: string): Promise<IAuction> {
+  try {
+    const auction = await getById(auctionId);
+    
+    if (!auction) {
+      throw new NotFoundError('Auction not found');
+    }
+
+    if (auction.publishedStatus === EPublishedStatus.PUBLISHED) {
+      throw new ForbiddenError('Auction is already published');
+    }
+
+    if (auction.publishedStatus === EPublishedStatus.REJECTED) {
+      throw new ForbiddenError('Rejected auctions cannot be published without changes');
+    }
+
+    const updatedAuction = await Auction.findByIdAndUpdate(
+      auctionId,
+      { 
+        publishedStatus: EPublishedStatus.PUBLISHED,
+        publishedBy: currentUser._id,
+        reasonForRejection: undefined
+      },
+      { new: true }
+    ).select('-__v -globallyEligibleBidders');
+
+    if (!updatedAuction) {
+      throw new NotFoundError('Auction not found');
+    }
+
+    return updatedAuction;
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Unpublish an auction
+ */
+async function unpublishAuction(currentUser: ISeller, auctionId: string): Promise<IAuction> {
+  try {
+    const auction = await getById(auctionId);
+    
+    if (!auction) {
+      throw new NotFoundError('Auction not found');
+    }
+
+    if (auction.publishedStatus !== EPublishedStatus.PUBLISHED) {
+      throw new ForbiddenError('Only published auctions can be unpublished');
+    }
+
+    if (auction.status === EAuctionStatus.ACTIVE) {
+      throw new ForbiddenError('Active auctions cannot be unpublished');
+    }
+
+    const updatedAuction = await Auction.findByIdAndUpdate(
+      auctionId,
+      { 
+        publishedStatus: EPublishedStatus.UNPUBLISHED,
+        publishedBy: undefined,
+        reasonForRejection: undefined
+      },
+      { new: true }
+    ).select('-__v -globallyEligibleBidders');
+
+    if (!updatedAuction) {
+      throw new NotFoundError('Auction not found');
+    }
+
+    return updatedAuction;
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Reject an auction
+ */
+async function rejectAuction(currentUser: IAuctionApprover, auctionId: string, reason: string): Promise<IAuction> {
+  try {
+    const auction = await getById(auctionId);
+    
+    if (!auction) {
+      throw new NotFoundError('Auction not found');
+    }
+
+    if (auction.publishedStatus === EPublishedStatus.PUBLISHED) {
+      throw new ForbiddenError('Published auctions cannot be rejected');
+    }
+
+    if (!reason) {
+      throw new ForbiddenError('Rejection reason is required');
+    }
+
+    const updatedAuction = await Auction.findByIdAndUpdate(
+      auctionId,
+      { 
+        publishedStatus: EPublishedStatus.REJECTED,
+        publishedBy: currentUser._id,
+        reasonForRejection: reason,
+        status: EAuctionStatus.CANCELLED
+      },
+      { new: true }
+    ).select('-__v -globallyEligibleBidders');
+
+    if (!updatedAuction) {
+      throw new NotFoundError('Auction not found');
+    }
+
+    return updatedAuction;
+  } catch (error) {
+    throw error;
+  }
+}
+
 // Export default
 export default {
   createAuction,
@@ -493,5 +628,8 @@ export default {
   searchAuctions,
   getAuctionReport,
   createRequiredAttribute,
-  getRequiredAttributes
+  getRequiredAttributes,
+  publishAuction,
+  unpublishAuction,
+  rejectAuction
 } as const;
