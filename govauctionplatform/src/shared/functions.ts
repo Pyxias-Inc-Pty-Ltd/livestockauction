@@ -9,7 +9,7 @@ import * as luxon from 'luxon';
 import { BAITS_API_TOKEN, COUNTRY_PHONE_CODES, SALT_ROUNDS, SERVICE_URLS } from '../globals';
 import { randomBytes, createHash } from 'crypto';
 import { InternalServerError, NotFoundError } from './errors';
-import * as axios from 'axios';
+import * as axios from "axios";
 
 export const isoAlpha2CountryValidation
   = Joi.string().regex(/^[A-Z]{2}$/);
