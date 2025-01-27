@@ -303,7 +303,9 @@ router.get(p.getAllAuctions, SuperAdminOnly(), SellerOnly(), AuctionApproverOnly
       conditions.set('lastDocumentId', lastDocumentId);
     }
 
-    if (creatorId) {
+    if ((req.user as IAuctionApprover).createdBySeller) {
+      conditions.set('creatorId', (req.user as IAuctionApprover).createdBySeller.toString());
+    } else if (creatorId) {
       conditions.set('creatorId', creatorId);
     }
 
