@@ -1,6 +1,6 @@
-import { ConflictError } from '../shared/errors';
+import { ConflictError, ForbiddenError } from '../shared/errors';
 import { Schema, model, Document } from 'mongoose';
-import { EModels, EAuctionStatus, participationType, EParticipationType, auctionStatus, ENVIRONMENT_PRODUCTION } from '../globals';
+import { EModels, EAuctionStatus, participationType, EParticipationType, auctionStatus, ENVIRONMENT_PRODUCTION, publishedStatus, EPublishedStatus } from '../globals';
 import { generateSlug } from '../shared/functions';
 import { isURL } from 'validator';
 
@@ -33,6 +33,9 @@ export interface IAuction extends Document {
   startTime: Date;
   endTime: Date;
   status: auctionStatus;
+  publishedStatus: publishedStatus;
+  reasonForRejection?: string;
+  publishedBy?: Schema.Types.ObjectId;
   isBeingLivestreamed: boolean;
   streamUrl: string;
   createdDate: any;
@@ -48,6 +51,9 @@ export interface IAuctionInput {
   participationType: participationType;
   creatorId: Schema.Types.ObjectId;
   categoryId: Schema.Types.ObjectId;
+  publishedStatus?: publishedStatus;
+  reasonForRejection?: string;
+  publishedBy?: Schema.Types.ObjectId;
   terms: string;
   isBeingLivestreamed: boolean;
   streamUrl: string;
@@ -99,6 +105,13 @@ const auctionSchema = new Schema<IAuction>({
   title: { type: String, required: true, trim: true },
   titleSlug: {type: String, trim: true, sparse: true, unique: true},
   auctionNumber: { type: String, trim: true, required: true },
+  publishedStatus: { type: String, enum: EPublishedStatus, default: EPublishedStatus.UNPUBLISHED, required: true },
+  reasonForRejection: { type: String, required: function(): boolean {
+    return (this as IAuction).publishedStatus === EPublishedStatus.REJECTED;
+  }, trim: true },
+  publishedBy: { type: Schema.Types.ObjectId, ref: EModels.AUCTION_APPROVER, required: function(): boolean {
+    return (this as IAuction).publishedStatus === EPublishedStatus.PUBLISHED;
+  }, default: null },
   auctionLocation: { type: String, trim: true },
   numberOfLots: { type: Number, default: 0, min: 0, required: true },
   hasRegistrationFee: { type: Boolean, default: false, required: true },
@@ -155,6 +168,48 @@ auctionSchema.pre('save', async function () {
 
   if (this.isModified('globallyEligibleBidders')) {
     await doc.$model(EModels.ITEM).updateMany({auctionId: doc._id}, {$set: { eligibleBidders: doc.globallyEligibleBidders }});
+  }
+
+  // PUBLISHED requires `publishedBy`
+  if (
+    doc.isModified('publishedStatus') && 
+    doc.publishedStatus === EPublishedStatus.PUBLISHED && 
+    !doc.publishedBy
+  ) {
+    throw new ForbiddenError('PUBLISHED auctions require a publishedBy admin.');
+  }
+
+  // REJECTED requires `reasonForRejection`
+  if (
+    doc.isModified('publishedStatus') && 
+    doc.publishedStatus === EPublishedStatus.REJECTED && 
+    !doc.reasonForRejection?.trim()
+  ) {
+    new ForbiddenError('REJECTED auctions require a reasonForRejection.');
+  }
+
+  // Prevent activating an unpublished auction
+  if (
+    doc.isModified('status') && 
+    doc.status === EAuctionStatus.ACTIVE && 
+    doc.publishedStatus !== EPublishedStatus.PUBLISHED
+  ) {
+    new ForbiddenError('Auction must be PUBLISHED before activation.');
+  }
+
+  // Clear irrelevant fields when status changes
+  if (doc.isModified('publishedStatus')) {
+    switch (doc.publishedStatus) {
+      case EPublishedStatus.PUBLISHED:
+        doc.reasonForRejection = undefined;
+        break;
+      case EPublishedStatus.UNPUBLISHED:
+        doc.reasonForRejection = undefined;
+        doc.publishedBy = undefined;
+        break;
+      case EPublishedStatus.REJECTED:
+        break;
+    }
   }
 });
 
