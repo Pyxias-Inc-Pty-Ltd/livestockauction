@@ -1,11 +1,11 @@
 import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
-import { isoDateValidation, mongoIdValidation } from '../shared/functions';
-import { SuperAdminOnly, SellerOnly } from '../shared/middleware';
-import { IAdmin } from '../models/user-model';
+import { isoDateValidation, isStringNumberLike, mongoIdValidation } from '../shared/functions';
+import { SuperAdminOnly, SellerOnly, AuctionApproverOnly } from '../shared/middleware';
+import { IAdmin, IAuctionApprover, ISeller } from '../models/user-model';
 import auctionService from '../services/auction-service';
-import { EParticipationType } from '../globals';
+import { EAuctionStatus, EAuctionSortType, EParticipationType, ESortOrderType, EPublishedStatus } from '../globals';
 
 // Constants
 const router = Router();
@@ -17,7 +17,11 @@ export const p = {
   createRequiredAttribute: '/createRequiredAttribute',
   deleteAuction: '/deleteAuction',
   getAuctionReport: '/getAuctionReport',
-  getRequiredAttributes: '/getRequiredAttributes'
+  getRequiredAttributes: '/getRequiredAttributes',
+  publishAuction: '/publishAuction',
+  unpublishAuction: '/unpublishAuction',
+  rejectAuction: '/rejectAuction',
+  getAllAuctions: '/getAllAuctions'
 } as const;
 
 /**
@@ -165,6 +169,158 @@ router.get(p.getRequiredAttributes, SuperAdminOnly(), async (req: Request, res: 
   try {
     const requiredAttributes = await auctionService.getRequiredAttributes();
     return res.status(OK).json({ requiredAttributes });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Publish an auction by an auction approver
+ */
+router.patch(p.publishAuction, AuctionApproverOnly(), async (req: Request, res: Response) => {
+  try {
+    // Query validation
+    const qSchema = Joi.object().keys({
+      auctionId: mongoIdValidation.required().messages({
+        'any.required': '"auctionId" is a required field'
+      })
+    }).required();
+    
+    Joi.assert(req.query, qSchema);
+
+    const { auctionId } = req.query;
+
+    const auction = await auctionService.publishAuction(
+      req.user as IAuctionApprover, 
+      auctionId as string
+    );
+
+    return res.status(OK).json({ auction });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Unpublish an auction by a seller
+ */
+router.patch(p.unpublishAuction, SellerOnly(), async (req: Request, res: Response) => {
+  try {
+    const qSchema = Joi.object().keys({
+      auctionId: mongoIdValidation.required().messages({
+        'any.required': '"auctionId" is a required field'
+      })
+    }).required();
+    
+    Joi.assert(req.query, qSchema);
+
+    const { auctionId } = req.query;
+
+    const auction = await auctionService.unpublishAuction(
+      req.user as ISeller,
+      auctionId as string
+    );
+
+    return res.status(OK).json({ auction });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Reject an auction
+ */
+router.patch(p.rejectAuction, AuctionApproverOnly(), async (req: Request, res: Response) => {
+  try {
+    // Query validation
+    const qSchema = Joi.object().keys({
+      auctionId: mongoIdValidation.required().messages({
+        'any.required': '"auctionId" is a required field'
+      })
+    }).required();
+    
+    Joi.assert(req.query, qSchema);
+
+    // Body validation
+    const bodySchema = Joi.object().keys({
+      reason: Joi.string().required().messages({
+        'any.required': '"reason" is required for rejection'
+      })
+    }).required();
+    
+    Joi.assert(req.body, bodySchema);
+
+    const { auctionId } = req.query;
+    const { reason } = req.body;
+
+    const auction = await auctionService.rejectAuction(
+      req.user as IAuctionApprover,
+      auctionId as string,
+      reason
+    );
+
+    return res.status(OK).json({ auction });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Get all auctions (protected route - for backend admins only).
+ */
+router.get(p.getAllAuctions, SuperAdminOnly(), SellerOnly(), AuctionApproverOnly(), async (req: Request, res: Response) => {
+  try {
+    const conditions = new Map<string, any>();
+
+    // Query checks
+    const qSchema = Joi.object().keys({
+      sortOrder: Joi.string().required().valid(ESortOrderType.ASC, ESortOrderType.DESC, ESortOrderType.asc, ESortOrderType.desc).messages({
+        'any.required': '"sortOrder" is a required field'
+      }),
+      sortBy: Joi.string().required().valid(EAuctionSortType.DATE).messages({
+        'any.required': '"sortBy" is a required field'
+      }),
+      categoryId: mongoIdValidation,
+      creatorId: mongoIdValidation,
+      status: Joi.string().valid(EAuctionStatus.ALL, EAuctionStatus.NOT_BEGUN, EAuctionStatus.ACTIVE, EAuctionStatus.CANCELLED, EAuctionStatus.ENDED),
+      publishedStatus: Joi.string().valid(EPublishedStatus.PUBLISHED, EPublishedStatus.REJECTED, EPublishedStatus.UNPUBLISHED),
+      limit: isStringNumberLike.required().messages({
+        'any.required': '"limit" is a required field'
+      }),
+      lastDocumentId: mongoIdValidation
+    }).required();
+
+    // Validate schema against query
+    Joi.assert(req.query, qSchema);
+
+    const { limit, sortBy, sortOrder, lastDocumentId, categoryId, creatorId, status, publishedStatus } = req.query;
+
+    conditions.set('limit', parseInt(limit as string));
+    conditions.set('sortBy', sortBy);
+    conditions.set('sortOrder', sortOrder);
+
+    if (lastDocumentId) {
+      conditions.set('lastDocumentId', lastDocumentId);
+    }
+
+    if (creatorId) {
+      conditions.set('creatorId', creatorId);
+    }
+
+    if (categoryId) {
+      conditions.set('categoryId', categoryId);
+    }
+
+    if (publishedStatus) {
+      conditions.set('publishedStatus', publishedStatus);
+    }
+
+    if (status) {
+      conditions.set('status', status);
+    }
+
+    const auctions = await auctionService.getAuctions(conditions);
+    return res.status(OK).json({ auctions });
   } catch (error) {
     throw error;
   }
