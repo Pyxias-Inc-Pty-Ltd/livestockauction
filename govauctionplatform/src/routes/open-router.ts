@@ -14,7 +14,8 @@ import {
   EItemSortType,
   EUniPayPaymentStatus,
   EGenderType,
-  EAuctionStatus
+  EAuctionStatus,
+  EPublishedStatus
 } from '../globals';
 
 // Constants
@@ -402,12 +403,12 @@ router.get(p.getCategories, async (req: Request, res: Response) => {
 });
 
 /**
- * Get auctions.
+ * Get auctions (public route - only published auctions).
  */
 router.get(p.getAuctions, async (req: Request, res: Response) => {
   try {
-
     const conditions = new Map<string, any>();
+
     // Query checks
     const qSchema = Joi.object().keys({
       sortOrder: Joi.string().required().valid(ESortOrderType.ASC, ESortOrderType.DESC, ESortOrderType.asc, ESortOrderType.desc).messages({
@@ -424,12 +425,12 @@ router.get(p.getAuctions, async (req: Request, res: Response) => {
       }),
       lastDocumentId: mongoIdValidation
     }).required();
-    
+
     // Validate schema against query
     Joi.assert(req.query, qSchema);
 
     const { limit, sortBy, sortOrder, lastDocumentId, categoryId, creatorId, status } = req.query;
-  
+
     conditions.set('limit', parseInt(limit as string));
     conditions.set('sortBy', sortBy);
     conditions.set('sortOrder', sortOrder);
@@ -450,8 +451,11 @@ router.get(p.getAuctions, async (req: Request, res: Response) => {
       conditions.set('status', status);
     }
 
+    // Ensures only published auctions are returned
+    conditions.set('publishedStatus', EPublishedStatus.PUBLISHED);
+
     const auctions = await auctionService.getAuctions(conditions);
-    return res.status(OK).json({auctions});
+    return res.status(OK).json({ auctions });
   } catch (error) {
     throw error;
   }
