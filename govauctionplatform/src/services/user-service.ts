@@ -341,6 +341,15 @@ async function finishBAITSKeeperIDVerification(currentUser: IBidder, otp: string
  */
 async function createAuctionApprover(currentUser: ISeller, input: IAuctionApproverInput): Promise<IAuctionApprover> {
   try {
+    const salt = await genSalt(SALT_ROUNDS);
+    const randPass = generateRandomPassword(10);
+
+    // Set password
+    input.password = await hash(randPass, salt);
+
+    // TODO: Remove and send password via email, and ask user to change upon inital login
+    console.log("auction approver password: ", randPass);
+
     input.tz = currentUser.tz;
     input.locale = currentUser.locale;
 
