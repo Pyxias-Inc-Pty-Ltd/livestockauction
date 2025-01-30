@@ -130,6 +130,7 @@ export interface IAuctionApprover extends IUser {
 
 export interface IAuctionApproverInput {
   createdBySeller: string;
+  password: string;
   email: string;
   phone?: string;
   firstName: string;
