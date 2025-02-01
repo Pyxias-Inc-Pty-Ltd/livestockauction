@@ -276,6 +276,7 @@ async function getAuctions(conditions: Map<string, any>, projection?: any): Prom
     throw error;
   }
 }
+
 /**
  * Get required attributes.
  * 
