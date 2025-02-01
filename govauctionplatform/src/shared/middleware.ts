@@ -6,6 +6,34 @@ import { verify } from 'jsonwebtoken';
 import userService from '../services/user-service';
 
 /**
+ * Middleware to allow access if the user is a SUPER_ADMIN, SELLER, or AUCTION_APPROVER.
+ * 
+ * @param errorMessage
+ * @return Middleware function
+ */
+export function AnyAdminMiddleware(errorMessage?: string) {
+  return function (req: Request, res: Response, next: NextFunction) {
+    try {
+      const user = (req as any).user as IUser;
+
+      // Check if the user has any of the required roles
+      if (
+        (user.userType === 'ADMIN' && (user as IAdmin).adminType === 'SUPER') ||
+        user.userType === 'SELLER' ||
+        user.userType === EUserType.AUCTION_APPROVER
+      ) {
+        next(); // Allow access
+      } else {
+        // Deny access if the user doesn't have any of the required roles
+        throw new UnauthorizedError(errorMessage || 'You do not have permission to access this resource.');
+      }
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+/**
  * Check if current user is a super admin
  *
  * @param errorMessage
