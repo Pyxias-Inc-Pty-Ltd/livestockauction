@@ -2,7 +2,7 @@ import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isoDateValidation, isStringNumberLike, mongoIdValidation } from '../shared/functions';
-import { SuperAdminOnly, SellerOnly, AuctionApproverOnly } from '../shared/middleware';
+import { SuperAdminOnly, SellerOnly, AuctionApproverOnly, AnyAdminMiddleware } from '../shared/middleware';
 import { IAdmin, IAuctionApprover, ISeller } from '../models/user-model';
 import auctionService from '../services/auction-service';
 import { EAuctionStatus, EAuctionSortType, EParticipationType, ESortOrderType, EPublishedStatus } from '../globals';
@@ -268,7 +268,7 @@ router.patch(p.rejectAuction, AuctionApproverOnly(), async (req: Request, res: R
 /**
  * Get all auctions (protected route - for backend admins only).
  */
-router.get(p.getAllAuctions, SuperAdminOnly(), SellerOnly(), AuctionApproverOnly(), async (req: Request, res: Response) => {
+router.get(p.getAllAuctions, AnyAdminMiddleware(), async (req: Request, res: Response) => {
   try {
     const conditions = new Map<string, any>();
 
