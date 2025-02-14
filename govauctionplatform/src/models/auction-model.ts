@@ -20,6 +20,10 @@ export interface IAuction extends Document {
   titleSlug: string;
   auctionNumber: string;
   auctionLocation: string;
+  auctionCoordinates?: {
+    type: 'Point';
+    coordinates: [number, number]; // [longitude, latitude]
+  };
   numberOfLots: number;
   hasRegistrationFee: boolean;
   requiredAttributes: string[];
@@ -118,6 +122,10 @@ const auctionSchema = new Schema<IAuction>({
   registrationFee: { type: Number, min: 0, required: function (): boolean {
     return (this as IAuction).hasRegistrationFee;
   } },
+  auctionCoordinates: { 
+    type: { type: String, enum: ['Point'], default: 'Point' },
+    coordinates: { type: [Number], required: true }
+  },
   categoryId: { type: Schema.Types.ObjectId, required: true, ref: EModels.CATEGORY },
   terms: { type: String, required: true, trim: true },
   startTime: { type: Date, required: true },
@@ -148,6 +156,8 @@ const auctionSchema = new Schema<IAuction>({
     updatedAt: "updatedDate"
   }
 });
+
+auctionSchema.index({ auctionCoordinates: '2dsphere' });
 
 auctionSchema.set('toJSON', {
   virtuals: true,
@@ -195,6 +205,11 @@ auctionSchema.pre('save', async function () {
     doc.publishedStatus !== EPublishedStatus.PUBLISHED
   ) {
     new ForbiddenError('Auction must be PUBLISHED before activation.');
+  }
+
+  // Ensure auctionCoordinates exist if auctionLocation is set
+  if (doc.isModified('auctionLocation') && !doc.auctionCoordinates) {
+    throw new Error('auctionCoordinates must be provided when setting auctionLocation.');
   }
 
   // Clear irrelevant fields when status changes
