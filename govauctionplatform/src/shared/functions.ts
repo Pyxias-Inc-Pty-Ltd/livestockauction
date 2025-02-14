@@ -9,7 +9,12 @@ import * as luxon from 'luxon';
 import { BAITS_API_TOKEN, COUNTRY_PHONE_CODES, SALT_ROUNDS, SERVICE_URLS } from '../globals';
 import { randomBytes, createHash } from 'crypto';
 import { InternalServerError, NotFoundError } from './errors';
-import * as axios from "axios";
+import * as axios from 'axios';
+import { createVerify } from 'crypto';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+const publicKey = readFileSync(join(__dirname, 'sec/public_key.pem'), 'utf8');
 
 export const isoAlpha2CountryValidation
   = Joi.string().regex(/^[A-Z]{2}$/);
@@ -764,4 +769,29 @@ export function generateAuctionNumber(currentCount: number): string {
   const count = (currentCount + 1).toString().padStart(3, '0');
 
   return `${year}${month}${day}${count}`;
+}
+
+/**
+ * Verifies a digital signature using a given hash and signature.
+ *
+ * @param {string} hash - The hashed data that was signed.
+ * @param {string} signature - The digital signature to verify.
+ * @returns {boolean} - Returns `true` if the signature is valid, otherwise `false`.
+ *
+ * @throw {Error} - Logs an error if verification fails.
+ */
+export function verifySignature(hash: string, signature: string): boolean {
+  try {
+    // Create a verifier
+    const verifier = createVerify('sha256');
+    verifier.update(hash);
+    verifier.end();
+
+    // Verify the signature
+    const isVerified = verifier.verify(publicKey, signature, 'base64');
+    return isVerified;
+  } catch (error) {
+    console.error('Error verifying signature:', error);
+    return false;
+  }
 }
