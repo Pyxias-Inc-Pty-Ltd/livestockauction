@@ -856,3 +856,24 @@ export const companyRegistrationVerificationIssuesTemplate = `
   </body>
   </html>
 `;
+
+export const auctionApprovalReminderEmailTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Pending Auctions for Approval</title>
+  </head>
+  <body>
+    <p>Dear [UserName],</p>
+    <p>This is a reminder that there are auctions awaiting your approval on the Botswana Government Auction Platform.</p>
+    <p>As an Auction Approver, your role is essential in ensuring that all auctions meet the necessary guidelines before they go live. Please log in to the platform to review and approve the pending auctions.</p>
+    <p><strong>Pending Approvals:</strong> [AuctionCount] auctions</p>
+    <p>Click the link below to access the approval dashboard:</p>
+    <p><a href="[ApprovalLink]">Review Pending Auctions</a></p>
+    <p>Thank you for your attention to this matter.</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
