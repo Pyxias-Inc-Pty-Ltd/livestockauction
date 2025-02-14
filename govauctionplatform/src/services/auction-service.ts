@@ -581,6 +581,18 @@ async function unpublishAuction(currentUser: ISeller, auctionId: string): Promis
 }
 
 /**
+ * Updates the coordinates of an auction.
+ */
+async function updateAuctionCoordinates(auctionId: string,auctionCoordinates: { type: 'Point'; coordinates: [number, number] }): Promise<IAuction | null> {
+  return Auction.findByIdAndUpdate(
+    auctionId,
+    { auctionCoordinates },
+    { new: true }
+  );
+}
+
+
+/**
  * Reject an auction
  */
 async function rejectAuction(currentUser: IAuctionApprover, auctionId: string, reason: string): Promise<IAuction> {
@@ -632,5 +644,6 @@ export default {
   getRequiredAttributes,
   publishAuction,
   unpublishAuction,
-  rejectAuction
+  rejectAuction,
+  updateAuctionCoordinates
 } as const;
