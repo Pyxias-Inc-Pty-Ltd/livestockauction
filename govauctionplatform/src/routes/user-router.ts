@@ -27,6 +27,7 @@ export const p = {
   deleteAdminById: '/deleteAdminById',
   deleteBidderById: '/deleteBidderById',
   setFirebaseTokenId: '/setFirebaseTokenId',
+  verifyIdentityNumber: '/verifyIdentityNumber',
   getUserById: '/getUserById',
   beginBAITSKeeperIDVerification: '/beginBAITSKeeperIDVerification',
   finishBAITSKeeperIDVerification: '/finishBAITSKeeperIDVerification',
@@ -89,6 +90,33 @@ router.post(p.createSeller, SuperAdminOnly(), async (req: Request, res: Response
       }),
       phone: phoneValidation.required().messages({
         'any.required': '"phone" is a required field'
+      })
+    }).required();
+    
+    // Validate schema against input
+    Joi.assert(req.body, schema);
+
+    const user = await userService.createSeller(req.user as IAdmin, req.body as any);
+    return res.status(CREATED).json({user});
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Verify identity number
+ */
+router.post(p.verifyIdentityNumber, async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      userId: mongoIdValidation.required().messages({
+        'any.required': '"userId" is a required field'
+      }),
+      hash: Joi.string().hex().required().messages({
+        'any.required': '"hash" is a required field'
+      }),
+      signature: Joi.string().base64().required().messages({
+        'any.required': '"signature" is a required field'
       })
     }).required();
     
