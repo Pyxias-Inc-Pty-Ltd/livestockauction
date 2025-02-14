@@ -9,7 +9,7 @@ import { EAuctionStatus, EAuctionSortType, EParticipationType, ESortOrderType, E
 
 // Constants
 const router = Router();
-const { OK, CREATED } = StatusCodes;
+const { OK, CREATED, NOT_FOUND } = StatusCodes;
 
 // Paths
 export const p = {
@@ -21,7 +21,8 @@ export const p = {
   publishAuction: '/publishAuction',
   unpublishAuction: '/unpublishAuction',
   rejectAuction: '/rejectAuction',
-  getAllAuctions: '/getAllAuctions'
+  getAllAuctions: '/getAllAuctions',
+  updateAuctionCoordinates: '/updateAuctionCoordinates'
 } as const;
 
 /**
@@ -36,6 +37,14 @@ router.post(p.createAuction, SuperAdminOnly(), async (req: Request, res: Respons
       auctionLocation: Joi.string().required().messages({
         'any.required': '"auctionLocation" is a required field'
       }),
+      auctionCoordinates: Joi.array()
+        .items(Joi.number().min(-180).max(180))
+        .length(2)
+        .optional()
+        .messages({
+          'array.base': '"auctionCoordinates" should be an array of [longitude, latitude]',
+          'array.length': '"auctionCoordinates" must contain exactly 2 numbers [longitude, latitude]',
+        }),
       terms: Joi.string().required().messages({
         'any.required': '"terms" is a required field'
       }),
@@ -68,7 +77,10 @@ router.post(p.createAuction, SuperAdminOnly(), async (req: Request, res: Respons
       endTime: isoDateValidation.required().messages({
         'any.required': '"endTime" is a required field'
       }),
-      participationType: Joi.string().valid(EParticipationType.CITIZEN_ONLY, EParticipationType.EVERYONE).required().messages({
+      participationType: Joi.string().valid(
+        EParticipationType.CITIZEN_ONLY,
+        EParticipationType.EVERYONE
+      ).required().messages({
         'any.required': '"participationType" is a required field'
       }),
       requiredAttributes: Joi.array().items(mongoIdValidation).messages({
@@ -76,7 +88,7 @@ router.post(p.createAuction, SuperAdminOnly(), async (req: Request, res: Respons
       }).required().default([]).messages({
         'any.required': '"requiredAttributes" is a required field'
       })
-    }).required();
+    }).required();    
     
     // Validate schema against input
     Joi.assert(req.body, schema);
@@ -87,7 +99,6 @@ router.post(p.createAuction, SuperAdminOnly(), async (req: Request, res: Respons
     throw error;
   }
 });
-
 
 /**
  * Create a required attribute
@@ -327,6 +338,49 @@ router.get(p.getAllAuctions, AnyAdminMiddleware(), async (req: Request, res: Res
     throw error;
   }
 });
+
+/**
+ * Update auction coordinates
+ */
+router.put(p.updateAuctionCoordinates, SuperAdminOnly(), SellerOnly(),
+  async (req: Request, res: Response) => {
+      try {
+        const schema = Joi.object().keys({
+          auctionId: mongoIdValidation.required().messages({
+            'any.required': '"auctionId" is a required field'
+          }),
+          auctionCoordinates: Joi.array()
+            .items(Joi.number().min(-180).max(180))
+            .length(2)
+            .required()
+            .messages({
+              'array.base': '"auctionCoordinates" should be an array of [longitude, latitude]',
+              'array.length': '"auctionCoordinates" must contain exactly 2 numbers [longitude, latitude]',
+              'any.required': '"auctionCoordinates" is a required field'
+            })
+        });
+
+        // Validate request body
+        Joi.assert(req.body, schema);
+
+        const { auctionId, auctionCoordinates } = req.body;
+
+        // Update auction in the database
+        const updatedAuction = await auctionService.updateAuctionCoordinates(
+          auctionId,
+          { type: 'Point', coordinates: auctionCoordinates }
+        );
+
+        if (!updatedAuction) {
+          return res.status(NOT_FOUND).json({ message: 'Auction not found' });
+        }
+
+        return res.status(OK).json({ auction: updatedAuction });
+      } catch (error) {
+        throw error;
+      }
+    }
+  );
 
 // Export default
 export default router;
