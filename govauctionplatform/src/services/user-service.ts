@@ -1,10 +1,11 @@
-import { ConflictError, ForbiddenError } from "../shared/errors";
+import { ConflictError, ForbiddenError, NotFoundError } from "../shared/errors";
 import { IAdmin, IUser, User, IAdminInput, Admin, IBidder, IBidderInput, Bidder, ISeller, ISellerInput, Seller, AuctionApprover, IAuctionApprover, IAuctionApproverInput } from "../models/user-model";
-import { EAdminType, ESortOrderType, EUserSortType, EUserType, keeperIDVerificationTemplate, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, SALT_ROUNDS, VERIFIED_EMAIL } from "../globals";
+import { companyRegistrationVerificationIssuesTemplate, companyRegistrationVerificationSuccessTemplate, EAdminType, ESortOrderType, EUserSortType, EUserType, ID_VERIFICATION_API_KEY, invalidCompanyRegistrationTemplate, invalidNationalIDSMSTemplate, keeperIDVerificationTemplate, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, nameMismatchWithNationalIDSMSTemplate, nationalIDVerificationIssuesSMSTemplate, nationalIDVerificationSuccessSMSTemplate, SALT_ROUNDS, SERVICE_URLS, VERIFIED_EMAIL } from "../globals";
 import { genSalt, hash } from 'bcrypt';
-import { generateOTP, generateRandomPassword, getFarmerByKeeperId, getKeeperByRegNumber, hashOTP, verifyOTP } from "../shared/functions";
+import { generateOTP, generateRandomPassword, getFarmerByKeeperId, getKeeperByRegNumber, hashOTP, verifyOTP, verifySignature } from "../shared/functions";
 import { Schema } from "mongoose";
-import { sgMail } from "src";
+import * as axios from "axios";
+import { sgMail } from "../index";
 
 /**
  * Get a user by id.
@@ -100,6 +101,221 @@ async function createBidder(input: IBidderInput): Promise<IBidder> {
     await newBidder.save();
 
     return newBidder;
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Verify identity number.
+ * 
+ * @param userId
+ * @returns 
+ */
+async function verifyIdentityNumber(input: { payload: { userId: string }, hash: string, signature: string }): Promise<void> {
+  try {
+
+    // Verify payload
+    if (!verifySignature(input.hash, input.signature)) {
+      throw new ForbiddenError('Invalid payload');
+    }
+
+    const user = await Bidder.findById(input.payload.userId);
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    // Check if identityNumberVerificationStatus is pending
+    if (user.identityNumberVerificationStatus === "PENDING") {
+      try {
+        if (user.isOrganization) {
+
+          // For individuals, first make a GET request to verify the UIN
+          const getResponse = await axios.default.get(`${SERVICE_URLS.idVerificationURI}/cipa/company/${user.identityNumber}`, {
+            headers: {
+              "x-api-key": ID_VERIFICATION_API_KEY
+            }
+          });
+
+          // Check if the GET request was successful and the response indicates success
+          if (getResponse.status === 200 && getResponse.data.success === true) {
+            user.identityNumberVerificationStatus === "VERIFIED";
+            await user.save();
+            // Queue message
+            const textContent = companyRegistrationVerificationSuccessTemplate.replace('[UserName]', user.name as string);
+            await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/emailQueue/add-job`, {
+              data: {
+                subject: 'Company Registration Number Verification Successful',
+                email: user.email,
+                message: textContent
+              }
+            }, {
+              headers: {
+                "Content-Type": "application/json",
+                "x-api-key": ID_VERIFICATION_API_KEY
+              }
+            });
+          } else if (getResponse.status === 200 && getResponse.data.success === false) {
+            user.identityNumberVerificationStatus === "VERIFICATION_REJECTED";
+            user.reasonForIdentityNumberVerificationRejection = "Invalid UIN provided";
+            await user.save();
+            // Queue message
+            const textContent = invalidCompanyRegistrationTemplate.replace('[UserName]', user.name as string);
+            await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/emailQueue/add-job`, {
+              data: {
+                subject: 'Invalid Company Registration Number',
+                email: user.email,
+                message: textContent
+              }
+            }, {
+              headers: {
+                "Content-Type": "application/json",
+                "x-api-key": ID_VERIFICATION_API_KEY
+              }
+            });
+          } else if (getResponse.status !== 200) {
+
+            if (user.identityNumberVerificationRetryCount < 1) {
+              // Queue message
+              const textContent = companyRegistrationVerificationIssuesTemplate.replace('[UserName]', user.name as string);
+              await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/emailQueue/add-job`, {
+                data: {
+                  subject: 'Temporary Issues with Company Registration Number Verification',
+                  email: user.email,
+                  message: textContent
+                }
+              }, {
+                headers: {
+                  "Content-Type": "application/json",
+                  "x-api-key": ID_VERIFICATION_API_KEY
+                }
+              });
+            }
+
+            user.identityNumberVerificationRetryCount += 1;
+            await user.save();
+
+            // For organizations, directly send the POST request
+            await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/verifyCompanyQueue/add-job`, {
+              data: {
+                userId: user.id
+              }
+            }, {
+              headers: {
+                "Content-Type": "application/json",
+                "x-api-key": ID_VERIFICATION_API_KEY
+              }
+            });
+            console.log('Payload sent to verifyCompanyQueue');
+          }
+        } else {
+          // For individuals, first make a GET request to verify the Omang
+          const getResponse = await axios.default.get(`${SERVICE_URLS.idVerificationURI}/omang/payload/${user.identityNumber}`, {
+            headers: {
+              "x-api-key": ID_VERIFICATION_API_KEY
+            }
+          });
+
+          // Check if the GET request was successful and the response indicates success
+          if (getResponse.status === 200 && getResponse.data.success === true) {
+            const { data } = getResponse.data;
+            const lowerCaseFirstName = (data[0]['FIRST_NME'] as string).toLowerCase();
+            const lowerCaseLastName = (data[0]['SURNME'] as string).toLowerCase();
+            if (lowerCaseFirstName.includes(user.firstName!.toLowerCase()) && lowerCaseLastName.includes(user.lastName!.toLowerCase())) {
+              user.identityNumberVerificationStatus === "VERIFIED";
+              await user.save();
+              // Queue message
+              const textContent = nationalIDVerificationSuccessSMSTemplate.replace('[UserName]', user.firstName as string);
+              await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/smsQueue/add-job`, {
+                data: {
+                  subject: 'onlineauction.gov.bw',
+                  phone: user.phone,
+                  message: textContent
+                }
+              }, {
+                headers: {
+                  "Content-Type": "application/json",
+                  "x-api-key": ID_VERIFICATION_API_KEY
+                }
+              });
+            } else {
+              user.identityNumberVerificationStatus === "VERIFICATION_REJECTED";
+              user.reasonForIdentityNumberVerificationRejection = "Name mismatch with Omang provided";
+              await user.save();
+              // Queue message
+              const textContent = nameMismatchWithNationalIDSMSTemplate.replace('[UserName]', user.firstName as string);
+              await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/smsQueue/add-job`, {
+                data: {
+                  subject: 'onlineauction.gov.bw',
+                  phone: user.phone,
+                  message: textContent
+                }
+              }, {
+                headers: {
+                  "Content-Type": "application/json",
+                  "x-api-key": ID_VERIFICATION_API_KEY
+                }
+              });
+            }
+          } else if (getResponse.status === 200 && getResponse.data.success === false) {
+            user.identityNumberVerificationStatus === "VERIFICATION_REJECTED";
+            user.reasonForIdentityNumberVerificationRejection = "Invalid Omang provided";
+            await user.save();
+            // Queue message
+            const textContent = invalidNationalIDSMSTemplate.replace('[UserName]', user.firstName as string);
+            await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/smsQueue/add-job`, {
+              data: {
+                subject: 'onlineauction.gov.bw',
+                phone: user.phone,
+                message: textContent
+              }
+            }, {
+              headers: {
+                "Content-Type": "application/json",
+                "x-api-key": ID_VERIFICATION_API_KEY
+              }
+            });
+          } else if (getResponse.status !== 200) {
+
+            if (user.identityNumberVerificationRetryCount < 1) {
+              // Queue message
+              const textContent = nationalIDVerificationIssuesSMSTemplate.replace('[UserName]', user.firstName as string);
+              await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/smsQueue/add-job`, {
+                data: {
+                  subject: 'onlineauction.gov.bw',
+                  phone: user.phone,
+                  message: textContent
+                }
+              }, {
+                headers: {
+                  "Content-Type": "application/json",
+                  "x-api-key": ID_VERIFICATION_API_KEY
+                }
+              });
+            }
+
+            user.identityNumberVerificationRetryCount += 1;
+            await user.save();
+
+            // If the GET request fails or the response is not successful, send the POST request
+            await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/verifyOmangQueue/add-job`, {
+              data: {
+                userId: user.id
+              }
+            }, {
+              headers: {
+                "Content-Type": "application/json",
+                "x-api-key": ID_VERIFICATION_API_KEY
+              }
+            });
+            console.log('Payload sent to verifyOmangQueue');
+          }
+        }
+      } catch (error) {
+        console.error('Error during verification process:', error);
+        throw error;
+      }
+    }
   } catch (error) {
     throw error;
   }
@@ -296,6 +512,7 @@ async function beginBAITSKeeperIDVerification(currentUser: IBidder, keeperId: st
 
     await currentUser.save();
 
+    // TODO: Send to queue
     if (farmer.EmailID) {
       await sgMail.send({
         to: farmer.EmailID,
@@ -441,6 +658,7 @@ export default {
   createInitAdmin,
   createBidder,
   createSeller,
+  verifyIdentityNumber,
   createAuctionApprover,
   getByEmail,
   getByPhone,
