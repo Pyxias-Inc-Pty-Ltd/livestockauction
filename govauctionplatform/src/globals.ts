@@ -9,6 +9,7 @@ export type paymentProvider = "CELLULANT" | "UNIPAY" | "PAY_GATE";
 export type genderType = "MALE" | "FEMALE" | "MIXED";
 export type participationType = "CITIZEN_ONLY" | "EVERYONE";
 export type publishedStatus = "PUBLISHED" | "UNPUBLISHED" | "REJECTED";
+export type identityNumberVerificationStatus = "PENDING" | "VERIFIED" | "VERIFICATION_REJECTED";
 export type fauxObject = {[key: string]: any};
 
 export const STATE_JWT_SECRET = process.env.STATE_JWT_SECRET as string;
@@ -37,6 +38,7 @@ export const FIREBASE_SERVICE_ACCOUNT_CREDENTIALS = JSON.stringify({
   "universe_domain": "googleapis.com"
 });
 export const EXPRESS_SESSION_SECRET = process.env.EXPRESS_SESSION_SECRET as string;
+export const ID_VERIFICATION_API_KEY = process.env.ID_VERIFICATION_API_KEY as string;
 export const PAYGATE_ID = process.env.PAYGATE_ID as string;
 export const PAYGATE_ENCRYPTION_KEY = process.env.PAYGATE_ENCRYPTION_KEY as string;
 export const BAITS_API_TOKEN = process.env.BAITS_API_TOKEN as string;
@@ -50,7 +52,9 @@ export const SERVICE_URLS: {[key: string]: string} = {
   paygateBaseURI: "https://secure.paygate.co.za/payweb3",
   clientURI: "https://auctiondev.xyz",
   baits3URICore: "http://bifrost-baits3.gov.bw:90/api/core/v1/api",
-  animalhealthURI: "https://lmsserv.auctiondev.xyz"
+  animalhealthURI: "https://lmsserv.auctiondev.xyz",
+  idVerificationURI: "http://idverification-acc.gov.bw:8081/api/v1",
+  onlineAuctionQueueURI: "http://localhost:8822"
 }
 
 export const COUNTRY_PHONE_CODES = [{"country":"Afghanistan","code":"93","iso":"AF"},
@@ -440,6 +444,12 @@ export enum EParticipationType {
   EVERYONE = "EVERYONE"
 }
 
+export enum EIdentityNumberVerificationStatus {
+  PENDING = "PENDING",
+  VERIFIED = "VERIFIED",
+  VERIFICATION_REJECTED = "VERIFICATION_REJECTED"
+}
+
 export enum EPaymentProvider {
   CELLULANT = "CELLULANT",
   UNIPAY = "UNIPAY",
@@ -737,6 +747,109 @@ export const keeperIDVerificationTemplate = `
     <p>Your One-Time Password (OTP) for Keeper ID verification is <strong>[otp]</strong>.</p>
     <p>Please enter this OTP on the verification page to complete your verification process.</p>
     <p>If you did not request this, please ignore this email.</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
+export const nationalIDVerificationSuccessTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Omang Verification Successful</title>
+  </head>
+  <body>
+    <p>Dear [UserName],</p>
+    <p>We are pleased to inform you that your Omang verification has been successfully completed. Your identity has been confirmed, and you now have full access to all features of the Botswana Government Auction Platform.</p>
+    <p>With your verified account, you can:</p>
+    <ul>
+      <li>Participate in government auctions</li>
+      <li>Bid on items of interest</li>
+      <li>Access secure payment options</li>
+    </ul>
+    <p>If you have any questions or need further assistance, please feel free to contact our support team.</p>
+    <p>Thank you for completing the verification process. We look forward to your active participation on our platform.</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
+export const nationalIDVerificationSuccessSMSTemplate = `
+  Your Omang verification is successful! You now have full access to the Botswana Government Auction Platform. Participate in auctions, bid on items, and enjoy secure payments. Contact support if you need help. Thank you!
+
+  - Botswana Govt Auction Team
+`;
+
+export const nameMismatchWithNationalIDSMSTemplate = `
+We found a name mismatch between your account and the Omang provided. Please update your details or contact support for assistance. Thank you!
+
+- Botswana Govt Auction Team
+`;
+
+export const invalidNationalIDSMSTemplate = `
+The Omang you provided is invalid. Please resubmit your valid Omang number. Contact support if you need assistance. Thank you!
+
+- Botswana Govt Auction Team
+`;
+
+export const nationalIDVerificationIssuesSMSTemplate = `
+We are currently experiencing issues with Omang verification. We are working to resolve this and will notify you once verification is completed. Thank you for your patience!
+
+- Botswana Govt Auction Team
+`;
+
+export const companyRegistrationVerificationSuccessTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Company Registration Number Verification Successful</title>
+  </head>
+  <body>
+    <p>Dear [UserName],</p>
+    <p>We are pleased to inform you that your Company Registration Number verification has been successfully completed. Your company details have been confirmed, and you now have full access to all features of the Botswana Government Auction Platform.</p>
+    <p>With your verified account, you can:</p>
+    <ul>
+      <li>Participate in government auctions</li>
+      <li>Bid on items of interest</li>
+      <li>Create and manage auction listings (if applicable)</li>
+      <li>Access secure payment options</li>
+    </ul>
+    <p>If you have any questions or need further assistance, please feel free to contact our support team.</p>
+    <p>Thank you for completing the verification process. We look forward to your active participation on our platform.</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
+export const invalidCompanyRegistrationTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Invalid Company Registration Number</title>
+  </head>
+  <body>
+    <p>Dear [UserName],</p>
+    <p>The Company Registration Number you provided is invalid. Please verify and resubmit your correct Company Registration Number details. If you need assistance, feel free to contact our support team.</p>
+    <p>Thank you for your understanding.</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
+export const companyRegistrationVerificationIssuesTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Temporary Issues with Company Registration Number Verification</title>
+  </head>
+  <body>
+    <p>Dear [UserName],</p>
+    <p>We are currently experiencing issues with Company Registration Number verification. Rest assured, we are working to resolve this and will notify you once verification is completed.</p>
+    <p>Thank you for your patience and understanding.</p>
     <p>Best regards,</p>
     <p>The Botswana Government Auction Platform Team</p>
   </body>
