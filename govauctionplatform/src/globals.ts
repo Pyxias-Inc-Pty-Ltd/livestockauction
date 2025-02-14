@@ -8,7 +8,7 @@ export type paymentStatus = "PENDING" | "FAILED" | "COMPLETED" | "CANCELLED";
 export type paymentProvider = "CELLULANT" | "UNIPAY" | "PAY_GATE";
 export type genderType = "MALE" | "FEMALE" | "MIXED";
 export type participationType = "CITIZEN_ONLY" | "EVERYONE";
-export type publishedStatus = "PUBLISHED" | "UNPUBLISHED" | "REJECTED";
+export type publishedStatus = "PUBLISHED" | "UNPUBLISHED" | "IN_REVIEW" | "REJECTED";
 export type identityNumberVerificationStatus = "PENDING" | "VERIFIED" | "VERIFICATION_REJECTED";
 export type fauxObject = {[key: string]: any};
 
@@ -328,6 +328,7 @@ export enum EAdminType {
 export enum EPublishedStatus {
   PUBLISHED = "PUBLISHED",
   UNPUBLISHED = "UNPUBLISHED",
+  IN_REVIEW = "IN_REVIEW",
   REJECTED = "REJECTED",
 }
 
