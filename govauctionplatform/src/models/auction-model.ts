@@ -1,8 +1,10 @@
-import { ConflictError, ForbiddenError } from '../shared/errors';
+import { ConflictError, ForbiddenError, InternalServerError, NotFoundError } from '../shared/errors';
 import { Schema, model, Document } from 'mongoose';
-import { EModels, EAuctionStatus, participationType, EParticipationType, auctionStatus, ENVIRONMENT_PRODUCTION, publishedStatus, EPublishedStatus } from '../globals';
+import { EModels, EAuctionStatus, participationType, EParticipationType, auctionStatus, ENVIRONMENT_PRODUCTION, publishedStatus, EPublishedStatus, SERVICE_URLS, auctionRejectedEmailTemplate, ID_VERIFICATION_API_KEY, auctionApprovalReminderEmailTemplate } from '../globals';
 import { generateSlug } from '../shared/functions';
 import { isURL } from 'validator';
+import * as axios from 'axios';
+import { IAuctionApprover, ISeller } from './user-model';
 
 export interface IRequiredAttribute extends Document {
   name: string;
@@ -109,7 +111,7 @@ const auctionSchema = new Schema<IAuction>({
   title: { type: String, required: true, trim: true },
   titleSlug: {type: String, trim: true, sparse: true, unique: true},
   auctionNumber: { type: String, trim: true, required: true },
-  publishedStatus: { type: String, enum: EPublishedStatus, default: EPublishedStatus.UNPUBLISHED, required: true },
+  publishedStatus: { type: String, enum: [EPublishedStatus.IN_REVIEW, EPublishedStatus.PUBLISHED, EPublishedStatus.REJECTED, EPublishedStatus.UNPUBLISHED], default: EPublishedStatus.UNPUBLISHED, required: true },
   reasonForRejection: { type: String, required: function(): boolean {
     return (this as IAuction).publishedStatus === EPublishedStatus.REJECTED;
   }, trim: true },
@@ -225,6 +227,77 @@ auctionSchema.pre('save', async function () {
       case EPublishedStatus.REJECTED:
         break;
     }
+  }
+});
+
+auctionSchema.post('save', async function(doc) {
+  try {
+    // Get the creator (seller) details for rejection notifications
+    const creator: ISeller | null = await doc.$model(EModels.SELLER).findById(doc.creatorId);
+    if (!creator) {
+      throw new NotFoundError('User not found');
+    }
+
+    if (doc.isModified('publishedStatus')) {
+      switch (doc.publishedStatus) {
+        case EPublishedStatus.REJECTED:
+          // Queue rejection email to creator
+          await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/emailQueue/add-job`, {
+            data: {
+              subject: 'Auction Rejected',
+              email: creator.email,
+              message: auctionRejectedEmailTemplate
+                .replace('[AuctionTitle]', doc.title)
+                .replace('[RejectionReason]', doc.reasonForRejection || 'No reason provided')
+            }
+          }, {
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": ID_VERIFICATION_API_KEY
+            }
+          });
+          break;
+
+        case EPublishedStatus.IN_REVIEW:
+          // Get all active auction approvers for this seller
+          const activeApprovers: IAuctionApprover[] = await doc.$model(EModels.AUCTION_APPROVER).find({
+            createdBySeller: doc.creatorId,
+            isActive: true
+          });
+
+          if (activeApprovers.length === 0) {
+            console.log('No active auction approvers found');
+            throw new InternalServerError('No active auction approvers found');
+          }
+
+          // Queue approval reminder email to all active approvers
+          const emailPromises = activeApprovers.map(approver => 
+            axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/emailQueue/add-job`, {
+              data: {
+                subject: 'New Auction Requires Review',
+                email: approver.email,
+                message: auctionApprovalReminderEmailTemplate
+                  .replace('[AuctionTitle]', doc.title)
+                  .replace('[ApproverName]', `${approver.firstName}`)
+                  .replace('[SellerName]', creator.name)
+              }
+            }, {
+              headers: {
+                "Content-Type": "application/json",
+                "x-api-key": ID_VERIFICATION_API_KEY
+              }
+            })
+          );
+
+          // Send emails to all approvers concurrently
+          await Promise.all(emailPromises).catch(error => {
+            console.error('Error sending approval reminders:', error);
+          });
+          break;
+      }
+    }
+  } catch (error) {
+    console.error('Error in auction notification:', error);
   }
 });
 
