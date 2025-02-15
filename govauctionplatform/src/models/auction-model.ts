@@ -178,9 +178,10 @@ auctionSchema.pre('save', async function () {
     doc.titleSlug = generateSlug(doc.title);
   }
 
-  if (this.isModified('globallyEligibleBidders')) {
-    await doc.$model(EModels.ITEM).updateMany({auctionId: doc._id}, {$set: { eligibleBidders: doc.globallyEligibleBidders }});
-  }
+  // TODO: Remove?
+  // if (this.isModified('globallyEligibleBidders')) {
+  //   await doc.$model(EModels.ITEM).updateMany({auctionId: doc._id}, {$set: { eligibleBidders: doc.globallyEligibleBidders }});
+  // }
 
   // PUBLISHED requires `publishedBy`
   if (
