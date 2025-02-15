@@ -877,3 +877,24 @@ export const auctionApprovalReminderEmailTemplate = `
   </html>
 `;
 
+export const auctionRejectedEmailTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Auction Listing Rejected</title>
+  </head>
+  <body>
+    <p>Dear [UserName],</p>
+    <p>We regret to inform you that your auction listing, <strong>[AuctionTitle]</strong>, has been rejected by the Auction Approver on the Botswana Government Auction Platform.</p>
+    <p><strong>Reason for Rejection:</strong></p>
+    <p>[RejectionReason]</p>
+    <p>To proceed, please review the provided feedback and make the necessary adjustments before resubmitting your auction for approval.</p>
+    <p>Click the link below to update and resubmit your auction:</p>
+    <p><a href="[EditAuctionLink]">Edit and Resubmit Auction</a></p>
+    <p>If you have any questions or need assistance, feel free to contact our support team.</p>
+    <p>Best regards,</p>
+    <p>The Botswana Government Auction Platform Team</p>
+  </body>
+  </html>
+`;
+
