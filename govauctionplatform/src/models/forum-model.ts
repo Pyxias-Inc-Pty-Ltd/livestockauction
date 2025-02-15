@@ -1,9 +1,10 @@
 import { Schema, model, Document } from 'mongoose';
-import { addedToForumTemplate, EModels, EPushMessageReason, EUserType, VERIFIED_EMAIL } from '../globals';
+import { addedToForumTemplate, EModels, EPushMessageReason, EUserType, ID_VERIFICATION_API_KEY, SERVICE_URLS } from '../globals';
 import { IAuction } from './auction-model';
-import { firebase, sgMail } from '../index';
+import { firebase } from '../index';
 import { InternalServerError, NotFoundError } from '../shared/errors';
 import { IBidder } from './user-model';
+import * as axios from 'axios';
 
 export interface IForumComment extends Document {
     forumId: Schema.Types.ObjectId;
@@ -84,98 +85,109 @@ forumSchema.pre('save', async function(next) {
 
 // Post-save hook for forumSchema
 forumSchema.post('save', async function(doc) {
-    try {
-        const originalParticipants = this.$locals.originalParticipants as Array<string> || [];
+  try {
+      const originalParticipants = this.$locals.originalParticipants as Array<string> || [];
 
-        // Fetch the new participants
-        const newParticipants = doc.participants;
-        const addedParticipants = newParticipants.filter(p => !originalParticipants.includes(p));
+      // Fetch the new participants
+      const newParticipants = doc.participants;
+      const addedParticipants = newParticipants.filter(p => !originalParticipants.includes(p));
 
-        if (addedParticipants.length > 0) {
+      if (addedParticipants.length > 0) {
+        if (!doc.$session()) {
+          throw new InternalServerError('A mongodb session is required on the forum-model post save hook');
+        }
 
-          if (!doc.$session()) {
-            throw new InternalServerError('A mongodb session is required on the forum-model post save hook');
-          }
+        const sess = doc.$session();
+        const userId = addedParticipants[addedParticipants.length - 1];
+      
+        const [ auction, user, notificationTrigger ] = await Promise.all([
+          doc.$model(EModels.AUCTION).findById(doc.auctionId, { name: 1 }), 
+          doc.$model(EModels.USER).findById(userId, { firebaseTokenId: 1, email: 1, userType: 1 }), 
+          doc.$model(EModels.NOTIFICATION_TRIGGER).findOne(
+            { name: EPushMessageReason.NOTIFY_USER_OF_FORUM_PARTICIPATION }, 
+            { _id: 1 }
+          )
+        ]);
 
-          const sess = doc.$session();
-          const userId = addedParticipants[addedParticipants.length - 1];
-        
-          const [ auction, user, notificationTrigger ] = await Promise.all([doc.$model(EModels.AUCTION).findById(doc.auctionId, { name: 1 }), doc.$model(EModels.USER).findById(userId, { firebaseTokenId: 1, email: 1, userType: 1 }), doc.$model(EModels.NOTIFICATION_TRIGGER).findOne({ name: EPushMessageReason.NOTIFY_USER_OF_FORUM_PARTICIPATION }, { _id: 1 })]);
+        if (!auction) {
+          throw new NotFoundError('Auction not found');
+        }
 
-          if (!auction) {
-            throw new NotFoundError('Auction not found');
-          }
+        if (!notificationTrigger) {
+          throw new InternalServerError('Notification trigger not found');
+        }
 
-          // Check if exists
-          if (!notificationTrigger) {
-            throw new InternalServerError('Notification trigger not found');
-          }
+        if (!user) {
+          throw new InternalServerError('User not found');
+        }
 
-          // Check if exists
-          if (!user) {
-            throw new InternalServerError('User not found');
-          }
+        // Check if admin
+        if ((user as any).userType !== EUserType.ADMIN) {
+          const email = (user as IBidder).email;
 
-          // Check if admin
-          if ((user as any).userType !== EUserType.ADMIN) {
+          // Create notification object
+          const newNotificationObject = await doc.$model(EModels.NOTIFICATION_OBJECT).create({
+            trigger: notificationTrigger.id,
+            entity: doc.id,
+            onEntityModel: EModels.FORUM
+          }, { session: sess });
 
-            const email = (user as IBidder).email;
+          // Create notification change
+          await doc.$model(EModels.NOTIFICATION_CHANGE).create({
+            notificationObject: (newNotificationObject as any).id,
+            actor: userId,
+            onActorModel: EModels.USER
+          }, { session: sess });
 
-            // Create notification object
-            const newNotificationObject = await doc.$model(EModels.NOTIFICATION_OBJECT).create({
-              trigger: notificationTrigger.id,
-              entity: doc.id,
-              onEntityModel: EModels.FORUM
-            }, { session: sess });
+          const notificationMessage = `You have been added to the forum: "${(auction as IAuction).title}"`;
 
-            // Create notification change
-            await doc.$model(EModels.NOTIFICATION_CHANGE).create({
-              notificationObject: (newNotificationObject as any).id,
-              actor: userId,
-              onActorModel: EModels.USER
-            }, { session: sess });
+          // Create notification
+          await doc.$model(EModels.NOTIFICATION).create({
+            notificationObject: (newNotificationObject as any).id,
+            notifier: userId,
+            onNotifierModel: EModels.USER,
+            notificationMessage
+          }, { session: sess });
 
-            const notificationMessage = `You have been added to the forum: "${(auction as IAuction).title}"`;
+          const title = 'Added to a Forum';
+          const htmlContent = addedToForumTemplate
+            .replace('[UserName]', (user as IBidder).isOrganization ? (user as IBidder).name as string : (user as IBidder).firstName as string)
+            .replace('[AuctionName]', (auction as IAuction).title);
 
-            // Create notification
-            await doc.$model(EModels.NOTIFICATION).create({
-              notificationObject: (newNotificationObject as any).id,
-              notifier: userId,
-              onNotifierModel: EModels.USER,
-              notificationMessage
-            }, { session: sess });
-
-            const title = 'Added to a Forum';
-            const htmlContent = addedToForumTemplate.replace('[UserName]', (user as IBidder).isOrganization ? (user as IBidder).name as string : (user as IBidder).firstName as string).replace('[AuctionName]', (auction as IAuction).title);
-
-            // Also send to email
-            await sgMail.send({
-              to: email,
-              from: VERIFIED_EMAIL,
+          // Queue the email
+          await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/emailQueue/add-job`, {
+            data: {
               subject: title,
-              html: htmlContent
-            });
-
-            // Check for firebase token
-            if ((user as any).firebaseTokenId) {
-              // Construct message
-              const message = {
-                  data: {
-                    pmr: EPushMessageReason.NOTIFY_USER_OF_FORUM_PARTICIPATION
-                  },
-                  notification: {
-                      title,
-                      body: notificationMessage
-                  },
-                  token: (user as any).firebaseTokenId
-              };
-              await firebase.messaging().send(message);
+              email,
+              message: htmlContent
             }
+          }, {
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": ID_VERIFICATION_API_KEY
+            }
+          });
+
+          // Check for firebase token
+          if ((user as any).firebaseTokenId) {
+            // Construct message
+            const message = {
+              data: {
+                pmr: EPushMessageReason.NOTIFY_USER_OF_FORUM_PARTICIPATION
+              },
+              notification: {
+                title,
+                body: notificationMessage
+              },
+              token: (user as any).firebaseTokenId
+            };
+            await firebase.messaging().send(message);
           }
         }
-    } catch (error) {
-        console.error('Error sending notification:', error);
-    }
+      }
+  } catch (error) {
+      console.error('Error sending notification:', error);
+  }
 });
 
 forumSchema.set('toJSON', {
