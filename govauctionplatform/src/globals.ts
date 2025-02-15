@@ -22,7 +22,6 @@ export const GENERIC_ERROR_MESSAGE = "Something went wrong, please try again lat
 export const ESCAPE_HTTP_ORIGIN_SOCKET_IO = "http://localhost:3000"; // TODO: Update before production
 export const TINGG_BILLING_SERVICE_ID = 3412;
 export const LOCAL_NATIONALITY = 'BW';
-export const VERIFIED_EMAIL = 'services@unipay.africa';
 
 export const FIREBASE_SERVICE_ACCOUNT_CREDENTIALS = JSON.stringify({
   "type": "service_account",
@@ -44,7 +43,6 @@ export const PAYGATE_ENCRYPTION_KEY = process.env.PAYGATE_ENCRYPTION_KEY as stri
 export const BAITS_API_TOKEN = process.env.BAITS_API_TOKEN as string;
 // export const UNIPAY_APP_AUTH_TOKEN = process.env.UNIPAY_APP_AUTH_TOKEN as string;
 export const UNIPAY_APP_AUTH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWJqZWN0IjoiNjY3YzVmOTMwM2YzZjEyODRhMWI0OGVhIiwic2NvcGUiOiJBUEkiLCJpYXQiOjE3MTk0MjY5NjN9.xi1tGljRdbpFzamQlD1G4TVYK1gWt6xyEAXrT4MVpko";
-export const SEND_GRID_API_KEY = "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";
 export const SERVICE_URLS: {[key: string]: string} = {
   mongoDBURI: `mongodb://localhost:27017/bwgovauctionplatform?retryWrites=true&w=majority`,
   tinggCreatePaymentLinkURI: "https://paybylink-apis.pay.tingg.africa/paybylink-apis/public/bill/create",
