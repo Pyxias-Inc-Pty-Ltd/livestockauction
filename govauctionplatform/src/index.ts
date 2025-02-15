@@ -5,7 +5,7 @@ import { connect } from 'mongoose';
 import { createServer } from 'http';
 import { Server, Socket } from "socket.io";
 import StatusCodes from 'http-status-codes';
-import { ESocketEventCode, SERVICE_URLS, FIREBASE_SERVICE_ACCOUNT_CREDENTIALS, SEND_GRID_API_KEY} from './globals';
+import { ESocketEventCode, SERVICE_URLS, FIREBASE_SERVICE_ACCOUNT_CREDENTIALS } from './globals';
 import bidHandler from './handlers/bid-handler';
 import transactionHandler from './handlers/transaction-handler';
 import messageHandler from './handlers/message-handler';
@@ -13,7 +13,6 @@ import itemHandler from './handlers/item-handler';
 import * as admin from 'firebase-admin';
 import authHandler from './handlers/auth-handler';
 import { CustomError } from './shared/errors';
-import { MailService } from '@sendgrid/mail';
 import { runSchedulers } from './scheduler';
 
 const { OK, INTERNAL_SERVER_ERROR, CREATED } = StatusCodes;
@@ -36,10 +35,6 @@ export const io = new Server(httpServer, {
     origin: ['http://localhost:5173', SERVICE_URLS.clientURI]
   }
 });
-
-export const sgMail = new MailService();
-
-sgMail.setApiKey(SEND_GRID_API_KEY);
 
 // Check for auth on handshake
 io.use(async (socket: any, next: any) => {
