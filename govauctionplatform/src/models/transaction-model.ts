@@ -1,9 +1,10 @@
 import { Schema, model, Document } from 'mongoose';
-import { EModels, EPaymentStatus, EPushMessageReason, ETransactionType, paymentStatus, purchasePaymentFailedTemplate, purchasePaymentTemplate, refundFailedTemplate, refundTemplate, reservePricePaymentFailedTemplate, reservePricePaymentTemplate, transactionType, VERIFIED_EMAIL } from '../globals';
-import { firebase, sgMail } from '../index';
+import { EModels, EPaymentStatus, EPushMessageReason, ETransactionType, ID_VERIFICATION_API_KEY, paymentStatus, purchasePaymentFailedTemplate, purchasePaymentTemplate, refundFailedTemplate, refundTemplate, reservePricePaymentFailedTemplate, reservePricePaymentTemplate, SERVICE_URLS, transactionType } from '../globals';
+import { firebase } from '../index';
 import { InternalServerError, NotFoundError } from '../shared/errors';
 import { IItem } from './item-model';
 import { IBidder } from './user-model';
+import * as axios from 'axios';
 
 export interface ITransaction extends Document {
   auctionId: Schema.Types.ObjectId;
@@ -153,12 +154,18 @@ schema.post('save', async function (doc) {
 
       const title = `Transaction ${doc.status === EPaymentStatus.COMPLETED ? 'completed' : 'failed'}`;
 
-      // Also send to email
-      await sgMail.send({
-        to: email,
-        from: VERIFIED_EMAIL,
-        subject: title,
-        html: htmlContent
+      // Queue the email instead of sending directly
+      await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/emailQueue/add-job`, {
+        data: {
+          subject: title,
+          email,
+          message: htmlContent
+        }
+      }, {
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": ID_VERIFICATION_API_KEY
+        }
       });
 
       // Check for firebase token
