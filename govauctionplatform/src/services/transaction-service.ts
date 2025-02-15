@@ -597,10 +597,13 @@ async function processSuccessfulPaymentFromTingg (input: { accountNumber: string
 
       const stringBuyerId = transaction.buyerId.toString();
 
-      // Insert buyer into list of eligible bidders
-      item.eligibleBidders.push(stringBuyerId);
+      if (item.eligibleBidders.indexOf(stringBuyerId) === -1) {
+        item.eligibleBidders.push(stringBuyerId);
+      }
 
-      forum.participants.push(stringBuyerId);
+      if (forum.participants.indexOf(stringBuyerId) === -1) {
+        forum.participants.push(stringBuyerId);
+      }
 
       const auction = await auctionService.getById(item.auctionId);
 
@@ -611,11 +614,10 @@ async function processSuccessfulPaymentFromTingg (input: { accountNumber: string
 
       // Check if auction has registration fee
       if (auction.hasRegistrationFee) {
-        auction.globallyEligibleBidders.push(stringBuyerId);
+        if (auction.globallyEligibleBidders.indexOf(stringBuyerId) === -1) {
+          auction.globallyEligibleBidders.push(stringBuyerId);
+        }
       }
-
-      // Insert buyer into list of eligible bidders
-      item.eligibleBidders.push(stringBuyerId);
 
       if (auction.participantsWithBiddingNumbers.length > 0) {
         for (let index = 0; index < auction.participantsWithBiddingNumbers.length; index++) {
@@ -736,9 +738,13 @@ async function processSuccessfulPaymentFromUniPay(input: { payload: string, tran
 
       const stringBuyerId = transaction.buyerId.toString();
 
-      // Insert buyer into list of eligible bidders
-      item.eligibleBidders.push(stringBuyerId);
-      forum.participants.push(stringBuyerId);
+      if (item.eligibleBidders.indexOf(stringBuyerId) === -1) {
+        item.eligibleBidders.push(stringBuyerId);
+      }
+
+      if (forum.participants.indexOf(stringBuyerId) === -1) {
+        forum.participants.push(stringBuyerId);
+      }
 
       const auction = await auctionService.getById(item.auctionId);
 
@@ -749,7 +755,9 @@ async function processSuccessfulPaymentFromUniPay(input: { payload: string, tran
 
       // Check if auction has registration fee
       if (auction.hasRegistrationFee) {
-        auction.globallyEligibleBidders.push(stringBuyerId);
+        if (auction.globallyEligibleBidders.indexOf(stringBuyerId) === -1) {
+          auction.globallyEligibleBidders.push(stringBuyerId);
+        }
       }
 
       if (auction.participantsWithBiddingNumbers.length > 0) {
@@ -902,8 +910,14 @@ async function processSuccessfulPaymentFromPayGate(input: {
       }
 
       const stringBuyerId = transaction.buyerId.toString();
-      item.eligibleBidders.push(stringBuyerId);
-      forum.participants.push(stringBuyerId);
+
+      if (item.eligibleBidders.indexOf(stringBuyerId) === -1) {
+        item.eligibleBidders.push(stringBuyerId);
+      }
+
+      if (forum.participants.indexOf(stringBuyerId) === -1) {
+        forum.participants.push(stringBuyerId);
+      }
 
       const auction = await auctionService.getById(item.auctionId);
       if (!auction) {
@@ -911,7 +925,9 @@ async function processSuccessfulPaymentFromPayGate(input: {
       }
 
       if (auction.hasRegistrationFee) {
-        auction.globallyEligibleBidders.push(stringBuyerId);
+        if (auction.globallyEligibleBidders.indexOf(stringBuyerId) === -1) {
+          auction.globallyEligibleBidders.push(stringBuyerId);
+        }
       }
 
       if (auction.participantsWithBiddingNumbers.length > 0) {
