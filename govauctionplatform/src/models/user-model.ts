@@ -1,10 +1,10 @@
 import { InternalServerError } from '../shared/errors';
 import { Schema, model, Document, Model } from 'mongoose';
-import { adminType, EGenderType, EModels, ENVIRONMENT_PRODUCTION, EUserType, genderType, userType, VERIFIED_EMAIL, welcomeAuctionApproverEmailTemplate, welcomeBidderEmailTemplate, welcomeSellerEmailTemplate, EIdentityNumberVerificationStatus, identityNumberVerificationStatus, SERVICE_URLS, invalidNationalIDSMSTemplate, nameMismatchWithNationalIDSMSTemplate, nationalIDVerificationIssuesSMSTemplate, nationalIDVerificationSuccessSMSTemplate, companyRegistrationVerificationSuccessTemplate, invalidCompanyRegistrationTemplate, companyRegistrationVerificationIssuesTemplate, ID_VERIFICATION_API_KEY } from '../globals';
+import { adminType, EGenderType, EModels, ENVIRONMENT_PRODUCTION, EUserType, genderType, userType, welcomeAuctionApproverEmailTemplate, welcomeBidderEmailTemplate, welcomeSellerEmailTemplate, EIdentityNumberVerificationStatus, identityNumberVerificationStatus, SERVICE_URLS, invalidNationalIDSMSTemplate, nameMismatchWithNationalIDSMSTemplate, nationalIDVerificationIssuesSMSTemplate, nationalIDVerificationSuccessSMSTemplate, companyRegistrationVerificationSuccessTemplate, invalidCompanyRegistrationTemplate, companyRegistrationVerificationIssuesTemplate, ID_VERIFICATION_API_KEY } from '../globals';
 import isEmail from 'validator/lib/isEmail';
 import * as axios from 'axios';
 import isURL from 'validator/lib/isURL';
-import { sgMail } from '../index';
+import { formatPhoneNumber } from '../shared/functions';
 
 export interface IUser extends Document {
   firstName?: string;
@@ -395,7 +395,7 @@ bidderSchema.post('save', async function (doc, next) {
                 await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/smsQueue/add-job`, {
                   data: {
                     subject: 'onlineauction.gov.bw',
-                    phone,
+                    phone: formatPhoneNumber(phone!),
                     message: textContent
                   }
                 }, {
@@ -413,7 +413,7 @@ bidderSchema.post('save', async function (doc, next) {
                 await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/smsQueue/add-job`, {
                   data: {
                     subject: 'onlineauction.gov.bw',
-                    phone,
+                    phone: formatPhoneNumber(phone!),
                     message: textContent
                   }
                 }, {
@@ -432,7 +432,7 @@ bidderSchema.post('save', async function (doc, next) {
               await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/smsQueue/add-job`, {
                 data: {
                   subject: 'onlineauction.gov.bw',
-                  phone,
+                  phone: formatPhoneNumber(phone!),
                   message: textContent
                 }
               }, {
@@ -449,7 +449,7 @@ bidderSchema.post('save', async function (doc, next) {
                 await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/smsQueue/add-job`, {
                   data: {
                     subject: 'onlineauction.gov.bw',
-                    phone,
+                    phone: formatPhoneNumber(phone!),
                     message: textContent
                   }
                 }, {
@@ -535,16 +535,20 @@ sellerSchema.set('toJSON', {
 sellerSchema.post('save', async function (doc, next) {
   if (this.$locals.isNew) {
     try {
-
       const { email, name } = doc;
-
       const htmlContent = welcomeSellerEmailTemplate.replace('[UserName]', name);
     
-      await sgMail.send({
-          to: email,
-          from: VERIFIED_EMAIL,
+      await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/emailQueue/add-job`, {
+        data: {
           subject: 'Welcome to the Botswana Government Auction Platform',
-          html: htmlContent
+          email,
+          message: htmlContent
+        }
+      }, {
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": ID_VERIFICATION_API_KEY
+        }
       });
 
       next();
@@ -669,14 +673,19 @@ auctionApproverSchema.post('save', async function (doc, next) {
   if (this.$locals.isNew) {
     try {
       const { email, firstName } = doc;
-
       const htmlContent = welcomeAuctionApproverEmailTemplate.replace('[UserName]', firstName);
     
-      await sgMail.send({
-          to: email,
-          from: VERIFIED_EMAIL,
+      await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/emailQueue/add-job`, {
+        data: {
           subject: 'Welcome to the Botswana Government Auction Platform',
-          html: htmlContent
+          email,
+          message: htmlContent
+        }
+      }, {
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": ID_VERIFICATION_API_KEY
+        }
       });
 
       next();
