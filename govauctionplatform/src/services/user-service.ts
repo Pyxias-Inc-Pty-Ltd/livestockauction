@@ -1,11 +1,10 @@
 import { ConflictError, ForbiddenError, NotFoundError } from "../shared/errors";
 import { IAdmin, IUser, User, IAdminInput, Admin, IBidder, IBidderInput, Bidder, ISeller, ISellerInput, Seller, AuctionApprover, IAuctionApprover, IAuctionApproverInput } from "../models/user-model";
-import { companyRegistrationVerificationIssuesTemplate, companyRegistrationVerificationSuccessTemplate, EAdminType, ESortOrderType, EUserSortType, EUserType, ID_VERIFICATION_API_KEY, invalidCompanyRegistrationTemplate, invalidNationalIDSMSTemplate, keeperIDVerificationTemplate, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, nameMismatchWithNationalIDSMSTemplate, nationalIDVerificationIssuesSMSTemplate, nationalIDVerificationSuccessSMSTemplate, SALT_ROUNDS, SERVICE_URLS, VERIFIED_EMAIL } from "../globals";
+import { companyRegistrationVerificationIssuesTemplate, companyRegistrationVerificationSuccessTemplate, EAdminType, ESortOrderType, EUserSortType, EUserType, ID_VERIFICATION_API_KEY, invalidCompanyRegistrationTemplate, invalidNationalIDSMSTemplate, keeperIDVerificationTemplate, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, nameMismatchWithNationalIDSMSTemplate, nationalIDVerificationIssuesSMSTemplate, nationalIDVerificationSuccessSMSTemplate, SALT_ROUNDS, SERVICE_URLS } from "../globals";
 import { genSalt, hash } from 'bcrypt';
 import { generateOTP, generateRandomPassword, getFarmerByKeeperId, getKeeperByRegNumber, hashOTP, verifyOTP, verifySignature } from "../shared/functions";
 import { Schema } from "mongoose";
 import * as axios from "axios";
-import { sgMail } from "../index";
 
 /**
  * Get a user by id.
@@ -500,25 +499,29 @@ async function beginBAITSKeeperIDVerification(currentUser: IBidder, keeperId: st
     const farmer = await getFarmerByKeeperId(keeper.KeeperID);
     const otp = generateOTP();
 
-    console.log('otp: ', otp)
+    console.log('otp: ', otp);
     
-    let htmlContent = "";
-
-    htmlContent = keeperIDVerificationTemplate.replace('[UserName]', currentUser.isOrganization ? currentUser.name as string : currentUser.firstName as string);
-    htmlContent = keeperIDVerificationTemplate.replace('[otp]', otp);
+    let htmlContent = keeperIDVerificationTemplate
+      .replace('[UserName]', currentUser.isOrganization ? currentUser.name as string : currentUser.firstName as string)
+      .replace('[otp]', otp);
 
     currentUser.keeperIdHash = await hashOTP(otp);
     currentUser.keeperId = keeperId;
 
     await currentUser.save();
 
-    // TODO: Send to queue
     if (farmer.EmailID) {
-      await sgMail.send({
-        to: farmer.EmailID,
-        from: VERIFIED_EMAIL,
-        subject: 'BAITS Keeper ID verification',
-        html: htmlContent
+      await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/emailQueue/add-job`, {
+        data: {
+          subject: 'BAITS Keeper ID verification',
+          email: farmer.EmailID,
+          message: htmlContent
+        }
+      }, {
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": ID_VERIFICATION_API_KEY
+        }
       });
     }
 
