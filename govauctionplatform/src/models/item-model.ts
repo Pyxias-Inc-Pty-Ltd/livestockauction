@@ -2,7 +2,6 @@ import { ConflictError, InternalServerError, NotFoundError } from '../shared/err
 import { Schema, model, Document } from 'mongoose';
 import { itemStatus, EModels, EItemStatus, genderType, EGenderType } from '../globals';
 import { generateSlug } from '../shared/functions';
-import { uniqBy } from 'lodash';
 import { ICategory } from './category-model';
 import { IAuction } from './auction-model';
 
@@ -156,7 +155,11 @@ schema.pre('save', async function () {
       throw new NotFoundError('Auction not found');
     }
 
-    doc.eligibleBidders = uniqBy(auction.globallyEligibleBidders, (e) => e.toString());
+    for (const globallyEligibleBidder of auction.globallyEligibleBidders) {
+      if (doc.eligibleBidders.indexOf(globallyEligibleBidder) === -1) {
+        doc.eligibleBidders.push(globallyEligibleBidder);
+      }
+    }
   }
 
   if (doc.isNew || doc.isModified('title')) {
@@ -178,15 +181,6 @@ schema.pre('save', async function () {
         }
       }
     }
-  }
-
-  // Check if empty
-  if (doc.eligibleBidders && doc.eligibleBidders.length > 0) {
-    console.log("Before deduplication:", doc.eligibleBidders);
-    doc.eligibleBidders = uniqBy(doc.eligibleBidders, (e) => {
-      return e.toString();
-    });
-    console.log("After deduplication:", doc.eligibleBidders);
   }
 });
 
