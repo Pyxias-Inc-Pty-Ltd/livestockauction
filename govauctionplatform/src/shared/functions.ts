@@ -3,7 +3,7 @@ import * as Joi from 'joi';
 import isEmail from 'validator/lib/isEmail';
 import isMongoId from 'validator/lib/isMongoId'
 import isISO8601 from 'validator/lib/isISO8601';
-import { parsePhoneNumber } from 'libphonenumber-js';
+import { parsePhoneNumber, parsePhoneNumberFromString } from 'libphonenumber-js';
 import { compare, genSalt, hash } from 'bcrypt';
 import * as luxon from 'luxon';
 import { BAITS_API_TOKEN, COUNTRY_PHONE_CODES, SALT_ROUNDS, SERVICE_URLS } from '../globals';
@@ -794,4 +794,19 @@ export function verifySignature(hash: string, signature: string): boolean {
     console.error('Error verifying signature:', error);
     return false;
   }
+}
+
+/**
+ * Formats a phone number to remove spaces and country code prefix.
+ * @param {string} phoneNumber - The phone number in international format.
+ * @return {string} - The formatted phone number or null if invalid.
+ */
+export function formatPhoneNumber(phoneNumber: string): string {
+  const parsedNumber = parsePhoneNumberFromString(phoneNumber);
+  
+  if (!parsedNumber || !parsedNumber.isValid()) {
+    throw new InternalServerError('Invalid phone');
+  }
+  
+  return `${parsedNumber.countryCallingCode}${parsedNumber.nationalNumber}`;
 }
