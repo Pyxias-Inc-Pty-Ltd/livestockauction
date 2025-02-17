@@ -109,9 +109,11 @@ router.post(p.createSeller, SuperAdminOnly(), async (req: Request, res: Response
 router.post(p.verifyIdentityNumber, async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
-      userId: mongoIdValidation.required().messages({
-        'any.required': '"userId" is a required field'
-      }),
+      payload: Joi.object().keys({
+        userId: mongoIdValidation.required().messages({
+          'any.required': '"userId" is a required field'
+        })
+      }).required(),
       hash: Joi.string().hex().required().messages({
         'any.required': '"hash" is a required field'
       }),
@@ -123,7 +125,7 @@ router.post(p.verifyIdentityNumber, async (req: Request, res: Response) => {
     // Validate schema against input
     Joi.assert(req.body, schema);
 
-    const user = await userService.createSeller(req.user as IAdmin, req.body as any);
+    const user = await userService.verifyIdentityNumber(req.body as any);
     return res.status(CREATED).json({user});
   } catch (error) {
     throw error;
