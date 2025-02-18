@@ -8,6 +8,7 @@ export type paymentStatus = "PENDING" | "FAILED" | "COMPLETED" | "CANCELLED";
 export type paymentProvider = "CELLULANT" | "UNIPAY" | "PAY_GATE";
 export type genderType = "MALE" | "FEMALE" | "MIXED";
 export type participationType = "CITIZEN_ONLY" | "EVERYONE";
+export type sectorType = "GOVERNMENT" | "PRIVATE";
 export type publishedStatus = "PUBLISHED" | "UNPUBLISHED" | "IN_REVIEW" | "REJECTED";
 export type identityNumberVerificationStatus = "PENDING" | "VERIFIED" | "VERIFICATION_REJECTED";
 export type fauxObject = {[key: string]: any};
@@ -453,6 +454,11 @@ export enum EPaymentProvider {
   CELLULANT = "CELLULANT",
   UNIPAY = "UNIPAY",
   PAY_GATE = "PAY_GATE"
+}
+
+export enum ESectorType {
+  GOVERNMENT = "GOVERNMENT",
+  PRIVATE = "PRIVATE"
 }
 
 export enum EGenderType {
