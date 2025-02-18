@@ -1,6 +1,6 @@
 import { ConflictError, ForbiddenError, InternalServerError, NotFoundError } from '../shared/errors';
 import { Schema, model, Document } from 'mongoose';
-import { EModels, EAuctionStatus, participationType, EParticipationType, auctionStatus, ENVIRONMENT_PRODUCTION, publishedStatus, EPublishedStatus, SERVICE_URLS, auctionRejectedEmailTemplate, ID_VERIFICATION_API_KEY, auctionApprovalReminderEmailTemplate } from '../globals';
+import { EModels, EAuctionStatus, participationType, EParticipationType, sectorType, auctionStatus, ENVIRONMENT_PRODUCTION, publishedStatus, EPublishedStatus, SERVICE_URLS, auctionRejectedEmailTemplate, ID_VERIFICATION_API_KEY, auctionApprovalReminderEmailTemplate, ESectorType } from '../globals';
 import { generateSlug } from '../shared/functions';
 import { isURL } from 'validator';
 import * as axios from 'axios';
@@ -22,6 +22,7 @@ export interface IAuction extends Document {
   titleSlug: string;
   auctionNumber: string;
   auctionLocation: string;
+  sectorType: sectorType;
   auctionCoordinates?: {
     type: 'Point';
     coordinates: [number, number]; // [longitude, latitude]
@@ -53,6 +54,7 @@ export interface IAuctionInput {
   auctionNumber: string;
   hasRegistrationFee: boolean;
   registrationFee?: number;
+  sectorType: sectorType;
   auctionLocation: string;
   participationType: participationType;
   creatorId: Schema.Types.ObjectId;
@@ -124,10 +126,8 @@ const auctionSchema = new Schema<IAuction>({
   registrationFee: { type: Number, min: 0, required: function (): boolean {
     return (this as IAuction).hasRegistrationFee;
   } },
-  auctionCoordinates: { 
-    type: { type: String, enum: ['Point'], default: 'Point' },
-    coordinates: { type: [Number], required: true }
-  },
+  sectorType: { type: String, default: ESectorType.GOVERNMENT, enum: [ESectorType.PRIVATE, ESectorType.GOVERNMENT], required: true },
+  auctionCoordinates: { type: { type: String, enum: ['Point'], default: 'Point' }, coordinates: { type: [Number], required: true } },
   categoryId: { type: Schema.Types.ObjectId, required: true, ref: EModels.CATEGORY },
   terms: { type: String, required: true, trim: true },
   startTime: { type: Date, required: true },
