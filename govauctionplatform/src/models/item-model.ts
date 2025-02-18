@@ -46,6 +46,7 @@ export interface IItem extends Document {
   status: itemStatus;
   baitsDump?: string;
   isPurchased: boolean;
+  metadata: Record<string, any>;
   createdDate: any;
   updatedDate: any;
 }
@@ -125,7 +126,8 @@ const schema = new Schema<IItem>({
   dob: {type: Date, required: function (): boolean {
     return (this as IItem).gender !== undefined && (this as IItem).gender !== 'MIXED';
   }},
-  version: { type: Number, default: 0 }
+  version: { type: Number, default: 0 },
+  metadata: { type: Schema.Types.Mixed, default: {} }
 }, {
   timestamps: {
     createdAt: "createdDate",
