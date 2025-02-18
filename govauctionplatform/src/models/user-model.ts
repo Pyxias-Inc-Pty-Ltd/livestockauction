@@ -1,6 +1,6 @@
 import { InternalServerError } from '../shared/errors';
 import { Schema, model, Document, Model } from 'mongoose';
-import { adminType, EGenderType, EModels, ENVIRONMENT_PRODUCTION, EUserType, genderType, userType, welcomeAuctionApproverEmailTemplate, welcomeBidderEmailTemplate, welcomeSellerEmailTemplate, EIdentityNumberVerificationStatus, identityNumberVerificationStatus, SERVICE_URLS, invalidNationalIDSMSTemplate, nameMismatchWithNationalIDSMSTemplate, nationalIDVerificationIssuesSMSTemplate, nationalIDVerificationSuccessSMSTemplate, companyRegistrationVerificationSuccessTemplate, invalidCompanyRegistrationTemplate, companyRegistrationVerificationIssuesTemplate, ID_VERIFICATION_API_KEY } from '../globals';
+import { adminType, EGenderType, EModels, ENVIRONMENT_PRODUCTION, EUserType, genderType, userType, welcomeAuctionApproverEmailTemplate, welcomeBidderEmailTemplate, welcomeSellerEmailTemplate, EIdentityNumberVerificationStatus, identityNumberVerificationStatus, SERVICE_URLS, invalidNationalIDSMSTemplate, nameMismatchWithNationalIDSMSTemplate, nationalIDVerificationIssuesSMSTemplate, nationalIDVerificationSuccessSMSTemplate, companyRegistrationVerificationSuccessTemplate, invalidCompanyRegistrationTemplate, companyRegistrationVerificationIssuesTemplate, ID_VERIFICATION_API_KEY, sectorType, ESectorType } from '../globals';
 import isEmail from 'validator/lib/isEmail';
 import * as axios from 'axios';
 import isURL from 'validator/lib/isURL';
@@ -22,6 +22,7 @@ export interface IUser extends Document {
 }
 
 export interface ISeller extends IUser {
+  sectorType: sectorType;
   name: string;
 }
 
@@ -491,6 +492,7 @@ bidderSchema.post('save', async function (doc, next) {
 
 const sellerSchema = new Schema<ISeller>({
   userType: {type: String, required: true, default: EUserType.SELLER, enum: [EUserType.SELLER]},
+  sectorType: { type: String, default: ESectorType.GOVERNMENT, enum: [ESectorType.PRIVATE, ESectorType.GOVERNMENT], required: true },
   email: {type: String, unique: true, required: true, validate: {
     msg: 'Valid email must be supplied.',
       validator: function (v: string): boolean {
