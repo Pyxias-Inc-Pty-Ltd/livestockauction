@@ -9,6 +9,8 @@ export type paymentProvider = "CELLULANT" | "UNIPAY" | "PAY_GATE";
 export type genderType = "MALE" | "FEMALE" | "MIXED";
 export type participationType = "CITIZEN_ONLY" | "EVERYONE";
 export type sectorType = "GOVERNMENT" | "PRIVATE";
+export type productStatus = "DRAFT" | "ACTIVE" | "INACTIVE" | "OUT_OF_STOCK";
+export type productCondition = "NEW" | "USED" | "REFURBISHED";
 export type publishedStatus = "PUBLISHED" | "UNPUBLISHED" | "IN_REVIEW" | "REJECTED";
 export type identityNumberVerificationStatus = "PENDING" | "VERIFIED" | "VERIFICATION_REJECTED";
 export type fauxObject = {[key: string]: any};
@@ -355,6 +357,7 @@ export enum EModels {
   SELLER = "Seller",
   AUCTION_APPROVER = "AuctionApprover",
   ITEM = "Item",
+  PRODUCT = "Product",
   AUCTION = "Auction",
   BID = "Bid",
   BIDDER_COUNTER = "BidderCounter",
@@ -437,6 +440,19 @@ export enum ESocketEventCode {
   BROADCAST_NEW_MANUAL_BID_AMOUNT = "e:14",
   REFRESH_AFTER_WINNING = "e:15",
   BROADCAST_REFRESH_AFTER_WINNING = "e:16"
+}
+
+export enum EProductStatus {
+  DRAFT = "DRAFT",
+  ACTIVE = "ACTIVE",
+  INACTIVE = "INACTIVE",
+  OUT_OF_STOCK = "OUT_OF_STOCK"
+}
+
+export enum EProductCondition {
+  NEW = "NEW",
+  USED = "USED",
+  REFURBISHED = "REFURBISHED"
 }
 
 export enum EParticipationType {
