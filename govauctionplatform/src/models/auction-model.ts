@@ -45,8 +45,8 @@ export interface IAuction extends Document {
   publishedBy?: Schema.Types.ObjectId;
   isBeingLivestreamed: boolean;
   streamUrl: string;
-  createdDate: any;
-  updatedDate: any;
+  createdDate: Date;
+  updatedDate: Date;
 }
 
 export interface IAuctionInput {
