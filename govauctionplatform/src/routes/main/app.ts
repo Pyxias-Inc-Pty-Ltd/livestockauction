@@ -6,6 +6,7 @@ import transactionRouter from '../transaction-router';
 import categoryRouter from '../category-router';
 import auctionRouter from '../auction-router';
 import forumRouter from '../forum-router';
+import formRouter from '../form-router';
 import notificationTriggerRouter from '../notification-trigger-router';
 import notificationRouter from '../notification-router';
 
@@ -17,6 +18,7 @@ baseRouter.use('/bids', bidRouter);
 baseRouter.use('/items', itemRouter);
 baseRouter.use('/auctions', auctionRouter);
 baseRouter.use('/users', userRouter);
+baseRouter.use('/forms', formRouter);
 baseRouter.use('/transactions', transactionRouter);
 baseRouter.use('/categories', categoryRouter);
 baseRouter.use('/forums', forumRouter);
