@@ -355,6 +355,7 @@ export enum EModels {
   USER = "User",
   BIDDER = "Bidder",
   SELLER = "Seller",
+  FORM = "Form",
   AUCTION_APPROVER = "AuctionApprover",
   ITEM = "Item",
   PRODUCT = "Product",
