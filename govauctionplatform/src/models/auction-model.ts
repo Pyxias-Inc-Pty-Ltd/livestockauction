@@ -5,6 +5,7 @@ import { generateSlug } from '../shared/functions';
 import { isURL } from 'validator';
 import * as axios from 'axios';
 import { IAuctionApprover, ISeller } from './user-model';
+import { esService } from '../services/elasticsearch-service';
 
 export interface IRequiredAttribute extends Document {
   name: string;
@@ -228,6 +229,14 @@ auctionSchema.pre('save', async function () {
       case EPublishedStatus.REJECTED:
         break;
     }
+  }
+});
+
+auctionSchema.post('save', async function(doc: IAuction) {
+  try {
+    await esService.updateItemsWithAuction(doc);
+  } catch (error) {
+    console.error('Error updating items with auction:', error); // TODO: Log to winston
   }
 });
 
