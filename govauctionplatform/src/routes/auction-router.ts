@@ -3,7 +3,7 @@ import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isoDateValidation, isStringNumberLike, mongoIdValidation } from '../shared/functions';
 import { SuperAdminOnly, SellerOnly, AuctionApproverOnly, AnyAdminMiddleware } from '../shared/middleware';
-import { IAdmin, IAuctionApprover, ISeller } from '../models/user-model';
+import { IAdmin, IAuctionApprover, ISeller, IUser } from '../models/user-model';
 import auctionService from '../services/auction-service';
 import { EAuctionStatus, EAuctionSortType, EParticipationType, ESortOrderType, EPublishedStatus } from '../globals';
 
@@ -315,6 +315,8 @@ router.get(p.getAllAuctions, AnyAdminMiddleware(), async (req: Request, res: Res
 
     if ((req.user as IAuctionApprover).createdBySeller) {
       conditions.set('creatorId', (req.user as IAuctionApprover).createdBySeller.toString());
+    } else if ((req.user as IUser).userType === 'SELLER') {
+      conditions.set('creatorId', (req.user as IUser)._id.toString());
     } else if (creatorId) {
       conditions.set('creatorId', creatorId);
     }
