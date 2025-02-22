@@ -37,14 +37,13 @@ router.post(p.createAuction, SuperAdminOnly(), async (req: Request, res: Respons
       auctionLocation: Joi.string().required().messages({
         'any.required': '"auctionLocation" is a required field'
       }),
-      auctionCoordinates: Joi.array()
-        .items(Joi.number().min(-180).max(180))
-        .length(2)
-        .optional()
-        .messages({
-          'array.base': '"auctionCoordinates" should be an array of [longitude, latitude]',
-          'array.length': '"auctionCoordinates" must contain exactly 2 numbers [longitude, latitude]',
+      auctionCoordinates: Joi.object().keys({
+        coordinates: Joi.array().items(Joi.number().min(-180).max(180)).length(2).required().messages({
+          'any.required': '"auctionCoordinates.coordinates" is a required field'
         }),
+      }).required().messages({
+        'any.required': '"auctionCoordinates" is a required field'
+      }),
       terms: Joi.string().required().messages({
         'any.required': '"terms" is a required field'
       }),
