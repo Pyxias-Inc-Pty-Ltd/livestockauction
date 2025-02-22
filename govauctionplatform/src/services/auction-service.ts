@@ -233,9 +233,6 @@ async function getAuctions(conditions: Map<string, any>, projection?: any): Prom
     // Filter by publishedStatus (if provided)
     if (conditions.get('publishedStatus')) {
       q.where({ publishedStatus: conditions.get('publishedStatus') });
-    } else {
-      // Default to only published auctions if no publishedStatus is provided
-      q.where({ publishedStatus: EPublishedStatus.PUBLISHED });
     }
 
     // Range
