@@ -220,7 +220,14 @@ async function verifyIdentityNumber(input: { payload: { userId: string }, hash: 
             const { data } = getResponse.data;
             const lowerCaseFirstName = (data[0]['FIRST_NME'] as string).toLowerCase();
             const lowerCaseLastName = (data[0]['SURNME'] as string).toLowerCase();
+
+            //IS contains safe thou?  Bame contains ame, It works well for names with a - , bo Mary-Jane
+            //TODO: Check if the name is safe
+
+            //TODO: Maybe verify Date of Birth too, I think auctions are not for minors
+
             if (lowerCaseFirstName.includes(user.firstName!.toLowerCase()) && lowerCaseLastName.includes(user.lastName!.toLowerCase())) {
+
               user.identityNumberVerificationStatus === "VERIFIED";
               await user.save();
               // Queue message
@@ -239,10 +246,12 @@ async function verifyIdentityNumber(input: { payload: { userId: string }, hash: 
               });
             } else {
               user.identityNumberVerificationStatus === "VERIFICATION_REJECTED";
+              //TODO: Add reason for rejection to the response
               user.reasonForIdentityNumberVerificationRejection = "Name mismatch with Omang provided";
               await user.save();
               // Queue message
               const textContent = nameMismatchWithNationalIDSMSTemplate.replace('[UserName]', user.firstName as string);
+              
               await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/smsQueue/add-job`, {
                 data: {
                   subject: 'onlineauction.gov.bw',
@@ -257,6 +266,8 @@ async function verifyIdentityNumber(input: { payload: { userId: string }, hash: 
               });
             }
           } else if (getResponse.status === 200 && getResponse.data.success === false) {
+
+            //In my experience, customers are always calling to ask why they are rejected, maybe add reason for rejection to the response
             user.identityNumberVerificationStatus === "VERIFICATION_REJECTED";
             user.reasonForIdentityNumberVerificationRejection = "Invalid Omang provided";
             await user.save();
@@ -293,6 +304,7 @@ async function verifyIdentityNumber(input: { payload: { userId: string }, hash: 
               });
             }
 
+            
             user.identityNumberVerificationRetryCount += 1;
             await user.save();
 
