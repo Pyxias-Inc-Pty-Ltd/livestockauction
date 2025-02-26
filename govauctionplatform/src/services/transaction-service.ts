@@ -4,7 +4,7 @@ import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession } from 'mongoose';
 import { ITransaction, Transaction, ITransactionInput } from "../models/transaction-model";
 import itemService from "./item-service";
-import { EPaymentStatus, ESortOrderType, ETransactionSortType, LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, MAX_LIST_LIMIT_NUMBER, PAYGATE_ENCRYPTION_KEY, PAYGATE_ID, paymentProvider, SERVICE_URLS, TINGG_BILLING_SERVICE_ID, transactionType, UNIPAY_APP_AUTH_TOKEN } from "../globals";
+import { EPaymentStatus, ESortOrderType, ETransactionSortType, ETransactionType, LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, MAX_LIST_LIMIT_NUMBER, PAYGATE_ENCRYPTION_KEY, PAYGATE_ID, paymentProvider, SERVICE_URLS, TINGG_BILLING_SERVICE_ID, transactionType, UNIPAY_APP_AUTH_TOKEN } from "../globals";
 import bidService from "./bid-service";
 import * as luxon from "luxon";
 import { formatPhoneTinggNumber, generateUniPayAppPaymentURL, generatePayGatePaymentURL, prefixWithZero, convertToPaygateFormat } from "../shared/functions";
@@ -18,7 +18,7 @@ import { BidderCounter } from "../models/bidder-counter";
  * 
  * @param currentUser
  * @param input
- * @returns 
+ * @return 
  */
 async function initiateItemReservation(currentUser: IBidder, input: { itemId: string, paymentProvider: paymentProvider }): Promise<ITransaction> {
   try {
@@ -186,7 +186,7 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
  * 
  * @param currentUser
  * @param input
- * @returns 
+ * @return 
  */
 async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: { itemId: string, paymentProvider: paymentProvider }): Promise<ITransaction> {
   try {
@@ -378,7 +378,7 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
  * 
  * @param currentUser
  * @param input
- * @returns 
+ * @return 
  */
 async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input: { itemId: string, paymentProvider: paymentProvider }): Promise<ITransaction> {
   try {
@@ -538,7 +538,7 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
  * 
  * @param currentUser 
  * @param input 
- * @returns 
+ * @return 
  */
 async function pollPaidTransaction (currentUser: IBidder, input: { itemId: string, transactionType: transactionType }): Promise<boolean> {
   try {
@@ -983,7 +983,7 @@ async function processSuccessfulPaymentFromPayGate(input: {
  * 
  * @param id 
  * @param projection
- * @returns 
+ * @return 
  */
 async function getById(id: string | Schema.Types.ObjectId, projection?: any): Promise<ITransaction | null> {
   try {
@@ -1004,7 +1004,7 @@ async function getById(id: string | Schema.Types.ObjectId, projection?: any): Pr
  * 
  * @param conditions
  * @param projection
- * @returns 
+ * @return 
  */
 async function getTransactions(currentUser: IAdmin | IBidder, conditions: Map<string, any>, projection?: any): Promise<ITransaction[]> {
   try {
@@ -1103,6 +1103,36 @@ async function getTransactions(currentUser: IAdmin | IBidder, conditions: Map<st
   }
 }
 
+/**
+ * Tracks transactions that have been pending for more than 15 minutes.
+ * 
+ * This function updates transactions of type `RESERVATION` or `PURCHASE`
+ * that were created at least 15 minutes ago and are still in the `PENDING` state,
+ * marking them as `FAILED`.
+ * 
+ * @throws {Error} If an error occurs during the database update operation.
+ * @return {Promise<void>} A promise that resolves once the update is complete.
+ */
+async function trackTransactionStatus (): Promise<void> {
+  try {
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+    await Transaction.updateMany(
+      {
+        createdDate: { $lte: fifteenMinutesAgo },
+        status: EPaymentStatus.PENDING,
+        $or: [
+          { transactionType: ETransactionType.RESERVATION },
+          { transactionType: ETransactionType.PURCHASE }
+        ],
+      },
+      { $set: { status: EPaymentStatus.FAILED } }
+    );
+  } catch (error) {
+    // Rethrow error
+    throw error;
+  }
+}
+
 // Export default
 export default {
   initiateItemReservation,
@@ -1113,5 +1143,6 @@ export default {
   initiatePurchaseItemByWinningBidder,
   initiatePurchaseItemUsingBuyoutPrice,
   getTransactions,
+  trackTransactionStatus,
   getById
 } as const;
