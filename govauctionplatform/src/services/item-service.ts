@@ -22,15 +22,15 @@ async function createItem(currentUser: IAdmin, input: IItemInput): Promise<IItem
   try {
     const newItem = new Item(input);
 
-    if (newItem.isLivestock) {
-      const formattedEID = formatBAITSAnimalEID(input.animalEID!);
+    if (newItem.metadata.isLivestock) {
+      const formattedEID = formatBAITSAnimalEID(input.metadata.animalEID!);
       const animalData = await getAnimalByEID(formattedEID);
       const breedData = await getAnimalBreedById(animalData.AnimalBreedID);
 
-      newItem.dob = animalData.DateOfBirth;
-      newItem.gender = animalData.Gender === "Female" ? EGenderType.FEMALE : EGenderType.MALE;
-      newItem.breed = breedData.AnimalBreedDescription;
-      newItem.baitsDump = JSON.stringify(animalData);
+      newItem.metadata.dob = new Date(animalData.DateOfBirth);
+      newItem.metadata.gender = animalData.Gender === "Female" ? EGenderType.FEMALE : EGenderType.MALE;
+      newItem.metadata.breed = breedData.AnimalBreedDescription;
+      newItem.metadata.baitsDump = JSON.stringify(animalData);
     }
 
     newItem.creatorId = currentUser.id;
@@ -63,7 +63,7 @@ async function createItem(currentUser: IAdmin, input: IItemInput): Promise<IItem
     }
 
     newItem.status = 'NOT_BEGUN';
-    newItem.categoryId = auction.categoryId;
+    newItem.metadata.categoryId = auction.categoryId;
 
     auction.numberOfLots += 1;
 
@@ -419,6 +419,30 @@ async function getEligibleBidders(itemId: string | Schema.Types.ObjectId): Promi
   }
 }
 
+/**
+ * Updates the status of items based on their start and end times.
+ *
+ * - Marks items as `ENDED` if their `endTime` has passed.
+ * - Marks items as `ACTIVE` if their `startTime` has passed and they are still `NOT_BEGUN`.
+ *
+ * @throws {Error} If an error occurs during the database update operation.
+ * @return {Promise<void>} A promise that resolves once the updates are complete.
+ */
+async function trackItemStatus(): Promise<void> {
+  try {
+    await Promise.all([
+      Item.updateMany({ endTime: { $lte: new Date() } }, { $set: { status: EItemStatus.ENDED } }),
+      Item.updateMany(
+        { startTime: { $lte: new Date() }, status: EItemStatus.NOT_BEGUN },
+        { $set: { status: EItemStatus.ACTIVE } }
+      )
+    ]);
+    return;
+  } catch (error) {
+    throw error;
+  }
+}
+
 // Export default
 export default {
   createItem,
@@ -428,6 +452,7 @@ export default {
   setNewBidAmountManually,
   getEligibleBidders,
   deleteItem,
+  trackItemStatus,
   getById,
   getItems,
   getItemsWon
