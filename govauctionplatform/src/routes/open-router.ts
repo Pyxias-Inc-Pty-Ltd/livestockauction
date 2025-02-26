@@ -7,6 +7,7 @@ import transactionService from '../services/transaction-service';
 import auctionService from '../services/auction-service';
 import categoryService from '../services/category-service';
 import itemService from '../services/item-service';
+import { esService } from '../services/elasticsearch-service';
 import {
   ESortOrderType,
   EAuctionSortType,
@@ -15,8 +16,13 @@ import {
   EUniPayPaymentStatus,
   EGenderType,
   EAuctionStatus,
-  EPublishedStatus
+  EPublishedStatus,
+  ElasticsearchSortOption,
+  ESectorType,
+  EParticipationType,
+  SearchFilters
 } from '../globals';
+import { verifyWebhookSignature } from '../shared/middleware';
 
 // Constants
 const router = Router();
@@ -30,13 +36,16 @@ export const p = {
   processSuccessfulPaymentFromPayGate: '/processSuccessfulPaymentFromPayGate',
   getItems: '/getItems',
   getAuctions: '/getAuctions',
-  searchAuctions: '/searchAuctions',
+  search: '/search',
   getCategories: '/getCategories',
   createBidder: '/createBidder',
   getItemById: '/getItemById',
   getAuctionById: '/getAuctionById',
   getCategoryById: '/getCategoryById',
-  getBreedById: '/getBreedById'
+  getBreedById: '/getBreedById',
+  trackTransactionStatus: '/trackTransactionStatus',
+  trackAuctionStatus: '/trackAuctionStatus',
+  trackItemStatus: '/trackItemStatus',
 } as const;
 
 /**
@@ -57,6 +66,72 @@ router.get(p.getCategoryById, async (req: Request, res: Response) => {
     const { id } = req.query;
     const category = await categoryService.getById(id as string);
     return res.status(OK).json({ category });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Track transactions status
+ */
+router.post(p.trackTransactionStatus, verifyWebhookSignature, async (req: Request, res: Response) => {
+  try {
+
+    const schema = Joi.object().keys({
+      nonce: Joi.boolean().valid(true).required().messages({
+        'any.required': '"nonce" is a required field'
+      })
+    }).required();
+    
+    // Validate schema against input
+    Joi.assert(req.body, schema);
+
+    await transactionService.trackTransactionStatus();
+    return res.status(OK).json({ message: "ok" });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Track auction status
+ */
+router.post(p.trackAuctionStatus, verifyWebhookSignature, async (req: Request, res: Response) => {
+  try {
+
+    const schema = Joi.object().keys({
+      nonce: Joi.boolean().valid(true).required().messages({
+        'any.required': '"nonce" is a required field'
+      })
+    }).required();
+    
+    // Validate schema against input
+    Joi.assert(req.body, schema);
+
+    await auctionService.trackAuctionStatus();
+    return res.status(OK).json({ message: "ok" });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Track item status
+ */
+router.post(p.trackItemStatus, verifyWebhookSignature, async (req: Request, res: Response) => {
+  try {
+
+    const schema = Joi.object().keys({
+      nonce: Joi.boolean().valid(true).required().messages({
+        'any.required': '"nonce" is a required field'
+      })
+    }).required();
+    
+    // Validate schema against input
+    Joi.assert(req.body, schema);
+
+    await itemService.trackItemStatus();
+    return res.status(OK).json({ message: "ok" });
   } catch (error) {
     throw error;
   }
@@ -464,19 +539,119 @@ router.get(p.getAuctions, async (req: Request, res: Response) => {
 /**
  * Search auctions
  */
-router.post(p.searchAuctions, async (req: Request, res: Response) => {
+router.get(p.search, async (req: Request, res: Response) => {
   try {
-    const schema = Joi.object().keys({
-      term: Joi.string().required().messages({
-        'any.required': '"term" is a required field'
-      })
-    }).required();
-    
-    // Validate schema against input
-    Joi.assert(req.body, schema);
+    // Define validation schema for query parameters
+    const qSchema = Joi.object().keys({
+      // Text search
+      searchTerm: Joi.string().trim(),
 
-    const auctions = await auctionService.searchAuctions(req.body);
-    return res.status(OK).json({auctions});
+      // Pagination
+      from: Joi.number().min(0).default(0).required()
+      .messages({
+        'any.required': '"from" is a required field'
+      }),
+      size: Joi.number().min(1).max(100).default(20).required()
+      .messages({
+        'any.required': '"size" is a required field'
+      }),
+
+      // Sorting
+      sortOption: Joi.string()
+        .valid(...Object.values(ElasticsearchSortOption))
+        .required()
+        .messages({
+          'any.required': '"sortOption" is a required field'
+        }),
+
+      // Location (required for CLOSEST_TO_ME sort)
+      lat: Joi.number().when('sortOption', {
+        is: ElasticsearchSortOption.CLOSEST_TO_ME,
+        then: Joi.number().min(-90).max(90).required().messages({
+          'any.required': '"lat" is required for distance-based sorting'
+        }),
+        otherwise: Joi.optional()
+      }),
+      lon: Joi.number().when('sortOption', {
+        is: ElasticsearchSortOption.CLOSEST_TO_ME,
+        then: Joi.number().min(-180).max(180).required().messages({
+          'any.required': '"lon" is required for distance-based sorting'
+        }),
+        otherwise: Joi.optional()
+      }),
+      distance: Joi.string().pattern(/^\d+(km|mi)$/),
+
+      // Filters
+      sectorType: Joi.array().items(
+        Joi.string().valid(...Object.values(ESectorType))
+      ),
+      hasRegistrationFee: Joi.boolean(),
+      participationType: Joi.array().items(
+        Joi.string().valid(...Object.values(EParticipationType))
+      ),
+      startTime: Joi.string().isoDate(),
+      endTime: Joi.string().isoDate(),
+      lotStatus: Joi.array().items(
+        Joi.string().valid(...Object.values(EItemStatus))
+      ),
+      isBeingLivestreamed: Joi.boolean()
+    }).required();
+
+    // Validate query parameters
+    Joi.assert(req.query, qSchema);
+
+    const {
+      searchTerm,
+      from,
+      size,
+      sortOption,
+      lat,
+      lon,
+      distance,
+      sectorType,
+      hasRegistrationFee,
+      participationType,
+      startTime,
+      endTime,
+      lotStatus,
+      isBeingLivestreamed
+    } = req.query;
+
+    // Prepare filters object
+    const filters = {
+      searchTerm: searchTerm as string,
+      from: Number(from),
+      size: Number(size),
+      distance: distance ? {
+        lat: Number(lat),
+        lon: Number(lon),
+        distance: distance as string
+      } : undefined,
+      sectorType: sectorType ? (Array.isArray(sectorType) ? sectorType : [sectorType]) : undefined,
+      hasRegistrationFee: hasRegistrationFee ? Boolean(hasRegistrationFee) : undefined,
+      participationType: participationType ? (Array.isArray(participationType) ? participationType : [participationType]) : undefined,
+      timeRange: (startTime || endTime) ? {
+        startTime: startTime ? new Date(startTime as string) : undefined,
+        endTime: endTime ? new Date(endTime as string) : undefined
+      } : undefined,
+      lotStatus: lotStatus ? (Array.isArray(lotStatus) ? lotStatus : [lotStatus]) : undefined,
+      isBeingLivestreamed: isBeingLivestreamed ? Boolean(isBeingLivestreamed) : undefined
+    } as SearchFilters;
+
+    // Prepare location for distance-based sorting
+    const location = lat && lon ? {
+      lat: Number(lat),
+      lon: Number(lon)
+    } : undefined;
+
+    // Perform search
+    const results = await esService.search(
+      filters,
+      sortOption as ElasticsearchSortOption,
+      location
+    );
+
+    return res.status(OK).json(results);
   } catch (error) {
     throw error;
   }
