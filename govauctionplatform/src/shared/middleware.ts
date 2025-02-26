@@ -4,6 +4,8 @@ import { ENVIRONMENT_PRODUCTION, EUserType, EAdminType, fauxObject, STATE_JWT_SE
 import { IAdmin, IUser } from '../models/user-model';
 import { verify } from 'jsonwebtoken';
 import userService from '../services/user-service';
+import { createVerify } from 'crypto';
+import { webhookSignaturePublicKey } from '../index';
 
 /**
  * Middleware to allow access if the user is a SUPER_ADMIN, SELLER, or AUCTION_APPROVER.
@@ -150,7 +152,7 @@ export function AuctionApproverOnly(errorMessage?: string) {
 /**
  * Verify jwt and return user.
  * 
- * @returns 
+ * @return
  */
 export async function deserializeUser(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -196,6 +198,39 @@ export async function deserializeUser(req: Request, res: Response, next: NextFun
       throw new UnauthorizedError('No token supplied');
     }
 
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Middleware to verify the request payload signature
+ * 
+ * @return
+ */
+export function verifyWebhookSignature(req: Request, res: Response, next: NextFunction) {
+  try {
+    // Extract the x-signature header
+    const signature = req.headers["x-signature"];
+    if (!signature || typeof signature !== "string") {
+      throw new UnauthorizedError("Missing or invalid x-signature header");
+    }
+
+    // Get the raw request body
+    const rawBody = JSON.stringify(req.body);
+
+    // Verify signature
+    const verifier = createVerify("SHA256");
+    verifier.update(rawBody);
+    verifier.end();
+
+    const isValid = verifier.verify(webhookSignaturePublicKey, Buffer.from(signature, "base64"));
+
+    if (!isValid) {
+      throw new UnauthorizedError("Invalid signature");
+    }
+
+    next();
   } catch (error) {
     next(error);
   }
