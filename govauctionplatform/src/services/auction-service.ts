@@ -629,6 +629,44 @@ async function rejectAuction(currentUser: IAuctionApprover, auctionId: string, r
   }
 }
 
+/**
+ * Updates the status of auctions based on their start and end times, considering their published status.
+ *
+ * - Only updates auctions that are `PUBLISHED`.
+ * - Auctions that have started (`startTime <= now`) and are `PUBLISHED` are marked as `ACTIVE`.
+ * - Auctions that have ended (`endTime <= now`) and are `PUBLISHED` are marked as `ENDED`.
+ * - Auctions that are `NOT_BEGUN` but not yet `PUBLISHED` remain unchanged.
+ *
+ * @throws {Error} If an error occurs during the database update operation.
+ * @return {Promise<void>} A promise that resolves once the updates are complete.
+ */
+async function trackAuctionStatus(): Promise<void> {
+  try {
+    await Promise.all([
+      // Mark only PUBLISHED auctions as ENDED if their end time has passed
+      Auction.updateMany(
+        { 
+          endTime: { $lte: new Date() }, 
+          status: { $ne: EAuctionStatus.ENDED },
+          publishedStatus: EPublishedStatus.PUBLISHED 
+        },
+        { $set: { status: EAuctionStatus.ENDED } }
+      ),
+      // Mark only PUBLISHED auctions as ACTIVE if their start time has passed and they are NOT_BEGUN
+      Auction.updateMany(
+        { 
+          startTime: { $lte: new Date() }, 
+          status: EAuctionStatus.NOT_BEGUN, 
+          publishedStatus: EPublishedStatus.PUBLISHED
+        },
+        { $set: { status: EAuctionStatus.ACTIVE } }
+      )
+    ]);
+  } catch (error) {
+    throw error;
+  }
+}
+
 // Export default
 export default {
   createAuction,
@@ -642,5 +680,6 @@ export default {
   publishAuction,
   unpublishAuction,
   rejectAuction,
+  trackAuctionStatus,
   updateAuctionCoordinates
 } as const;
