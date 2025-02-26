@@ -13,7 +13,6 @@ import itemHandler from './handlers/item-handler';
 import * as admin from 'firebase-admin';
 import authHandler from './handlers/auth-handler';
 import { CustomError } from './shared/errors';
-import { runSchedulers } from './scheduler';
 import { join } from 'path';
 import { readFileSync } from 'fs-extra';
 
@@ -198,9 +197,6 @@ httpServer.listen(port, async () => {
     logger.info(SERVICE_URLS.mongoDBURI);
     await connect(SERVICE_URLS.mongoDBURI);
     logger.info('Connection to mongodb established');
-
-    // Run schedulers
-    runSchedulers();
 
   } catch (error) {
     logger.err(error);
