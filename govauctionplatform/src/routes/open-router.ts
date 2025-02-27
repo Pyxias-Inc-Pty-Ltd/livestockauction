@@ -492,19 +492,22 @@ router.get(p.getAuctions, async (req: Request, res: Response) => {
       sortBy: Joi.string().required().valid(EAuctionSortType.DATE).messages({
         'any.required': '"sortBy" is a required field'
       }),
+      populateCreator: Joi.boolean(),
       categoryId: mongoIdValidation,
       creatorId: mongoIdValidation,
       status: Joi.string().valid(EAuctionStatus.ALL, EAuctionStatus.FRONT_VIEW, EAuctionStatus.NOT_BEGUN, EAuctionStatus.ACTIVE, EAuctionStatus.CANCELLED, EAuctionStatus.ENDED),
       limit: isStringNumberLike.required().messages({
         'any.required': '"limit" is a required field'
       }),
+      longitude: Joi.number().min(-180).max(180),
+      latitude: Joi.number().min(-90).max(90),
       lastDocumentId: mongoIdValidation
     }).required();
 
     // Validate schema against query
     Joi.assert(req.query, qSchema);
 
-    const { limit, sortBy, sortOrder, lastDocumentId, categoryId, creatorId, status } = req.query;
+    const { limit, sortBy, sortOrder, lastDocumentId, categoryId, creatorId, status, populateCreator, longitude, latitude } = req.query;
 
     conditions.set('limit', parseInt(limit as string));
     conditions.set('sortBy', sortBy);
@@ -512,6 +515,10 @@ router.get(p.getAuctions, async (req: Request, res: Response) => {
 
     if (lastDocumentId) {
       conditions.set('lastDocumentId', lastDocumentId);
+    }
+
+    if (populateCreator) {
+      conditions.set('populateCreator', populateCreator as string === "true");
     }
 
     if (creatorId) {
@@ -524,6 +531,13 @@ router.get(p.getAuctions, async (req: Request, res: Response) => {
 
     if (status) {
       conditions.set('status', status);
+    }
+
+    if (typeof longitude === 'string' && typeof latitude === 'string') {
+      const coords: Array<number> = [];
+      coords.push(parseFloat(longitude));
+      coords.push(parseFloat(latitude));
+      conditions.set('auctionCoordinates', coords);
     }
 
     // Ensures only published auctions are returned
