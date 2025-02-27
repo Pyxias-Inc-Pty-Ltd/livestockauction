@@ -38,7 +38,7 @@ export const io = new Server(httpServer, {
 });
 
 // Load the public key once at startup
-export const webhookSignaturePublicKey = readFileSync(join(__dirname, "../shared/sec/public_key.pem"), "utf8");
+export const webhookSignaturePublicKey = readFileSync(join(__dirname, "shared/sec/public_key.pem"), "utf8");
 
 // Check for auth on handshake
 io.use(async (socket: any, next: any) => {
