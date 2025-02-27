@@ -3,7 +3,7 @@ import { generateAuctionNumber, isBeforeStartDate, isStartDateBeforeEndDate } fr
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession, Types } from 'mongoose';
-import { EAuctionSortType, EAuctionStatus, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { EAuctionSortType, EAuctionStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
 import { Auction, IAuction, IAuctionInput, IRequiredAttribute, IRequiredAttributeInput, RequiredAttribute } from "../models/auction-model";
 import categoryService from "./category-service";
 import forumService from "./forum-service";
@@ -201,6 +201,14 @@ async function getAuctions(conditions: Map<string, any>, projection?: any): Prom
 
     // Query builder
     const q = Auction.find({}, projection);
+
+    // Populate 
+    if (conditions.get('populateCreator')) {
+      q.populate({
+        path: 'creatorId',
+        model: EModels.SELLER
+      });
+    }
 
     // Filters
     if (conditions.get('creatorId')) {
