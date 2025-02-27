@@ -3,7 +3,7 @@ import { generateAuctionNumber, isBeforeStartDate, isStartDateBeforeEndDate } fr
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession, Types } from 'mongoose';
-import { EAuctionSortType, EAuctionStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { MAX_GEO_DISTANCE_AUCTION, EAuctionSortType, EAuctionStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
 import { Auction, IAuction, IAuctionInput, IRequiredAttribute, IRequiredAttributeInput, RequiredAttribute } from "../models/auction-model";
 import categoryService from "./category-service";
 import forumService from "./forum-service";
@@ -236,6 +236,17 @@ async function getAuctions(conditions: Map<string, any>, projection?: any): Prom
       } else {
         q.where({ status: conditions.get('status') });
       }
+    }
+
+    if (conditions.get('auctionCoordinates')) {
+      q.where('auctionCoordinates').near({
+        center: {
+          type: 'Point',
+          coordinates: conditions.get('auctionCoordinates')
+        },
+        maxDistance: MAX_GEO_DISTANCE_AUCTION,
+        spherical: true
+      });
     }
 
     // Filter by publishedStatus (if provided)
