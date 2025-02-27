@@ -810,3 +810,33 @@ export function formatPhoneNumber(phoneNumber: string): string {
   
   return `${parsedNumber.countryCallingCode}${parsedNumber.nationalNumber}`;
 }
+
+/**
+ * Normalizes and compares two names to determine if they match, 
+ * regardless of differences in case, whitespace, or hyphens.
+ * 
+ * The function trims the input names, converts them to lowercase, 
+ * and splits them into parts using spaces or hyphens. 
+ * It then checks if all parts of one name exist in the other and vice versa.
+ * 
+ * @param {string} name1 - The first name to compare.
+ * @param {string} name2 - The second name to compare.
+ * @return {boolean} - Returns `true` if the names match after normalization, otherwise `false`.
+ * 
+ * @example
+ * normalizeAndCompareNames("John-Doe", "john doe"); // true
+ * normalizeAndCompareNames("Alice Smith", "Alice-Smith"); // true
+ * normalizeAndCompareNames("Jane Doe", "Jane D"); // false
+ */
+export function normalizeAndCompareNames(name1: string, name2: string): boolean {
+  // Normalize names: trim, convert to lowercase, and split into parts
+  const normalize = (name: string) => name.trim().toLowerCase().split(/[\s-]+/);
+  const parts1 = normalize(name1);
+  const parts2 = normalize(name2);
+
+  // Check if all parts of name1 exist in name2 and vice versa
+  return (
+    parts1.every(part => parts2.includes(part)) &&
+    parts2.every(part => parts1.includes(part))
+  );
+}
