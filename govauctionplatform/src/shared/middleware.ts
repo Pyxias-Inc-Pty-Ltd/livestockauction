@@ -4,7 +4,7 @@ import { ENVIRONMENT_PRODUCTION, EUserType, EAdminType, fauxObject, STATE_JWT_SE
 import { IAdmin, IUser } from '../models/user-model';
 import { verify } from 'jsonwebtoken';
 import userService from '../services/user-service';
-import { createVerify } from 'crypto';
+import { createHash, createVerify } from 'crypto';
 import { webhookSignaturePublicKey } from '../index';
 
 /**
@@ -219,13 +219,14 @@ export function verifyWebhookSignature(req: Request, res: Response, next: NextFu
     // Get the raw request body
     const rawBody = JSON.stringify(req.body);
 
-    // Verify signature
+    const payloadHash = createHash("sha256").update(rawBody).digest("hex");
+
     const verifier = createVerify("SHA256");
-    verifier.update(rawBody);
+    verifier.update(payloadHash);
     verifier.end();
-
+    
     const isValid = verifier.verify(webhookSignaturePublicKey, Buffer.from(signature, "base64"));
-
+    
     if (!isValid) {
       throw new UnauthorizedError("Invalid signature");
     }
