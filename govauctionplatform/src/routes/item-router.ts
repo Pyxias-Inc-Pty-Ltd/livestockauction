@@ -12,7 +12,8 @@ const router = Router();
 const { OK, CREATED } = StatusCodes;
 
 // Paths
-export const p = {  createItem: '/createItem',
+export const p = {
+  createItem: '/createItem',
   setWinningBidder: '/setWinningBidder',
   deleteItem: '/deleteItem',
   setNewBidAmountManually: '/setNewBidAmountManually',
@@ -76,13 +77,34 @@ router.post(p.createItem, SuperAdminOnly(), async (req: Request, res: Response) 
       gallery: Joi.array().items(urlValidation).required().messages({
         'any.required': '"gallery" is a required field'
       }),
-      title: Joi.string().required().messages({
+      title: Joi.object().keys({
+        en: Joi.string().required().messages({
+          'any.required': '"title.en" is a required field'
+        }),
+        tn: Joi.string().required().messages({
+          'any.required': '"title.tn" is a required field'
+        }), 
+      }).required().messages({
         'any.required': '"title" is a required field'
       }),
-      description: Joi.string().required().messages({
+      description: Joi.object().keys({
+        en: Joi.string().required().messages({
+          'any.required': '"description.en" is a required field'
+        }),
+        tn: Joi.string().required().messages({
+          'any.required': '"description.tn" is a required field'
+        }), 
+      }).required().messages({
         'any.required': '"description" is a required field'
       }),
-      terms: Joi.string().required().messages({
+      terms: Joi.object().keys({
+        en: Joi.string().required().messages({
+          'any.required': '"terms.en" is a required field'
+        }),
+        tn: Joi.string().required().messages({
+          'any.required': '"terms.tn" is a required field'
+        }), 
+      }).required().messages({
         'any.required': '"terms" is a required field'
       }),
       startingBid: Joi.number().required().messages({
@@ -92,7 +114,14 @@ router.post(p.createItem, SuperAdminOnly(), async (req: Request, res: Response) 
         'any.required': '"reservePrice" is a required field'
       }),
       buyoutPrice: Joi.number(),
-      isBidIncrementedManually: Joi.boolean().required().messages({
+      isClosedBidding: Joi.boolean().default(false),
+      isBidIncrementedManually: Joi.boolean().required().when('isClosedBidding', {
+        is: true,
+        then: Joi.valid(false).messages({
+          'any.only': 'isBidIncrementedManually must be false when isClosedBidding is true'
+        }),
+        otherwise: Joi.boolean().required()
+      }).messages({
         'any.required': '"isBidIncrementedManually" is a required field'
       }),
       bidIncrement: Joi.number().when('isBidIncrementedManually', {
@@ -108,32 +137,35 @@ router.post(p.createItem, SuperAdminOnly(), async (req: Request, res: Response) 
       endTime: isoDateValidation.required().messages({
         'any.required': '"endTime" is a required field'
       }),
-      isLivestock: Joi.boolean().required().messages({
-        'any.required': '"isLivestock" is a required field'
-      }),
-      animalEID: Joi.string().when('isLivestock', {
-        is: true,
-        then: Joi.required().messages({
-          'any.required': '"animalEID" is a required field'
+      metadata: Joi.object().keys({
+        categoryId: mongoIdValidation,
+        isLivestock: Joi.boolean(),
+        isAStud: Joi.boolean().when('isLivestock', {
+          is: true,
+          then: Joi.required().messages({
+            'any.required': '"metadata.isAStud" is a required field'
+          }),
+          otherwise: Joi.optional()
         }),
-        otherwise: Joi.optional()
-      }),
-      isAStud: Joi.boolean().when('isLivestock', {
-        is: true,
-        then: Joi.required().messages({
-          'any.required': '"isAStud" is a required field'
+        studRegistrationNumber: Joi.string().when('isAStud', {
+          is: true,
+          then: Joi.required().messages({
+            'any.required': '"metadata.studRegistrationNumber" is a required field'
+          }),
+          otherwise: Joi.optional()
         }),
-        otherwise: Joi.optional()
-      }),
-      numberOfCalvesBorn: Joi.number().min(0),
-      studRegistrationNumber: Joi.string().when('isAStud', {
-        is: true,
-        then: Joi.required().messages({
-          'any.required': '"studRegistrationNumber" is a required field'
-        }),
-        otherwise: Joi.optional()
+        numberOfCalvesBorn: Joi.number().min(0),
+        animalEID: Joi.string().when('isLivestock', {
+          is: true,
+          then: Joi.required().messages({
+            'any.required': '"metadata.animalEID" is a required field'
+          }),
+          otherwise: Joi.optional()
+        })
+      }).required().messages({
+        'any.required': '"metadata" is a required field'
       })
-    }).required();    
+    }).required();
     
     // Validate schema against input
     Joi.assert(req.body, schema);
