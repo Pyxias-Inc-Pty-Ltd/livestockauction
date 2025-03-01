@@ -25,6 +25,7 @@ export const GENERIC_ERROR_MESSAGE = "Something went wrong, please try again lat
 export const ESCAPE_HTTP_ORIGIN_SOCKET_IO = "http://localhost:3000"; // TODO: Update before production
 export const TINGG_BILLING_SERVICE_ID = 3412;
 export const LOCAL_NATIONALITY = 'BW';
+export const MAX_GEO_DISTANCE_AUCTION = 20000; // Meters
 
 export const FIREBASE_SERVICE_ACCOUNT_CREDENTIALS = JSON.stringify({
   "type": "service_account",
@@ -302,6 +303,11 @@ export const COUNTRY_PHONE_CODES = [{"country":"Afghanistan","code":"93","iso":"
 {"country":"Zambia","code":"260","iso":"ZM"},
 {"country":"Zimbabwe","code":"263","iso":"ZW"}];
 
+export interface GeoLocation {
+ lat: number;
+ lon: number;
+}
+
 export enum EAuctionStatus {
   ALL = "ALL",
   FRONT_VIEW = "FRONT_VIEW",
@@ -427,6 +433,13 @@ export enum ETransactionSortType {
   AMOUNT = "AMOUNT"
 }
 
+export enum ElasticsearchSortOption {
+  CLOSEST_TO_ME = 'CLOSEST_TO_ME',
+  DATE_LISTED_DESC = 'DATE_LISTED_DESC',
+  DATE_LISTED_ASC = 'DATE_LISTED_ASC',
+  TIME_UNTIL_SALE = 'TIME_UNTIL_SALE'
+}
+
 export enum ESocketEventCode {
   JOIN_BIDDING_ROOM = "e:1",
   CREATE_BID = "e:2",
@@ -505,6 +518,27 @@ export enum EPushMessageReason {
   NOTIFY_USER_OF_UNSUCCESSFUL_PURCHASE_PAYMENT = "NOTIFY_USER_OF_UNSUCCESSFUL_PURCHASE_PAYMENT",
   NOTIFY_USER_OF_UNSUCCESSFUL_REFUND = "NOTIFY_USER_OF_UNSUCCESSFUL_REFUND",
   NOTIFY_USER_OF_FORUM_PARTICIPATION = "NOTIFY_USER_OF_FORUM_PARTICIPATION"
+}
+
+export interface SearchFilters {
+  searchTerm?: string;
+  distance?: {
+    lat: number;
+    lon: number;
+    distance: string; // e.g., "10km"
+  };
+  sectorType?: string[];
+  hasRegistrationFee?: boolean;
+  participationType?: string[];
+  timeRange?: {
+    startTime?: Date;
+    endTime?: Date;
+  };
+  lotStatus?: string[];
+  isBeingLivestreamed?: boolean;
+  from?: number;
+  size?: number;
+  sort?: string[];
 }
 
 export const welcomeBidderEmailTemplate = `
