@@ -6,6 +6,7 @@ import { isURL } from 'validator';
 import * as axios from 'axios';
 import { IAuctionApprover, ISeller } from './user-model';
 import { esService } from '../services/elasticsearch-service';
+import { IItem } from './item-model';
 
 export interface IRequiredAttribute extends Document {
   name: string;
@@ -19,7 +20,12 @@ export interface IRequiredAttributeInput {
 }
 
 export interface IAuction extends Document {
-  title: string;
+  title: {
+    en: string;
+    tn: string;
+  };
+  isInviteOnly: boolean;
+  inviteList: string[];
   titleSlug: string;
   auctionNumber: string;
   auctionLocation: string;
@@ -37,7 +43,10 @@ export interface IAuction extends Document {
   creatorId: Schema.Types.ObjectId;
   categoryId: Schema.Types.ObjectId;
   participationType: participationType;
-  terms: string;
+  terms: {
+    en: string;
+    tn: string;
+  };
   startTime: Date;
   endTime: Date;
   status: auctionStatus;
@@ -46,26 +55,40 @@ export interface IAuction extends Document {
   publishedBy?: Schema.Types.ObjectId;
   isBeingLivestreamed: boolean;
   streamUrl: string;
+  thumbnailUrl: string;
   createdDate: Date;
   updatedDate: Date;
 }
 
 export interface IAuctionInput {
-  title: string;
+  title: {
+    en: string;
+    tn: string;
+  };
+  isInviteOnly: boolean;
+  inviteList: string[];
   auctionNumber: string;
   hasRegistrationFee: boolean;
   registrationFee?: number;
   sectorType: sectorType;
   auctionLocation: string;
+  auctionCoordinates: {
+    type: 'Point';
+    coordinates: [number, number]; // [longitude, latitude]
+  };
   participationType: participationType;
   creatorId: Schema.Types.ObjectId;
   categoryId: Schema.Types.ObjectId;
   publishedStatus?: publishedStatus;
   reasonForRejection?: string;
   publishedBy?: Schema.Types.ObjectId;
-  terms: string;
+  terms: {
+    en: string;
+    tn: string;
+  };
   isBeingLivestreamed: boolean;
-  streamUrl: string;
+  streamUrl?: string;
+  thumbnailUrl: string;
   startTime: Date;
   endTime: Date;
 }
@@ -111,7 +134,10 @@ requiredAttributeSchema.post('save', function(error: any, doc: any, next: any) {
 
 const auctionSchema = new Schema<IAuction>({
   creatorId: { type: Schema.Types.ObjectId, required: true, ref: EModels.USER },
-  title: { type: String, required: true, trim: true },
+  title: {
+    en: { type: String, required: true, trim: true },
+    tn: { type: String, required: true, trim: true }
+  },
   titleSlug: {type: String, trim: true, sparse: true, unique: true},
   auctionNumber: { type: String, trim: true, required: true },
   publishedStatus: { type: String, enum: [EPublishedStatus.IN_REVIEW, EPublishedStatus.PUBLISHED, EPublishedStatus.REJECTED, EPublishedStatus.UNPUBLISHED], default: EPublishedStatus.UNPUBLISHED, required: true },
@@ -124,15 +150,20 @@ const auctionSchema = new Schema<IAuction>({
   auctionLocation: { type: String, trim: true },
   numberOfLots: { type: Number, default: 0, min: 0, required: true },
   hasRegistrationFee: { type: Boolean, default: false, required: true },
+  isInviteOnly: { type: Boolean, default: false, required: true },
   registrationFee: { type: Number, min: 0, required: function (): boolean {
     return (this as IAuction).hasRegistrationFee;
   } },
   sectorType: { type: String, default: ESectorType.GOVERNMENT, enum: [ESectorType.PRIVATE, ESectorType.GOVERNMENT], required: true },
   auctionCoordinates: { type: { type: String, enum: ['Point'], default: 'Point' }, coordinates: { type: [Number], required: true } },
   categoryId: { type: Schema.Types.ObjectId, required: true, ref: EModels.CATEGORY },
-  terms: { type: String, required: true, trim: true },
+  terms: {
+    en: { type: String, required: true, trim: true },
+    tn: { type: String, required: true, trim: true }
+  },
   startTime: { type: Date, required: true },
   participantsWithBiddingNumbers: { type: [String] },
+  inviteList: { type: [String] },
   globallyEligibleBidders: { type: [String] },
   requiredAttributes: { type: [String] },
   endTime: { type: Date, required: true },
@@ -142,6 +173,18 @@ const auctionSchema = new Schema<IAuction>({
   streamUrl: {type: String, required: function (): boolean {
     return (this as IAuction).isBeingLivestreamed;
   }, validate: {
+    msg: 'Valid URL must be supplied.',
+      validator: function (v: string): boolean {
+        // Be less stringent in development
+        if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) { 
+          return isURL(v, {protocols: ['https']});
+        } else {
+          return true;
+        }
+      }
+    }
+  },
+  thumbnailUrl: {type: String, required: true, validate: {
     msg: 'Valid URL must be supplied.',
       validator: function (v: string): boolean {
         // Be less stringent in development
@@ -175,8 +218,8 @@ auctionSchema.set('toJSON', {
 auctionSchema.pre('save', async function () {
   const doc = this;
 
-  if (doc.isNew || doc.isModified('title')) {
-    doc.titleSlug = generateSlug(doc.title);
+  if (doc.isNew || doc.isModified('title.en')) {
+    doc.titleSlug = generateSlug(doc.title.en);
   }
 
   // TODO: Remove?
@@ -234,9 +277,33 @@ auctionSchema.pre('save', async function () {
 
 auctionSchema.post('save', async function(doc: IAuction) {
   try {
-    await esService.updateItemsWithAuction(doc);
+    if (doc.isModified('publishedStatus')) {
+      if (doc.publishedStatus === EPublishedStatus.PUBLISHED) {
+        // If published, update all related items
+        await esService.updateItemsWithAuction(doc);
+      } else {
+        // If unpublished, find and remove all related items from ES
+        const items = await doc.$model(EModels.ITEM).find({ auctionId: doc._id }) as IItem[];
+        const removePromises = items.map(item => {
+          try {
+            return esService.removeItem(item._id);
+          } catch (error) {
+            // Ignore if item wasn't in ES
+            if (!error.message.includes('not_found')) {
+              console.error('Error handling auction status change:', error); // TODO: Log to winston
+            }
+          }
+        });
+        await Promise.all(removePromises);
+      }
+    } else {
+      // For other auction changes, if it's published, update the items
+      if (doc.publishedStatus === EPublishedStatus.PUBLISHED) {
+        await esService.updateItemsWithAuction(doc);
+      }
+    }
   } catch (error) {
-    console.error('Error updating items with auction:', error); // TODO: Log to winston
+    console.error('Error handling auction status change:', error); // TODO: Log to winston
   }
 });
 
@@ -257,7 +324,7 @@ auctionSchema.post('save', async function(doc) {
               subject: 'Auction Rejected',
               email: creator.email,
               message: auctionRejectedEmailTemplate
-                .replace('[AuctionTitle]', doc.title)
+                .replace('[AuctionTitle]', doc.title.en)
                 .replace('[RejectionReason]', doc.reasonForRejection || 'No reason provided')
             }
           }, {
@@ -287,7 +354,7 @@ auctionSchema.post('save', async function(doc) {
                 subject: 'New Auction Requires Review',
                 email: approver.email,
                 message: auctionApprovalReminderEmailTemplate
-                  .replace('[AuctionTitle]', doc.title)
+                  .replace('[AuctionTitle]', doc.title.en)
                   .replace('[ApproverName]', `${approver.firstName}`)
                   .replace('[SellerName]', creator.name)
               }
