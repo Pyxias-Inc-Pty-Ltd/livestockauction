@@ -1,9 +1,23 @@
-import { ConflictError, InternalServerError, NotFoundError } from '../shared/errors';
+import { ConflictError, NotFoundError, InternalServerError } from '../shared/errors';
 import { Schema, model, Document } from 'mongoose';
-import { itemStatus, EModels, EItemStatus, genderType, EGenderType } from '../globals';
+import { itemStatus, EModels, EItemStatus, genderType, EGenderType, EPublishedStatus } from '../globals';
 import { generateSlug } from '../shared/functions';
-import { ICategory } from './category-model';
 import { IAuction } from './auction-model';
+import { esService } from '../services/elasticsearch-service';
+
+export interface IItemMetadata {
+  categoryId?: Schema.Types.ObjectId | string;
+  isLivestock?: boolean;
+  isAStud?: boolean;
+  dob?: Date;
+  studRegistrationNumber?: string;
+  numberOfCalvesBorn?: number;
+  gender?: genderType;
+  breed?: string;
+  animalEID?: string;
+  serialNumber?: string;
+  baitsDump?: string;
+}
 
 export interface IEligibleBidder {
   firstName?: string;
@@ -16,39 +30,39 @@ export interface IEligibleBidder {
 export interface IItem extends Document {
   creatorId: Schema.Types.ObjectId;
   auctionId: Schema.Types.ObjectId;
-  categoryId: Schema.Types.ObjectId;
   sellerId: Schema.Types.ObjectId;
   gallery: Array<string>;
-  isLivestock: boolean;
-  isAStud: boolean;
-  dob?: Date;
-  studRegistrationNumber?: string;
-  numberOfCalvesBorn?: number;
-  gender?: genderType;
-  breed?: string;
-  animalEID?: string;
-  title: string;
-  description: string;
-  terms: string;
+  title: {
+    en: string,
+    tn: string;
+  };
+  description: {
+    en: string,
+    tn: string;
+  };
+  terms: {
+    en: string,
+    tn: string;
+  };
   isBidIncrementedManually: boolean;
-  manualBidAmount: number;
+  isClosedBidding: boolean;
+  manualBidAmount: number; // Set by the auction master, usually used in livestream bids
   startingBid: number;
   bidIncrement?: number;
   reservePrice: number;
   eligibleBidders: Array<string>;
   winningBidder?: Schema.Types.ObjectId;
-  currentBid?: number;
+  currentBid?: number; // Used in non closed bid scenarios, to show other users the current bid amount to compete against
   titleSlug: string;
   buyoutPrice?: number;
   startTime: Date;
   endTime: Date;
   version: number;
   status: itemStatus;
-  baitsDump?: string;
   isPurchased: boolean;
-  metadata: Record<string, any>;
-  createdDate: any;
-  updatedDate: any;
+  createdDate: Date;
+  updatedDate: Date;
+  metadata: IItemMetadata
 }
 
 export interface IItemInput {
@@ -58,20 +72,23 @@ export interface IItemInput {
   auctionId: Schema.Types.ObjectId;
   categoryId: Schema.Types.ObjectId;
   isBidIncrementedManually?: boolean;
+  isClosedBidding?: boolean;
   manualBidAmount?: number;
-  dob?: Date;
-  isAStud: boolean;
-  numberOfCalvesBorn?: number;
-  studRegistrationNumber?: string;
-  isLivestock: boolean;
-  gender?: genderType;
-  animalEID?: string;
-  breed?: string;
-  title: string;
-  description: string;
+  metadata: IItemMetadata,
+  title: {
+    en: string,
+    tn: string;
+  };
+  description: {
+    en: string,
+    tn: string;
+  };
   baitsDump?: string;
   isPurchased?: boolean;
-  terms: string;
+  terms: {
+    en: string,
+    tn: string;
+  };
   startingBid: number;
   status: itemStatus;
   bidIncrement?: number;
@@ -83,51 +100,99 @@ export interface IItemInput {
 const schema = new Schema<IItem>({
   creatorId: { type: Schema.Types.ObjectId, required: true, ref: EModels.ADMIN },
   auctionId: { type: Schema.Types.ObjectId, required: true, ref: EModels.AUCTION },
-  categoryId: { type: Schema.Types.ObjectId, required: true, ref: EModels.CATEGORY },
   sellerId: { type: Schema.Types.ObjectId, required: true, ref: EModels.SELLER },
   winningBidder: { type: Schema.Types.ObjectId, ref: EModels.BIDDER },
-  title: { type: String, required: true, trim: true },
-  baitsDump: {type: String, trim: true},
+  title: {
+    en: { type: String, required: true, trim: true },
+    tn: { type: String, required: true, trim: true }
+  },
   titleSlug: {type: String, trim: true},
-  description: { type: String, required: true, trim: true },
-  terms: { type: String, required: true, trim: true },
+  description: {
+    en: { type: String, required: true, trim: true },
+    tn: { type: String, required: true, trim: true }
+  },
+  terms: {
+    en: { type: String, required: true, trim: true },
+    tn: { type: String, required: true, trim: true }
+  },
   startingBid: { type: Number, required: true },
   isPurchased: { type: Boolean, default: false, required: true },
   bidIncrement: { type: Number, required: function (): boolean {
-    return !(this as IItem).isBidIncrementedManually;
+    return !(this as IItem).isBidIncrementedManually && !(this as IItem).isClosedBidding;
   } },
   reservePrice: { type: Number, required: true },
   currentBid: { type: Number },
   buyoutPrice: { type: Number },
   manualBidAmount: { type: Number, default: 0 },
   isBidIncrementedManually: {type: Boolean, default: false},
+  isClosedBidding: {type: Boolean, default: false},
   gallery: { type: [String], required: true },
   startTime: { type: Date, required: true },
   endTime: { type: Date, required: true },
   status: { type: String, enum: [EItemStatus.NOT_BEGUN, EItemStatus.ACTIVE, EItemStatus.CANCELLED, EItemStatus.ENDED]},
   eligibleBidders: [String],
-  isLivestock: { type: Boolean, default: true, required: true },
-  animalEID: {type: String, trim: true, required: function (): boolean {
-    return (this as IItem).isLivestock;
-  }},
-  gender: { type: String, enum: [EGenderType.FEMALE, EGenderType.MALE, EGenderType.MIXED], required: function (): boolean {
-    return (this as IItem).isLivestock;
-  } },
-  breed: { type: String, trim: true, required: function (): boolean {
-    return (this as IItem).isLivestock;
-  } },
-  isAStud: { type: Boolean, default: false, required: function (): boolean {
-    return (this as IItem).isLivestock;
-  } },
-  studRegistrationNumber: { type: String, trim: true , required: function (): boolean {
-    return (this as IItem).isAStud;
-  } },
-  numberOfCalvesBorn: { type: Number, min: 0 },
-  dob: {type: Date, required: function (): boolean {
-    return (this as IItem).gender !== undefined && (this as IItem).gender !== 'MIXED';
-  }},
   version: { type: Number, default: 0 },
-  metadata: { type: Schema.Types.Mixed, default: {} }
+  metadata: {
+    categoryId: { 
+      type: Schema.Types.ObjectId, 
+      ref: EModels.CATEGORY
+    },
+    isLivestock: { 
+      type: Boolean
+    },
+    isAStud: { 
+      type: Boolean,
+      required: function(this: IItem) {
+        return this.metadata.isLivestock === true;
+      }
+    },
+    dob: { 
+      type: Date,
+      required: function(this: IItem) {
+        return this.metadata.isLivestock
+      }
+    },
+    studRegistrationNumber: { 
+      type: String,
+      trim: true,
+      required: function(this: IItem) {
+        return this.metadata.isLivestock && this.metadata.isAStud === true;
+      }
+    },
+    numberOfCalvesBorn: { 
+      type: Number,
+      min: 0
+    },
+    gender: { 
+      type: String,
+      enum: Object.values(EGenderType),
+      required: function(this: IItem) {
+        return this.metadata.isLivestock === true;
+      }
+    },
+    breed: { 
+      type: String,
+      trim: true,
+      required: function(this: IItem) {
+        return this.metadata.isLivestock === true;
+      }
+    },
+    animalEID: { 
+      type: String,
+      trim: true,
+      required: function(this: IItem) {
+        return this.metadata.isLivestock === true;
+      }
+    },
+    serialNumber: { 
+      type: String,
+      trim: true
+    },
+    baitsDump: { 
+      type: String,
+      trim: true
+    }
+  }
 }, {
   timestamps: {
     createdAt: "createdDate",
@@ -148,6 +213,7 @@ schema.set('toJSON', {
 
 schema.pre('save', async function () {
   const doc = this;
+  this.$locals.isNew = doc.isNew;
 
   if (doc.isNew) {
     const auction = await doc.$model(EModels.AUCTION).findById(doc.auctionId, {globallyEligibleBidders: 1}) as IAuction | null;
@@ -164,25 +230,85 @@ schema.pre('save', async function () {
     }
   }
 
-  if (doc.isNew || doc.isModified('title')) {
-    doc.titleSlug = generateSlug(doc.title);
+  if (doc.isNew || doc.isModified('title.en')) {
+    doc.titleSlug = generateSlug(doc.title.en);
+  }
+});
+
+schema.pre('save', async function() {
+  const doc = this;
+
+  // Check that isBidIncrementedManually and isClosedBidding aren't both true
+  if (doc.isBidIncrementedManually && doc.isClosedBidding) {
+    throw new InternalServerError('An item cannot have both isBidIncrementedManually and isClosedBidding set to true');
   }
 
-  if (doc.isNew || doc.isModified('gender') || doc.isModified('isLivestock')) {
-    if (doc.isLivestock && doc.gender === 'FEMALE') {
-      const category = await doc.$model(EModels.CATEGORY).findById(doc.categoryId, {nameSlug: 1}) as ICategory | null;
+  // Validate livestock-specific fields
+  if (doc.metadata.isLivestock) {
+    // Required fields check
+    const requiredFields = ['animalEID', 'gender', 'breed'];
+    for (const field of requiredFields) {
+      if (!(doc.metadata as any)[field]) {
+        throw new InternalServerError(`${field} is required for livestock items`);
+      }
+    }
 
-      // Check if exists
-      if (!category) {
-        throw new NotFoundError('Category not found');
+    // Stud-specific validation
+    if (doc.metadata.isAStud && !doc.metadata.studRegistrationNumber) {
+      throw new InternalServerError('studRegistrationNumber is required for stud animals');
+    }
+
+    // Female cattle validation
+    if (doc.metadata.gender === 'FEMALE' && doc.metadata.breed === 'cattle') {
+      if (typeof doc.metadata.numberOfCalvesBorn !== 'number') {
+        throw new InternalServerError('numberOfCalvesBorn is required for female cattle');
+      }
+    }
+
+    // DOB validation for non-mixed gender
+    if (doc.metadata.gender !== 'MIXED' && !doc.metadata.dob) {
+      throw new InternalServerError('dob is required for animals with specific gender');
+    }
+  }
+});
+
+schema.post('save', async function(doc: IItem) {
+  try {
+    if (!doc.$locals.isNew) {
+      // Fetch the associated auction using $model
+      const auction = await doc.$model(EModels.AUCTION).findById(doc.auctionId) as IAuction | null;
+      
+      if (!auction) {
+        console.error('Associated auction not found'); // TODO: Log to winston
+        return;
       }
 
-      if (category.nameSlug === 'cattle') {
-        if (typeof doc.numberOfCalvesBorn !== 'number') {
-          throw new InternalServerError(`Property 'numberOfCalvesBorn' must be defined`);
+      if (auction.publishedStatus === EPublishedStatus.PUBLISHED) {
+        // Only index if the auction is published
+        await esService.indexItem(doc);
+      } else {
+        // If auction is not published, ensure the item is removed from ES
+        try {
+          await esService.removeItem(doc._id);
+        } catch (error) {
+          // Ignore if item wasn't in ES
+          if (!error.message.includes('not_found')) {
+            console.error('Error handling item indexing:', error); // TODO: Log to winston
+          }
         }
       }
     }
+  } catch (error) {
+    console.error('Error handling item indexing:', error); // TODO: Log to winston
+  }
+});
+
+
+schema.post('remove', async function(doc: IItem) {
+  try {
+    await esService.removeItem(doc._id);
+  } catch (error) {
+    console.error('Error removing item from index:', error); // TODO: Log to winston
   }
 });
 

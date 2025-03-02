@@ -10,8 +10,9 @@ import auctionService from "./auction-service";
 /**
  * Add a bid.
  * 
- * @param input
- * @returns 
+ * @param currentUser The bidder placing the bid
+ * @param input Bid input data
+ * @returns The created bid
  */
 async function createBid(currentUser: IBidder, input: IBidInput): Promise<IBid> {
   let sess: ClientSession | null = null;
@@ -29,9 +30,22 @@ async function createBid(currentUser: IBidder, input: IBidInput): Promise<IBid> 
 
     // Check auction status
     const now = new Date();
-    if (item.status === 'NOT_BEGUN') throw new ForbiddenError('Auction has not begun');
-    if (item.status === 'ENDED') throw new ForbiddenError('Auction has already ended');
-    if (item.status === 'CANCELLED') throw new ForbiddenError('Auction has been cancelled');
+    if (item.status === 'NOT_BEGUN') throw new ForbiddenError('Bidding for this lot has not begun');
+    if (item.status === 'ENDED') throw new ForbiddenError('Bidding for this lot has already ended');
+    if (item.status === 'CANCELLED') throw new ForbiddenError('Bidding for this lot has been cancelled');
+
+    // For closed bidding, check if the bidder has already placed a bid
+    if (item.isClosedBidding) {
+      const existingBid = await Bid.findOne({ 
+        userId: currentUser.id, 
+        itemId: item.id,
+        isRetracted: { $ne: false }
+      });
+      
+      if (existingBid) {
+        throw new ForbiddenError('In closed bidding, you can only place one bid');
+      }
+    }
 
     if (!item.isBidIncrementedManually) {
       // Validate bid amount
@@ -47,6 +61,18 @@ async function createBid(currentUser: IBidder, input: IBidInput): Promise<IBid> 
     sess = await startSession();
 
     await sess.withTransaction(async () => {
+      // For closed bidding, we need to ensure the bidder hasn't placed a bid
+      // since we checked (double-check within transaction)
+      if (item!.isClosedBidding) {
+        const existingBid = await Bid.findOne({ 
+          userId: currentUser.id, 
+          itemId: item!.id 
+        }, null, { session: sess });
+        
+        if (existingBid) {
+          throw new ForbiddenError('In closed bidding, you can only place one bid');
+        }
+      }
 
       // Update item with optimistic concurrency control
       const updateResult = await itemService.updateItemWithBid(item!, input.bidAmount, sess!);
@@ -58,7 +84,6 @@ async function createBid(currentUser: IBidder, input: IBidInput): Promise<IBid> 
       await newBid.save({ 
         session: sess
       });
-
     });
 
     return newBid;
@@ -71,46 +96,6 @@ async function createBid(currentUser: IBidder, input: IBidInput): Promise<IBid> 
     }
   }
 }
-
-// /**
-//  * Retract a bid.
-//  * 
-//  * @param currentUser 
-//  * @param bidId 
-//  * @returns 
-//  */
-// async function retractBid(currentUser: IBidder, bidId: string | Schema.Types.ObjectId): Promise<void> {
-//   const session = await startSession();
-//   session.startTransaction();
-
-//   try {
-//     const bid = await Bid.findOne({ _id: bidId, userId: currentUser.id }).session(session);
-//     if (!bid) throw new NotFoundError('Bid not found');
-
-//     const item = await itemService.getById(bid.itemId);
-//     if (!item) throw new NotFoundError('Item not found');
-
-//     // Check auction status
-//     if (item.status !== 'ACTIVE') throw new ForbiddenError('Cannot retract bid after auction has ended or if it is not active');
-
-//     // Remove bid and update item
-//     await bid.remove({ session });
-
-//     const highestRemainingBid = await Bid.findOne({ itemId: bid.itemId })
-//       .sort({ bidAmount: -1 })
-//       .session(session);
-
-//     item.currentBid = highestRemainingBid ? highestRemainingBid.bidAmount : item.startingBid;
-//     await item.save({ session });
-
-//     await session.commitTransaction();
-//   } catch (error) {
-//     await session.abortTransaction();
-//     throw error;
-//   } finally {
-//     session.endSession();
-//   }
-// }
 
 /**
  * Retract a bid.
@@ -261,7 +246,6 @@ async function getBids(itemId: string, conditions: Map<string, any>, projection?
   }
 }
 
-
 /**
  * Get a bid by id.
  * 
@@ -282,6 +266,7 @@ async function getById(id: string | Schema.Types.ObjectId, projection?: any): Pr
 
 // Export default
 export default {
+  getById,
   createBid,
   getBids,
   getWinningBid,

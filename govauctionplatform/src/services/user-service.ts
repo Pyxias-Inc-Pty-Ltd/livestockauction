@@ -2,7 +2,7 @@ import { ConflictError, ForbiddenError, NotFoundError } from "../shared/errors";
 import { IAdmin, IUser, User, IAdminInput, Admin, IBidder, IBidderInput, Bidder, ISeller, ISellerInput, Seller, AuctionApprover, IAuctionApprover, IAuctionApproverInput } from "../models/user-model";
 import { companyRegistrationVerificationIssuesTemplate, companyRegistrationVerificationSuccessTemplate, EAdminType, ESortOrderType, EUserSortType, EUserType, ID_VERIFICATION_API_KEY, invalidCompanyRegistrationTemplate, invalidNationalIDSMSTemplate, keeperIDVerificationTemplate, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, nameMismatchWithNationalIDSMSTemplate, nationalIDVerificationIssuesSMSTemplate, nationalIDVerificationSuccessSMSTemplate, SALT_ROUNDS, SERVICE_URLS } from "../globals";
 import { genSalt, hash } from 'bcrypt';
-import { generateOTP, generateRandomPassword, getFarmerByKeeperId, getKeeperByRegNumber, hashOTP, verifyOTP, verifySignature } from "../shared/functions";
+import { generateOTP, generateRandomPassword, getFarmerByKeeperId, getKeeperByRegNumber, hashOTP, normalizeAndCompareNames, verifyOTP, verifySignature } from "../shared/functions";
 import { Schema } from "mongoose";
 import * as axios from "axios";
 
@@ -138,7 +138,7 @@ async function verifyIdentityNumber(input: { payload: { userId: string }, hash: 
 
           // Check if the GET request was successful and the response indicates success
           if (getResponse.status === 200 && getResponse.data.success === true) {
-            user.identityNumberVerificationStatus === "VERIFIED";
+            user.identityNumberVerificationStatus = "VERIFIED";
             await user.save();
             // Queue message
             const textContent = companyRegistrationVerificationSuccessTemplate.replace('[UserName]', user.name as string);
@@ -155,7 +155,7 @@ async function verifyIdentityNumber(input: { payload: { userId: string }, hash: 
               }
             });
           } else if (getResponse.status === 200 && getResponse.data.success === false) {
-            user.identityNumberVerificationStatus === "VERIFICATION_REJECTED";
+            user.identityNumberVerificationStatus = "VERIFICATION_REJECTED";
             user.reasonForIdentityNumberVerificationRejection = "Invalid UIN provided";
             await user.save();
             // Queue message
@@ -218,10 +218,11 @@ async function verifyIdentityNumber(input: { payload: { userId: string }, hash: 
           // Check if the GET request was successful and the response indicates success
           if (getResponse.status === 200 && getResponse.data.success === true) {
             const { data } = getResponse.data;
-            const lowerCaseFirstName = (data[0]['FIRST_NME'] as string).toLowerCase();
-            const lowerCaseLastName = (data[0]['SURNME'] as string).toLowerCase();
-            if (lowerCaseFirstName.includes(user.firstName!.toLowerCase()) && lowerCaseLastName.includes(user.lastName!.toLowerCase())) {
-              user.identityNumberVerificationStatus === "VERIFIED";
+            const isFirstNameMatch = normalizeAndCompareNames(data[0]['FIRST_NME'], user.firstName);
+            const isLastNameMatch = normalizeAndCompareNames(data[0]['SURNME'], user.lastName);
+
+            if (isFirstNameMatch && isLastNameMatch) {
+              user.identityNumberVerificationStatus = "VERIFIED";
               await user.save();
               // Queue message
               const textContent = nationalIDVerificationSuccessSMSTemplate.replace('[UserName]', user.firstName as string);
@@ -238,7 +239,7 @@ async function verifyIdentityNumber(input: { payload: { userId: string }, hash: 
                 }
               });
             } else {
-              user.identityNumberVerificationStatus === "VERIFICATION_REJECTED";
+              user.identityNumberVerificationStatus = "VERIFICATION_REJECTED";
               user.reasonForIdentityNumberVerificationRejection = "Name mismatch with Omang provided";
               await user.save();
               // Queue message
@@ -257,7 +258,7 @@ async function verifyIdentityNumber(input: { payload: { userId: string }, hash: 
               });
             }
           } else if (getResponse.status === 200 && getResponse.data.success === false) {
-            user.identityNumberVerificationStatus === "VERIFICATION_REJECTED";
+            user.identityNumberVerificationStatus = "VERIFICATION_REJECTED";
             user.reasonForIdentityNumberVerificationRejection = "Invalid Omang provided";
             await user.save();
             // Queue message

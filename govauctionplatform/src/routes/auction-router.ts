@@ -31,7 +31,14 @@ export const p = {
 router.post(p.createAuction, SuperAdminOnly(), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
-      title: Joi.string().required().messages({
+      title: Joi.object().keys({
+        en: Joi.string().required().messages({
+          'any.required': '"title.en" is a required field'
+        }),
+        tn: Joi.string().required().messages({
+          'any.required': '"title.tn" is a required field'
+        }), 
+      }).required().messages({
         'any.required': '"title" is a required field'
       }),
       auctionLocation: Joi.string().required().messages({
@@ -44,7 +51,14 @@ router.post(p.createAuction, SuperAdminOnly(), async (req: Request, res: Respons
       }).required().messages({
         'any.required': '"auctionCoordinates" is a required field'
       }),
-      terms: Joi.string().required().messages({
+      terms: Joi.object().keys({
+        en: Joi.string().required().messages({
+          'any.required': '"terms.en" is a required field'
+        }),
+        tn: Joi.string().required().messages({
+          'any.required': '"terms.tn" is a required field'
+        }), 
+      }).required().messages({
         'any.required': '"terms" is a required field'
       }),
       isBeingLivestreamed: Joi.boolean().required().messages({
@@ -56,6 +70,9 @@ router.post(p.createAuction, SuperAdminOnly(), async (req: Request, res: Respons
           'any.required': '"streamUrl" is a required field'
         }),
         otherwise: Joi.optional()
+      }),
+      thumbnailUrl: Joi.required().messages({
+        'any.required': '"thumbnailUrl" is a required field'
       }),
       hasRegistrationFee: Joi.boolean().required().messages({
         'any.required': '"hasRegistrationFee" is a required field'

@@ -3,7 +3,7 @@ import { generateAuctionNumber, isBeforeStartDate, isStartDateBeforeEndDate } fr
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession, Types } from 'mongoose';
-import { EAuctionSortType, EAuctionStatus, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { MAX_GEO_DISTANCE_AUCTION, EAuctionSortType, EAuctionStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
 import { Auction, IAuction, IAuctionInput, IRequiredAttribute, IRequiredAttributeInput, RequiredAttribute } from "../models/auction-model";
 import categoryService from "./category-service";
 import forumService from "./forum-service";
@@ -202,6 +202,14 @@ async function getAuctions(conditions: Map<string, any>, projection?: any): Prom
     // Query builder
     const q = Auction.find({}, projection);
 
+    // Populate 
+    if (conditions.get('populateCreator')) {
+      q.populate({
+        path: 'creatorId',
+        model: EModels.SELLER
+      });
+    }
+
     // Filters
     if (conditions.get('creatorId')) {
       q.where({ creatorId: conditions.get('creatorId') });
@@ -228,6 +236,17 @@ async function getAuctions(conditions: Map<string, any>, projection?: any): Prom
       } else {
         q.where({ status: conditions.get('status') });
       }
+    }
+
+    if (conditions.get('auctionCoordinates')) {
+      q.where('auctionCoordinates').near({
+        center: {
+          type: 'Point',
+          coordinates: conditions.get('auctionCoordinates')
+        },
+        maxDistance: MAX_GEO_DISTANCE_AUCTION,
+        spherical: true
+      });
     }
 
     // Filter by publishedStatus (if provided)
@@ -629,6 +648,44 @@ async function rejectAuction(currentUser: IAuctionApprover, auctionId: string, r
   }
 }
 
+/**
+ * Updates the status of auctions based on their start and end times, considering their published status.
+ *
+ * - Only updates auctions that are `PUBLISHED`.
+ * - Auctions that have started (`startTime <= now`) and are `PUBLISHED` are marked as `ACTIVE`.
+ * - Auctions that have ended (`endTime <= now`) and are `PUBLISHED` are marked as `ENDED`.
+ * - Auctions that are `NOT_BEGUN` but not yet `PUBLISHED` remain unchanged.
+ *
+ * @throws {Error} If an error occurs during the database update operation.
+ * @return {Promise<void>} A promise that resolves once the updates are complete.
+ */
+async function trackAuctionStatus(): Promise<void> {
+  try {
+    await Promise.all([
+      // Mark only PUBLISHED auctions as ENDED if their end time has passed
+      Auction.updateMany(
+        { 
+          endTime: { $lte: new Date() }, 
+          status: { $ne: EAuctionStatus.ENDED },
+          publishedStatus: EPublishedStatus.PUBLISHED 
+        },
+        { $set: { status: EAuctionStatus.ENDED } }
+      ),
+      // Mark only PUBLISHED auctions as ACTIVE if their start time has passed and they are NOT_BEGUN
+      Auction.updateMany(
+        { 
+          startTime: { $lte: new Date() }, 
+          status: EAuctionStatus.NOT_BEGUN, 
+          publishedStatus: EPublishedStatus.PUBLISHED
+        },
+        { $set: { status: EAuctionStatus.ACTIVE } }
+      )
+    ]);
+  } catch (error) {
+    throw error;
+  }
+}
+
 // Export default
 export default {
   createAuction,
@@ -642,5 +699,6 @@ export default {
   publishAuction,
   unpublishAuction,
   rejectAuction,
+  trackAuctionStatus,
   updateAuctionCoordinates
 } as const;
