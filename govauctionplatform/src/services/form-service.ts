@@ -49,8 +49,7 @@ async function createForm(currentUser: IAdmin, input: Partial<IForm>): Promise<I
 
     const newForm = new Form({
       ...input,
-      creatorId: currentUser.id,
-      sellerId: currentUser.id
+      creatorId: currentUser.id
     });
 
     await newForm.save();

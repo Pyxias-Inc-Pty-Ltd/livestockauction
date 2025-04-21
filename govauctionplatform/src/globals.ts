@@ -541,18 +541,74 @@ export interface SearchFilters {
   sort?: string[];
 }
 
+// Common header and footer styling for consistency across all emails
+const headerStyle = `
+  background-color: #0056b3;
+  color: white;
+  padding: 20px;
+  text-align: center;
+`;
+
+const footerStyle = `
+  background-color: #f1f1f1;
+  padding: 15px;
+  text-align: center;
+  font-size: 12px;
+  margin-top: 20px;
+  border-top: 1px solid #ddd;
+`;
+
+const bodyStyle = `
+  font-family: Arial, sans-serif;
+  max-width: 600px;
+  margin: 0 auto;
+  line-height: 1.6;
+`;
+
+const contentStyle = `
+  padding: 20px;
+  border: 1px solid #ddd;
+  background-color: #f9f9f9;
+`;
+
+const linkStyle = `color: #0056b3; text-decoration: underline;`;
+const buttonStyle = `
+  display: inline-block;
+  background-color: #0056b3;
+  color: white;
+  padding: 10px 20px;
+  text-decoration: none;
+  border-radius: 4px;
+  margin: 15px 0;
+  font-weight: bold;
+`;
+
 export const welcomeBidderEmailTemplate = `
   <!DOCTYPE html>
   <html>
   <head>
     <title>Welcome to Botswana Government Auction Platform</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>We are delighted to have you as a member of our auction platform. Here, you can participate in various government auctions, bid on items, and much more.</p>
-    <p>Feel free to explore and start bidding!</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Welcome New Bidder</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>We are delighted to have you as a member of our auction platform. Here, you can participate in various government auctions, bid on items, and much more.</p>
+        <p>Feel free to explore and start bidding!</p>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -563,19 +619,33 @@ export const welcomeAuctionApproverEmailTemplate = `
   <head>
     <title>Welcome to Botswana Government Auction Platform</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>Welcome to the Botswana Government Auction Platform. You have been appointed as an Auction Approver, which grants you the authority to review and approve auctions before they go live on our platform.</p>
-    <p>As an Auction Approver, you play a crucial role in maintaining the quality and integrity of our auctions. You will be responsible for:</p>
-    <ul>
-      <li>Reviewing auction details and specifications</li>
-      <li>Verifying item descriptions and documentation</li>
-      <li>Ensuring compliance with platform guidelines</li>
-      <li>Approving or requesting changes to auction listings</li>
-    </ul>
-    <p>Your commitment to thorough review helps ensure transparency and fairness in our government auction process.</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Welcome Auction Approver</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>Welcome to the Botswana Government Auction Platform. You have been appointed as an Auction Approver, which grants you the authority to review and approve auctions before they go live on our platform.</p>
+        <p>As an Auction Approver, you play a crucial role in maintaining the quality and integrity of our auctions. You will be responsible for:</p>
+        <ul style="margin-left: 20px;">
+          <li>Reviewing auction details and specifications</li>
+          <li>Verifying item descriptions and documentation</li>
+          <li>Ensuring compliance with platform guidelines</li>
+          <li>Approving or requesting changes to auction listings</li>
+        </ul>
+        <p>Your commitment to thorough review helps ensure transparency and fairness in our government auction process.</p>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -586,19 +656,33 @@ export const welcomeSellerEmailTemplate = `
   <head>
     <title>Welcome to Botswana Government Auction Platform</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>Welcome to the Botswana Government Auction Platform. As a registered seller, you can now create and manage government auction listings on our platform.</p>
-    <p>You can:</p>
-    <ul>
-      <li>Create auction listings</li>
-      <li>Upload item images and documentation</li>
-      <li>Track bidding activities</li>
-      <li>Manage auction approvers</li>
-    </ul>
-    <p>Our support team is here to help if you need any assistance.</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Welcome Seller</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>Welcome to the Botswana Government Auction Platform. As a registered seller, you can now create and manage government auction listings on our platform.</p>
+        <p>You can:</p>
+        <ul style="margin-left: 20px;">
+          <li>Create auction listings</li>
+          <li>Upload item images and documentation</li>
+          <li>Track bidding activities</li>
+          <li>Manage auction approvers</li>
+        </ul>
+        <p>Our support team is here to help if you need any assistance.</p>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -609,13 +693,29 @@ export const passwordResetTemplate = `
   <head>
     <title>Password Reset Request</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>We received a request to reset your password. Click the link below to set a new password:</p>
-    <p><a href="[ResetLink]">Reset Password</a></p>
-    <p>If you did not request a password reset, please ignore this email.</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Password Reset Request</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>We received a request to reset your password. Please click the button below to set a new password:</p>
+        <div style="text-align: center;">
+          <a href="[ResetLink]" style="${buttonStyle}">Reset Password</a>
+        </div>
+        <p>If you did not request a password reset, please ignore this email or contact our support team immediately if you believe your account may be at risk.</p>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -626,12 +726,26 @@ export const reservePricePaymentTemplate = `
   <head>
     <title>Reserve Price Payment Successful</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>We are pleased to inform you that your reserve price payment for the auction item "[ItemName]" has been successfully processed.</p>
-    <p>Thank you for your payment. You are now eligible to bid on this item.</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Reserve Price Payment Successful</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>We are pleased to inform you that your reserve price payment for the auction item <strong>"[ItemName]"</strong> has been successfully processed.</p>
+        <p>Thank you for your payment. You are now eligible to bid on this item.</p>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -642,12 +756,39 @@ export const purchasePaymentTemplate = `
   <head>
     <title>Purchase Payment Successful</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>We are pleased to inform you that your payment for the auction item "[ItemName]" has been successfully processed.</p>
-    <p>Thank you for your purchase. The item will be shipped to you soon.</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Purchase Payment Successful</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>We are pleased to inform you that your payment for the auction item <strong>"[ItemName]"</strong> has been successfully processed.</p>
+        <p>Thank you for your purchase. The item will be shipped to you soon.</p>
+        <p>Transaction Details:</p>
+        <table style="width: 100%; border-collapse: collapse; margin: 15px 0;">
+          <tr style="background-color: #e6e6e6;">
+            <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Item</th>
+            <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Payment Date</th>
+            <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Receipt Number</th>
+          </tr>
+          <tr>
+            <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">[ItemName]</td>
+            <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">[PaymentDate]</td>
+            <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">[ReceiptNumber]</td>
+          </tr>
+        </table>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -658,12 +799,39 @@ export const refundTemplate = `
   <head>
     <title>Refund Processed Successfully</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>We are pleased to inform you that your refund for the auction item "[ItemName]" has been successfully processed.</p>
-    <p>The refunded amount has been credited to your account.</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Refund Processed Successfully</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>We are pleased to inform you that your refund for the auction item <strong>"[ItemName]"</strong> has been successfully processed.</p>
+        <p>The refunded amount has been credited to your account.</p>
+        <p>Refund Details:</p>
+        <table style="width: 100%; border-collapse: collapse; margin: 15px 0;">
+          <tr style="background-color: #e6e6e6;">
+            <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Item</th>
+            <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Refund Amount</th>
+            <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Refund Date</th>
+          </tr>
+          <tr>
+            <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">[ItemName]</td>
+            <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">[RefundAmount]</td>
+            <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">[RefundDate]</td>
+          </tr>
+        </table>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -674,11 +842,28 @@ export const addedToForumTemplate = `
   <head>
     <title>Added to Auction Forum</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>You have been added to the auction forum for "[AuctionName]". You can now participate in discussions, ask questions, and stay updated with the latest updates.</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Added to Auction Forum</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>You have been added to the auction forum for <strong>"[AuctionName]"</strong>. You can now participate in discussions, ask questions, and stay updated with the latest updates.</p>
+        <div style="text-align: center;">
+          <a href="[ForumLink]" style="${buttonStyle}">Access Forum</a>
+        </div>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -689,12 +874,42 @@ export const winningBidderTemplate = `
   <head>
     <title>Congratulations! You are the Winning Bidder</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>We are excited to inform you that you are the winning bidder for the auction item "[ItemName]".</p>
-    <p>Please proceed with the payment to complete your purchase.</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Congratulations! You are the Winning Bidder</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>We are excited to inform you that you are the winning bidder for the auction item <strong>"[ItemName]"</strong>.</p>
+        <p>Winning Bid Details:</p>
+        <table style="width: 100%; border-collapse: collapse; margin: 15px 0;">
+          <tr style="background-color: #e6e6e6;">
+            <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Item</th>
+            <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Your Winning Bid</th>
+            <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Payment Deadline</th>
+          </tr>
+          <tr>
+            <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">[ItemName]</td>
+            <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">[WinningBid]</td>
+            <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">[PaymentDeadline]</td>
+          </tr>
+        </table>
+        <p>Please proceed with the payment to complete your purchase.</p>
+        <div style="text-align: center;">
+          <a href="[PaymentLink]" style="${buttonStyle}">Complete Payment</a>
+        </div>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -705,12 +920,29 @@ export const reservePricePaymentFailedTemplate = `
   <head>
     <title>Reserve Price Payment Failed</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>We regret to inform you that your reserve price payment for the auction item "[ItemName]" was unsuccessful.</p>
-    <p>Please try again or contact support if you need assistance.</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Reserve Price Payment Failed</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>We regret to inform you that your reserve price payment for the auction item <strong>"[ItemName]"</strong> was unsuccessful.</p>
+        <p>Please try again or contact our support team if you need assistance.</p>
+        <div style="text-align: center;">
+          <a href="[RetryPaymentLink]" style="${buttonStyle}">Retry Payment</a>
+        </div>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -721,12 +953,29 @@ export const purchasePaymentFailedTemplate = `
   <head>
     <title>Purchase Payment Failed</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>We regret to inform you that your payment for the auction item "[ItemName]" was unsuccessful.</p>
-    <p>Please try again or contact support if you need assistance.</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Purchase Payment Failed</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>We regret to inform you that your payment for the auction item <strong>"[ItemName]"</strong> was unsuccessful.</p>
+        <p>Please try again or contact our support team if you need assistance.</p>
+        <div style="text-align: center;">
+          <a href="[RetryPaymentLink]" style="${buttonStyle}">Retry Payment</a>
+        </div>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -737,12 +986,42 @@ export const upcomingAuctionTemplate = `
   <head>
     <title>Upcoming Auction Notification</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>We are excited to inform you about an upcoming auction: "[AuctionName]".</p>
-    <p>The auction will start on [StartDate] and end on [EndDate]. Don't miss the opportunity to participate and bid on amazing items!</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Upcoming Auction Notification</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>We are excited to inform you about an upcoming auction: <strong>"[AuctionName]"</strong>.</p>
+        <p>Auction Details:</p>
+        <table style="width: 100%; border-collapse: collapse; margin: 15px 0;">
+          <tr style="background-color: #e6e6e6;">
+            <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Auction Name</th>
+            <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Start Date</th>
+            <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">End Date</th>
+          </tr>
+          <tr>
+            <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">[AuctionName]</td>
+            <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">[StartDate]</td>
+            <td style="padding: 8px; text-align: left; border: 1px solid #ddd;">[EndDate]</td>
+          </tr>
+        </table>
+        <p>Don't miss the opportunity to participate and bid on amazing items!</p>
+        <div style="text-align: center;">
+          <a href="[AuctionLink]" style="${buttonStyle}">View Auction</a>
+        </div>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -753,12 +1032,29 @@ export const auctionStartedTemplate = `
   <head>
     <title>Auction Started Notification</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>We are pleased to inform you that the auction "[AuctionName]" has started.</p>
-    <p>You can now start bidding on your favorite items. The auction will end on [EndDate].</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Auction Started</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>We are pleased to inform you that the auction <strong>"[AuctionName]"</strong> has started.</p>
+        <p>You can now start bidding on your favorite items. The auction will end on <strong>[EndDate]</strong>.</p>
+        <div style="text-align: center;">
+          <a href="[AuctionLink]" style="${buttonStyle}">Start Bidding Now</a>
+        </div>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -769,12 +1065,29 @@ export const auctionEndedTemplate = `
   <head>
     <title>Auction Ended Notification</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>We are pleased to inform you that the auction "[AuctionName]" has ended.</p>
-    <p>Thank you for your participation. If you have won any items, you will receive further instructions via email.</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Auction Ended</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>We are pleased to inform you that the auction <strong>"[AuctionName]"</strong> has ended.</p>
+        <p>Thank you for your participation. If you have won any items, you will receive further instructions via email.</p>
+        <div style="text-align: center;">
+          <a href="[ResultsLink]" style="${buttonStyle}">View Auction Results</a>
+        </div>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -785,12 +1098,29 @@ export const refundFailedTemplate = `
   <head>
     <title>Refund Failed</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>We regret to inform you that the refund process for the auction item [ItemName] has failed.</p>
-    <p>Please contact our support team for assistance and further information.</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Refund Failed</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>We regret to inform you that the refund process for the auction item <strong>[ItemName]</strong> has failed.</p>
+        <p>Please contact our support team for assistance and further information.</p>
+        <div style="text-align: center;">
+          <a href="mailto:support@auction.gov.bw" style="${buttonStyle}">Contact Support</a>
+        </div>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -801,13 +1131,30 @@ export const keeperIDVerificationTemplate = `
   <head>
     <title>BAITS Keeper ID Verification</title>
   </head>
-  <body>
-    <p>Dear[UserName],</p>
-    <p>Your One-Time Password (OTP) for Keeper ID verification is <strong>[otp]</strong>.</p>
-    <p>Please enter this OTP on the verification page to complete your verification process.</p>
-    <p>If you did not request this, please ignore this email.</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Keeper ID Verification</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>Your One-Time Password (OTP) for Keeper ID verification is:</p>
+        <div style="text-align: center; margin: 25px 0; padding: 15px; background-color: #e6f7ff; border: 1px solid #91d5ff; border-radius: 4px;">
+          <h2 style="margin: 0; color: #0056b3; letter-spacing: 5px;">[otp]</h2>
+        </div>
+        <p>Please enter this OTP on the verification page to complete your verification process.</p>
+        <p>If you did not request this, please ignore this email or contact our support team immediately.</p>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -818,19 +1165,38 @@ export const nationalIDVerificationSuccessTemplate = `
   <head>
     <title>Omang Verification Successful</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>We are pleased to inform you that your Omang verification has been successfully completed. Your identity has been confirmed, and you now have full access to all features of the Botswana Government Auction Platform.</p>
-    <p>With your verified account, you can:</p>
-    <ul>
-      <li>Participate in government auctions</li>
-      <li>Bid on items of interest</li>
-      <li>Access secure payment options</li>
-    </ul>
-    <p>If you have any questions or need further assistance, please feel free to contact our support team.</p>
-    <p>Thank you for completing the verification process. We look forward to your active participation on our platform.</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Omang Verification Successful</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>We are pleased to inform you that your Omang verification has been successfully completed. Your identity has been confirmed, and you now have full access to all features of the Botswana Government Auction Platform.</p>
+        <div style="text-align: center; margin: 20px 0;">
+          <div style="display: inline-block; background-color: #f0f9eb; border-radius: 50%; width: 80px; height: 80px; line-height: 80px; text-align: center; border: 2px solid #52c41a;">
+            <span style="color: #52c41a; font-size: 40px;">✓</span>
+          </div>
+        </div>
+        <p>With your verified account, you can:</p>
+        <ul style="margin-left: 20px;">
+          <li>Participate in government auctions</li>
+          <li>Bid on items of interest</li>
+          <li>Access secure payment options</li>
+        </ul>
+        <p>If you have any questions or need further assistance, please feel free to contact our support team.</p>
+        <p>Thank you for completing the verification process. We look forward to your active participation on our platform.</p>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -865,20 +1231,39 @@ export const companyRegistrationVerificationSuccessTemplate = `
   <head>
     <title>Company Registration Number Verification Successful</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>We are pleased to inform you that your Company Registration Number verification has been successfully completed. Your company details have been confirmed, and you now have full access to all features of the Botswana Government Auction Platform.</p>
-    <p>With your verified account, you can:</p>
-    <ul>
-      <li>Participate in government auctions</li>
-      <li>Bid on items of interest</li>
-      <li>Create and manage auction listings (if applicable)</li>
-      <li>Access secure payment options</li>
-    </ul>
-    <p>If you have any questions or need further assistance, please feel free to contact our support team.</p>
-    <p>Thank you for completing the verification process. We look forward to your active participation on our platform.</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Company Registration Verification Successful</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>We are pleased to inform you that your Company Registration Number verification has been successfully completed. Your company details have been confirmed, and you now have full access to all features of the Botswana Government Auction Platform.</p>
+        <div style="text-align: center; margin: 20px 0;">
+          <div style="display: inline-block; background-color: #f0f9eb; border-radius: 50%; width: 80px; height: 80px; line-height: 80px; text-align: center; border: 2px solid #52c41a;">
+            <span style="color: #52c41a; font-size: 40px;">✓</span>
+          </div>
+        </div>
+        <p>With your verified account, you can:</p>
+        <ul style="margin-left: 20px;">
+          <li>Participate in government auctions</li>
+          <li>Bid on items of interest</li>
+          <li>Create and manage auction listings (if applicable)</li>
+          <li>Access secure payment options</li>
+        </ul>
+        <p>If you have any questions or need further assistance, please feel free to contact our support team.</p>
+        <p>Thank you for completing the verification process. We look forward to your active participation on our platform.</p>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -889,12 +1274,35 @@ export const invalidCompanyRegistrationTemplate = `
   <head>
     <title>Invalid Company Registration Number</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>The Company Registration Number you provided is invalid. Please verify and resubmit your correct Company Registration Number details. If you need assistance, feel free to contact our support team.</p>
-    <p>Thank you for your understanding.</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Invalid Company Registration</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>The Company Registration Number you provided is invalid. Please verify and resubmit your correct Company Registration Number details.</p>
+        <div style="text-align: center; margin: 20px 0;">
+          <div style="display: inline-block; background-color: #fff2f0; border-radius: 50%; width: 80px; height: 80px; line-height: 80px; text-align: center; border: 2px solid #f5222d;">
+            <span style="color: #f5222d; font-size: 40px;">✗</span>
+          </div>
+        </div>
+        <p>If you need assistance, feel free to contact our support team.</p>
+        <div style="text-align: center;">
+          <a href="[RetryVerificationLink]" style="${buttonStyle}">Retry Verification</a>
+        </div>
+        <p>Thank you for your understanding.</p>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -905,12 +1313,31 @@ export const companyRegistrationVerificationIssuesTemplate = `
   <head>
     <title>Temporary Issues with Company Registration Number Verification</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>We are currently experiencing issues with Company Registration Number verification. Rest assured, we are working to resolve this and will notify you once verification is completed.</p>
-    <p>Thank you for your patience and understanding.</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Verification System Maintenance</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>We are currently experiencing issues with Company Registration Number verification. Rest assured, we are working to resolve this and will notify you once verification is completed.</p>
+        <div style="text-align: center; margin: 20px 0;">
+          <div style="display: inline-block; background-color: #fffbe6; border-radius: 50%; width: 80px; height: 80px; line-height: 80px; text-align: center; border: 2px solid #faad14;">
+            <span style="color: #faad14; font-size: 40px;">!</span>
+          </div>
+        </div>
+        <p>Thank you for your patience and understanding. We will contact you as soon as our systems are back to normal operation.</p>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -921,16 +1348,34 @@ export const auctionApprovalReminderEmailTemplate = `
   <head>
     <title>Pending Auctions for Approval</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>This is a reminder that there are auctions awaiting your approval on the Botswana Government Auction Platform.</p>
-    <p>As an Auction Approver, your role is essential in ensuring that all auctions meet the necessary guidelines before they go live. Please log in to the platform to review and approve the pending auctions.</p>
-    <p><strong>Pending Approvals:</strong> [AuctionCount] auctions</p>
-    <p>Click the link below to access the approval dashboard:</p>
-    <p><a href="[ApprovalLink]">Review Pending Auctions</a></p>
-    <p>Thank you for your attention to this matter.</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Pending Auctions for Approval</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>This is a reminder that there are auctions awaiting your approval on the Botswana Government Auction Platform.</p>
+        <p>As an Auction Approver, your role is essential in ensuring that all auctions meet the necessary guidelines before they go live.</p>
+        <div style="background-color: #e6f7ff; border: 1px solid #91d5ff; border-radius: 4px; padding: 15px; margin: 20px 0;">
+          <p style="margin: 0; font-weight: bold;">Pending Approvals: <span style="color: #0056b3;">[AuctionCount] auctions</span></p>
+        </div>
+        <p>Please log in to the platform to review and approve the pending auctions.</p>
+        <div style="text-align: center;">
+          <a href="[ApprovalLink]" style="${buttonStyle}">Review Pending Auctions</a>
+        </div>
+        <p>Thank you for your attention to this matter.</p>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
@@ -941,18 +1386,34 @@ export const auctionRejectedEmailTemplate = `
   <head>
     <title>Auction Listing Rejected</title>
   </head>
-  <body>
-    <p>Dear [UserName],</p>
-    <p>We regret to inform you that your auction listing, <strong>[AuctionTitle]</strong>, has been rejected by the Auction Approver on the Botswana Government Auction Platform.</p>
-    <p><strong>Reason for Rejection:</strong></p>
-    <p>[RejectionReason]</p>
-    <p>To proceed, please review the provided feedback and make the necessary adjustments before resubmitting your auction for approval.</p>
-    <p>Click the link below to update and resubmit your auction:</p>
-    <p><a href="[EditAuctionLink]">Edit and Resubmit Auction</a></p>
-    <p>If you have any questions or need assistance, feel free to contact our support team.</p>
-    <p>Best regards,</p>
-    <p>The Botswana Government Auction Platform Team</p>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Auction Listing Rejected</h2>
+      </header>
+      
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>We regret to inform you that your auction listing, <strong>"[AuctionTitle]"</strong>, has been rejected by the Auction Approver on the Botswana Government Auction Platform.</p>
+        <div style="background-color: #fff2f0; border: 1px solid #ffccc7; border-radius: 4px; padding: 15px; margin: 20px 0;">
+          <p style="margin: 0 0 10px 0; font-weight: bold;">Reason for Rejection:</p>
+          <p style="margin: 0;">[RejectionReason]</p>
+        </div>
+        <p>To proceed, please review the provided feedback and make the necessary adjustments before resubmitting your auction for approval.</p>
+        <div style="text-align: center;">
+          <a href="[EditAuctionLink]" style="${buttonStyle}">Edit and Resubmit Auction</a>
+        </div>
+        <p>If you have any questions or need assistance, feel free to contact our support team.</p>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
   </body>
   </html>
 `;
-
