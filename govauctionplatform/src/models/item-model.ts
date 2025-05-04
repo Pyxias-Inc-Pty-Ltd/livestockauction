@@ -17,6 +17,14 @@ export interface IItemMetadata {
   animalEID?: string;
   serialNumber?: string;
   baitsDump?: string;
+  machineType?: string;
+  make?: string;
+  model?: string;
+  year?: Date;
+  condition?: string;
+  hoursUsed?: number;
+  power?: number;
+  isOperational?: boolean;
 }
 
 export interface IEligibleBidder {
@@ -28,6 +36,7 @@ export interface IEligibleBidder {
 }
 
 export interface IItem extends Document {
+  formId: Schema.Types.ObjectId;
   creatorId: Schema.Types.ObjectId;
   auctionId: Schema.Types.ObjectId;
   sellerId: Schema.Types.ObjectId;
@@ -98,6 +107,7 @@ export interface IItemInput {
 }
 
 const schema = new Schema<IItem>({
+  formId: { type: Schema.Types.ObjectId, required: true, ref: EModels.FORM },
   creatorId: { type: Schema.Types.ObjectId, required: true, ref: EModels.ADMIN },
   auctionId: { type: Schema.Types.ObjectId, required: true, ref: EModels.AUCTION },
   sellerId: { type: Schema.Types.ObjectId, required: true, ref: EModels.SELLER },
@@ -191,6 +201,36 @@ const schema = new Schema<IItem>({
     baitsDump: { 
       type: String,
       trim: true
+    },
+    machineType: {
+      type: String,
+      trim: true
+    },
+    make: {
+      type: String,
+      trim: true
+    },
+    model: {
+      type: String,
+      trim: true
+    },
+    year: {
+      type: Date
+    },
+    condition: {
+      type: String,
+      trim: true
+    },
+    hoursUsed: {
+      type: Number,
+      min: 0
+    },
+    power: {
+      type: Number,
+      min: 0
+    },
+    isOperational: {
+      type: Boolean
     }
   }
 }, {
