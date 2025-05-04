@@ -51,12 +51,20 @@ export interface IFormField {
   type: EFormFieldType;
   label: string;
   name: string;
+  renderInUI: boolean;
   required?: boolean;
   placeholder?: string;
   defaultValue?: any;
   validation?: IValidationRule[];
   disabled?: boolean;
   order?: number;
+  minLength?: number;
+  maxLength?: number;
+  min?: number;
+  max?: number;
+  options: Array<any>;
+  minDate?: Date;
+  maxDate?: Date;
   showCondition?: IConditionGroup;  // Field-level conditions
 }
 
@@ -116,6 +124,7 @@ export interface IFormSection {
 export interface IForm extends Document {
   creatorId: Schema.Types.ObjectId;
   sellerId: Schema.Types.ObjectId;
+  categoryId: Schema.Types.ObjectId;
   identificationNumber: string;
   formAttributes: {
     title: string;
@@ -150,7 +159,7 @@ const conditionGroupSchema = new Schema({
   }]
 }, { _id: false });
 
-const formFieldSchema = new Schema({
+const formFieldSchema = new Schema<IFormField>({
   type: { 
     type: String, 
     required: true, 
@@ -159,6 +168,7 @@ const formFieldSchema = new Schema({
   label: { type: String, required: true },
   name: { type: String, required: true },
   required: { type: Boolean, default: false },
+  renderInUI: { type: Boolean, default: true },
   placeholder: String,
   defaultValue: Schema.Types.Mixed,
   validation: [{
@@ -184,7 +194,7 @@ const formFieldSchema = new Schema({
   maxDate: Date
 }, { _id: false });
 
-const formSectionSchema = new Schema({
+const formSectionSchema = new Schema<IFormSection>({
   title: { type: String, required: true },
   description: String,
   fields: [formFieldSchema],
@@ -195,6 +205,7 @@ const formSectionSchema = new Schema({
 const schema = new Schema<IForm>({
   creatorId: { type: Schema.Types.ObjectId, required: true, ref: EModels.ADMIN },
   sellerId: { type: Schema.Types.ObjectId, required: true, ref: EModels.SELLER },
+  categoryId: { type: Schema.Types.ObjectId, required: true, ref: EModels.CATEGORY },
   identificationNumber: { type: String, required: true, trim: true, unique: true },
   formAttributes: {
     title: { type: String, required: true },
