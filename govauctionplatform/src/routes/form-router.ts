@@ -160,6 +160,7 @@ router.put(p.updateForm, SuperAdminOnly(), async (req: Request, res: Response) =
       formId: mongoIdValidation.required().messages({
         'any.required': '"formId" is a required field'
       }),
+      categoryId: mongoIdValidation,
       description: Joi.string(),
       formAttributes: Joi.object({
         title: Joi.string(),
