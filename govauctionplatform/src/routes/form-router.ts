@@ -36,6 +36,9 @@ const formFieldSchema = Joi.object({
   name: Joi.string().required().messages({
     'any.required': '"name" is a required field'
   }),
+  renderInUI: Joi.boolean().required().messages({
+    'any.required': '"renderInUI" is a required field'
+  }),
   required: Joi.boolean(),
   placeholder: Joi.string(),
   defaultValue: Joi.any(),
@@ -122,6 +125,9 @@ router.post(p.createForm, SuperAdminOnly(), async (req: Request, res: Response) 
       sellerId: mongoIdValidation.required().messages({
         'any.required': '"sellerId" is a required field'
       }),
+      categoryId: mongoIdValidation.required().messages({
+        'any.required': '"categoryId" is a required field'
+      }),
       description: Joi.string().required().messages({
         'any.required': '"description" is a required field'
       }),
@@ -154,6 +160,7 @@ router.put(p.updateForm, SuperAdminOnly(), async (req: Request, res: Response) =
       formId: mongoIdValidation.required().messages({
         'any.required': '"formId" is a required field'
       }),
+      categoryId: mongoIdValidation,
       description: Joi.string(),
       formAttributes: Joi.object({
         title: Joi.string(),
