@@ -4,10 +4,10 @@ import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession } from 'mongoose';
 import { ITransaction, Transaction, ITransactionInput } from "../models/transaction-model";
 import itemService from "./item-service";
-import { EPaymentStatus, ESortOrderType, ETransactionSortType, ETransactionType, LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, MAX_LIST_LIMIT_NUMBER, PAYGATE_ENCRYPTION_KEY, PAYGATE_ID, paymentProvider, SERVICE_URLS, TINGG_BILLING_SERVICE_ID, transactionType, UNIPAY_APP_AUTH_TOKEN } from "../globals";
+import { EPaymentStatus, ESortOrderType, ETransactionSortType, ETransactionType, LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, MAX_LIST_LIMIT_NUMBER, PAYGATE_ENCRYPTION_KEY, PAYGATE_ID, paymentProvider, SERVICE_URLS, transactionType, UNIPAY_APP_AUTH_TOKEN, LOCAL_CURRENCY, DEFAULT_LANG, DEFAULT_PAYMENT_EMAIL, LOCALY_COUNTRY_ALPHA_3_CODE } from "../globals";
 import bidService from "./bid-service";
 import * as luxon from "luxon";
-import { formatPhoneTinggNumber, generateUniPayAppPaymentURL, generatePayGatePaymentURL, prefixWithZero, convertToPaygateFormat } from "../shared/functions";
+import { generateUniPayAppPaymentURL, generatePayGatePaymentURL, prefixWithZero, convertToPaygateFormat } from "../shared/functions";
 import tokenService from "./token-service";
 import auctionService from "./auction-service";
 import forumService from "./forum-service";
@@ -57,7 +57,7 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
     // Create payment transaction
     const paymentInput: ITransactionInput = {
       auctionId: item.auctionId,
-      currency: 'BWP',
+      currency: LOCAL_CURRENCY,
       transactionType: 'RESERVATION',
       itemId: item.id,
       amount: item.reservePrice,
@@ -71,57 +71,9 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
     // Save transaction
     const savedReservation = await newReservation.save();
 
-    if (input.paymentProvider === 'CELLULANT') {
-
-      // Generate payment link from tingg
-      const queryResponse = await fetch(`${SERVICE_URLS.tinggCreatePaymentLinkURI}`, {
-        method: "POST",
-        body: JSON.stringify({
-          "billingServiceID": TINGG_BILLING_SERVICE_ID,
-          "accountNumber": savedReservation.id.toString(),
-          "accountName": "Pyxias",
-          "dueAmount": item.reservePrice,
-          "paidAmount": 0,
-          "deliveryChannel": "EMAIL",
-          "countryCode": "BWA",
-          "currencyCode": "BWP",
-          "msisdn": formatPhoneTinggNumber(currentUser.phone?currentUser.phone: ""),
-          "dueDate": endOfDate.toMillis(),
-          "email": currentUser.email
-      }),
-        headers: {
-          "Authorization": `Bearer ${token.value}`,
-          "apiKey": `${token.apiKey}`,
-          "Content-Type": "application/json"
-        }
-      });
-
-      if (queryResponse.status !== 201) {
-        if (queryResponse.ok === false) {
-          if (queryResponse.status === 401) {
-            const { message, statusCode } = await queryResponse.json();
-            if (statusCode === 132) {
-              throw new InternalServerError(message);
-            } else {
-              throw new InternalServerError(message);
-            }
-          } else {
-            const { message } = await queryResponse.json();
-            throw new InternalServerError(message);
-          }
-        } else {
-          throw new InternalServerError('Failed to create payment link');
-        }
-      }
-
-      const { data } = await queryResponse.json();
-      
-
-      (savedReservation.metadata as Map<string, string>).set('paymentLink', `https://billpay.tingg.africa/${data.uniqueHash}`);
-      savedReservation.externalReference = data.uniqueHash;
-
-    } else if (input.paymentProvider === 'PAY_GATE') {
-      const formattedString = convertToPaygateFormat(PAYGATE_ID, savedReservation.id.toString(), item.reservePrice, 'BWP', `https://onlineauction-uat.gov.bw/auction/${item.auctionId.toString()}/lot/${item.id.toString()}`, savedReservation.createdDate, 'en-gb', 'BWA', 'customer@paygate.co.za', 'https://onlineauction-uat.gov.bw/api/open/processSuccessfulPaymentFromPayGate', PAYGATE_ENCRYPTION_KEY);
+    if (input.paymentProvider === 'PAY_GATE') {
+      // Generate payment link using PayGate
+      const formattedString = convertToPaygateFormat(PAYGATE_ID, savedReservation.id.toString(), item.reservePrice, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/auction/${item.auctionId.toString()}/lot/${item._id.toString()}`, savedReservation.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
 
       const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
         method: "POST",
@@ -250,7 +202,7 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
     // Create payment transaction
     const paymentInput: ITransactionInput = {
       auctionId: item.auctionId,
-      currency: 'BWP',
+      currency: LOCAL_CURRENCY,
       transactionType: 'PURCHASE',
       itemId: item.id,
       amount,
@@ -265,57 +217,10 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
     // Save payment transaction
     const savedPurchase = await newPurchase.save();
 
-    if (input.paymentProvider === 'CELLULANT') {
-
-      // Generate payment link from tingg
-      const queryResponse = await fetch(`${SERVICE_URLS.tinggCreatePaymentLinkURI}`, {
-        method: "POST",
-        body: JSON.stringify({
-          "billingServiceID": TINGG_BILLING_SERVICE_ID,
-          "accountNumber": savedPurchase.id.toString(),
-          "accountName": "Pyxias",
-          "dueAmount": amount,
-          "paidAmount": 0,
-          "deliveryChannel": "EMAIL",
-          "countryCode": "BWA",
-          "currencyCode": "BWP",
-          "msisdn": formatPhoneTinggNumber(currentUser.phone?currentUser.phone:''),
-          "dueDate": endOfDate.toMillis(),
-          "email": currentUser.email
-      }),
-        headers: {
-          "Authorization": `Bearer ${token.value}`,
-          "apiKey": `${token.apiKey}`,
-          "Content-Type": "application/json"
-        }
-      });
-
-      if (queryResponse.status !== 201) {
-        if (queryResponse.ok === false) {
-          if (queryResponse.status === 401) {
-            const { message, statusCode } = await queryResponse.json();
-            if (statusCode === 132) {
-              throw new InternalServerError(message);
-            } else {
-              throw new InternalServerError(message);
-            }
-          } else {
-            const { message } = await queryResponse.json();
-            throw new InternalServerError(message);
-          }
-        } else {
-          throw new InternalServerError('Failed to create payment link');
-        }
-      }
-
-      const { data } = await queryResponse.json();
-
-      (savedPurchase.metadata as Map<string, string>).set('paymentLink', `https://billpay.tingg.africa/${data.billID}`);
-      savedPurchase.externalReference = data.uniqueHash;
-
-    } else if (input.paymentProvider === 'PAY_GATE') {
-      const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), savedPurchase.amount, 'BWP', `https://onlineauction-uat.gov.bw/auction/${item.auctionId.toString()}/lot/${item.id.toString()}`, savedPurchase.createdDate, 'en-gb', 'BWA', 'customer@paygate.co.za', 'https://onlineauction-uat.gov.bw/api/open/processSuccessfulPaymentFromPayGate', PAYGATE_ENCRYPTION_KEY);
-
+    if (input.paymentProvider === 'PAY_GATE') {
+      // Generate payment link using PayGate
+      const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), savedPurchase.amount, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/auction/${item.auctionId.toString()}/lot/${item._id.toString()}`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
+      
       const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
         method: "POST",
         body: formattedString,
@@ -424,7 +329,7 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
     // Create payment transaction
     const paymentInput: ITransactionInput = {
       auctionId: item.auctionId,
-      currency: 'BWP',
+      currency: LOCAL_CURRENCY,
       transactionType: 'PURCHASE',
       itemId: item.id,
       amount: item.buyoutPrice,
@@ -438,46 +343,11 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
     // Save payment transaction
     const savedPurchase = await newPurchase.save();
 
-    if (input.paymentProvider === 'CELLULANT') {
-      // Generate payment link from tingg
-      const queryResponse = await fetch(`${SERVICE_URLS.tinggCreatePaymentLinkURI}`, {
-        method: "POST",
-        body: JSON.stringify({
-          "billingServiceID": TINGG_BILLING_SERVICE_ID,
-          "accountNumber": savedPurchase.id.toString(),
-          "accountName": "Pyxias",
-          "dueAmount": item.buyoutPrice,
-          "paidAmount": 0,
-          "deliveryChannel": "EMAIL",
-          "countryCode": "BWA",
-          "currencyCode": "BWP",
-          "msisdn": formatPhoneTinggNumber(currentUser.phone? currentUser.phone: ""),
-          "dueDate": endOfDate.toMillis(),
-          "email": currentUser.email
-      }),
-        headers: {
-          "Authorization": `Bearer ${token.value}`,
-          "apiKey": `${token.apiKey}`,
-          "Content-Type": "application/json"
-        }
-      });
+    if (input.paymentProvider === 'PAY_GATE') {
 
-      if (queryResponse.status !== 201) {
-        if (queryResponse.ok === false) {
-          const bodyResponse = await queryResponse.json();
-          throw new InternalServerError(bodyResponse.error);
-        } else {
-          throw new InternalServerError('Failed to create payment link');
-        }
-      }
-
-      const { data } = await queryResponse.json();
-
-      (savedPurchase.metadata as Map<string, string>).set('paymentLink', `https://billpay.tingg.africa/${data.billID}`);
-      savedPurchase.externalReference = data.uniqueHash;
-    } else if (input.paymentProvider === 'PAY_GATE') {
-      const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), item.reservePrice, 'BWP', `https://onlineauction-uat.gov.bw/auction/${item.auctionId.toString()}/lot/${item.id.toString()}`, savedPurchase.createdDate, 'en-gb', 'BWA', 'customer@paygate.co.za', 'https://onlineauction-uat.gov.bw/api/open/processSuccessfulPaymentFromPayGate', PAYGATE_ENCRYPTION_KEY);
-
+      // Generate payment link using PayGate
+      const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), item.reservePrice, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/auction/${item.auctionId.toString()}/lot/${item._id.toString()}`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
+      
       const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
         method: "POST",
         body: formattedString,
