@@ -312,17 +312,6 @@ export function generateRandomPassword(length = 20): string {
 }
 
 /**
- * Format phone number as per tingg requirements
- * @param phoneNumber 
- * @returns 
- */
-export function formatPhoneTinggNumber(phoneNumber: string): string {
-  // Remove non-numeric characters
-  const cleanedNumber = phoneNumber.replace(/\D/g, "");
-  return cleanedNumber;
-}
-
-/**
  * Generates a UniPay payment URL
  * 
  * @param applicationId 
