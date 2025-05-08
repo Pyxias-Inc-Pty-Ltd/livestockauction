@@ -193,7 +193,10 @@ async function getManualBidAmount(itemId: string | Schema.Types.ObjectId): Promi
 async function getById(id: string | Schema.Types.ObjectId, projection?: any): Promise<IItem | null> {
   try {
     if (isMongoId(id.toString())) {
-      const item = await Item.findById(id, projection);
+      const item = await Item.findById(id, projection)
+        .populate({
+          path: "formId"
+        });
       return item;
     } else {
       return null;
