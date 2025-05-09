@@ -22,6 +22,10 @@ export interface IItemMetadata {
   model?: string;
   year?: Date;
   mileage?: number;
+  engineNumber?: string;
+  chassisNumber?: string;
+  registrationNumber?: string;
+  colour?: string;
   condition?: string;
   hoursUsed?: number;
   power?: number;
@@ -212,6 +216,22 @@ const schema = new Schema<IItem>({
       trim: true
     },
     model: {
+      type: String,
+      trim: true
+    },
+    engineNumber: {
+      type: String,
+      trim: true
+    },
+    chassisNumber: {
+      type: String,
+      trim: true
+    },
+    registrationNumber: {
+      type: String,
+      trim: true
+    },
+    colour: {
       type: String,
       trim: true
     },
