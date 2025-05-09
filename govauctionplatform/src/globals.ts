@@ -58,8 +58,8 @@ export const MONGO_DB_PASS = process.env.MONGO_DB_PASS as string;
 // export const UNIPAY_APP_AUTH_TOKEN = process.env.UNIPAY_APP_AUTH_TOKEN as string;
 export const UNIPAY_APP_AUTH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWJqZWN0IjoiNjY3YzVmOTMwM2YzZjEyODRhMWI0OGVhIiwic2NvcGUiOiJBUEkiLCJpYXQiOjE3MTk0MjY5NjN9.xi1tGljRdbpFzamQlD1G4TVYK1gWt6xyEAXrT4MVpko";
 export const SERVICE_URLS: {[key: string]: string} = {
-  // mongoDBURI: `mongodb://localhost:27017/bwgovauctionplatform?retryWrites=true&w=majority`,
-  mongoDBURI: `mongodb+srv://${MONGO_DB_USER}:${MONGO_DB_PASS}@cluster0.5odo36p.mongodb.net/bwgovauctionplatform?retryWrites=true&w=majority&appName=Cluster0"`,
+  mongoDBURI: `mongodb://localhost:27017/bwgovauctionplatform?retryWrites=true&w=majority`,
+  // mongoDBURI: `mongodb+srv://${MONGO_DB_USER}:${MONGO_DB_PASS}@cluster0.5odo36p.mongodb.net/bwgovauctionplatform?retryWrites=true&w=majority&appName=Cluster0"`,
   tinggCreatePaymentLinkURI: "https://paybylink-apis.pay.tingg.africa/paybylink-apis/public/bill/create",
   unipayInitiatePaymentApplication: "http://164.92.135.170:8888/api/applications/initiatePaymentApplicationByApp",
   paygateBaseURI: "https://secure.paygate.co.za/payweb3",
