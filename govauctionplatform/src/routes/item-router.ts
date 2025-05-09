@@ -68,6 +68,9 @@ router.get(p.getItemsWon, BidderOnly(), async (req: Request, res: Response) => {
 router.post(p.createItem, SuperAdminOnly(), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
+      formId: mongoIdValidation.required().messages({
+        'any.required': '"formId" is a required field'
+      }),
       auctionId: mongoIdValidation.required().messages({
         'any.required': '"auctionId" is a required field'
       }),
@@ -161,7 +164,16 @@ router.post(p.createItem, SuperAdminOnly(), async (req: Request, res: Response) 
             'any.required': '"metadata.animalEID" is a required field'
           }),
           otherwise: Joi.optional()
-        })
+        }),
+        machineType: Joi.string(),
+        make: Joi.string(),
+        model: Joi.string(),
+        year: Joi.string().isoDate(),
+        serialNumber: Joi.string(),
+        condition: Joi.string(),
+        hoursUsed: Joi.number().min(0),
+        power: Joi.number().min(0),
+        isOperational: Joi.boolean()
       }).required().messages({
         'any.required': '"metadata" is a required field'
       })
