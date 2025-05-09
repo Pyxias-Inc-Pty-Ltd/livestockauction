@@ -73,10 +73,7 @@ async function updateForm(
   data: Partial<IForm>
 ): Promise<IForm> {
   try {
-    const form = await Form.findOne({
-      _id: formId,
-      sellerId: currentUser.id
-    });
+    const form = await Form.findById(formId);
 
     if (!form) {
       throw new NotFoundError('Form not found');
