@@ -173,6 +173,7 @@ router.post(p.createItem, SuperAdminOnly(), async (req: Request, res: Response) 
         condition: Joi.string(),
         hoursUsed: Joi.number().min(0),
         power: Joi.number().min(0),
+        mileage: Joi.number().min(0),
         isOperational: Joi.boolean()
       }).required().messages({
         'any.required': '"metadata" is a required field'
