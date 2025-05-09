@@ -21,6 +21,7 @@ export interface IItemMetadata {
   make?: string;
   model?: string;
   year?: Date;
+  mileage?: number;
   condition?: string;
   hoursUsed?: number;
   power?: number;
@@ -226,6 +227,10 @@ const schema = new Schema<IItem>({
       min: 0
     },
     power: {
+      type: Number,
+      min: 0
+    },
+    mileage: {
       type: Number,
       min: 0
     },
