@@ -204,7 +204,7 @@ router.get(p.getRequiredAttributes, SuperAdminOnly(), async (req: Request, res: 
 /**
  * Publish an auction by an auction approver
  */
-router.patch(p.publishAuction, AuctionApproverOnly(), async (req: Request, res: Response) => {
+router.put(p.publishAuction, AuctionApproverOnly(), async (req: Request, res: Response) => {
   try {
     // Query validation
     const qSchema = Joi.object().keys({
@@ -231,7 +231,7 @@ router.patch(p.publishAuction, AuctionApproverOnly(), async (req: Request, res: 
 /**
  * Unpublish an auction by a seller
  */
-router.patch(p.unpublishAuction, SellerOnly(), async (req: Request, res: Response) => {
+router.put(p.unpublishAuction, SellerOnly(), async (req: Request, res: Response) => {
   try {
     const qSchema = Joi.object().keys({
       auctionId: mongoIdValidation.required().messages({
@@ -257,7 +257,7 @@ router.patch(p.unpublishAuction, SellerOnly(), async (req: Request, res: Respons
 /**
  * Reject an auction
  */
-router.patch(p.rejectAuction, AuctionApproverOnly(), async (req: Request, res: Response) => {
+router.put(p.rejectAuction, AuctionApproverOnly(), async (req: Request, res: Response) => {
   try {
     // Query validation
     const qSchema = Joi.object().keys({
