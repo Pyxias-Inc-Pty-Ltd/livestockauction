@@ -207,15 +207,15 @@ router.get(p.getRequiredAttributes, SuperAdminOnly(), async (req: Request, res: 
 router.put(p.publishAuction, AuctionApproverOnly(), async (req: Request, res: Response) => {
   try {
     // Query validation
-    const qSchema = Joi.object().keys({
+    const schema = Joi.object().keys({
       auctionId: mongoIdValidation.required().messages({
         'any.required': '"auctionId" is a required field'
       })
     }).required();
     
-    Joi.assert(req.query, qSchema);
+    Joi.assert(req.body, schema);
 
-    const { auctionId } = req.query;
+    const { auctionId } = req.body;
 
     const auction = await auctionService.publishAuction(
       req.user as IAuctionApprover, 
@@ -233,15 +233,15 @@ router.put(p.publishAuction, AuctionApproverOnly(), async (req: Request, res: Re
  */
 router.put(p.unpublishAuction, SellerOnly(), async (req: Request, res: Response) => {
   try {
-    const qSchema = Joi.object().keys({
+    const schema = Joi.object().keys({
       auctionId: mongoIdValidation.required().messages({
         'any.required': '"auctionId" is a required field'
       })
     }).required();
     
-    Joi.assert(req.query, qSchema);
+    Joi.assert(req.body, schema);
 
-    const { auctionId } = req.query;
+    const { auctionId } = req.body;
 
     const auction = await auctionService.unpublishAuction(
       req.user as ISeller,
@@ -259,26 +259,19 @@ router.put(p.unpublishAuction, SellerOnly(), async (req: Request, res: Response)
  */
 router.put(p.rejectAuction, AuctionApproverOnly(), async (req: Request, res: Response) => {
   try {
-    // Query validation
-    const qSchema = Joi.object().keys({
+    // Body validation
+    const schema = Joi.object().keys({
       auctionId: mongoIdValidation.required().messages({
         'any.required': '"auctionId" is a required field'
-      })
-    }).required();
-    
-    Joi.assert(req.query, qSchema);
-
-    // Body validation
-    const bodySchema = Joi.object().keys({
+      }),
       reason: Joi.string().required().messages({
         'any.required': '"reason" is required for rejection'
       })
     }).required();
     
-    Joi.assert(req.body, bodySchema);
+    Joi.assert(req.body, schema);
 
-    const { auctionId } = req.query;
-    const { reason } = req.body;
+    const { auctionId, reason } = req.body;
 
     const auction = await auctionService.rejectAuction(
       req.user as IAuctionApprover,
