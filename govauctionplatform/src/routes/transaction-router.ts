@@ -28,7 +28,7 @@ router.post(p.initiateItemReservation, BidderOnly(), async (req: Request, res: R
       itemId: mongoIdValidation.required().messages({
         'any.required': '"itemId" is a required field'
       }),
-      paymentProvider: Joi.string().valid(EPaymentProvider.CELLULANT, EPaymentProvider.UNIPAY, EPaymentProvider.PAY_GATE).required().messages({
+      paymentProvider: Joi.string().valid(...Object.values(EPaymentProvider)).required().messages({
         'any.required': '"paymentProvider" is a required field'
       })
     }).required();
@@ -52,7 +52,7 @@ router.post(p.initiatePurchaseItemByWinningBidder, BidderOnly(), async (req: Req
       itemId: mongoIdValidation.required().messages({
         'any.required': '"itemId" is a required field'
       }),
-      paymentProvider: Joi.string().valid(EPaymentProvider.CELLULANT, EPaymentProvider.UNIPAY, EPaymentProvider.PAY_GATE).required().messages({
+      paymentProvider: Joi.string().valid(...Object.values(EPaymentProvider)).required().messages({
         'any.required': '"paymentProvider" is a required field'
       })
     }).required();
@@ -76,7 +76,7 @@ router.post(p.initiatePurchaseItemUsingBuyoutPrice, BidderOnly(), async (req: Re
       itemId: mongoIdValidation.required().messages({
         'any.required': '"itemId" is a required field'
       }),
-      paymentProvider: Joi.string().valid(EPaymentProvider.CELLULANT, EPaymentProvider.UNIPAY, EPaymentProvider.PAY_GATE).required().messages({
+      paymentProvider: Joi.string().valid(...Object.values(EPaymentProvider)).required().messages({
         'any.required': '"paymentProvider" is a required field'
       })
     }).required();
