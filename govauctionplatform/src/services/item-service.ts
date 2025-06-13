@@ -8,6 +8,7 @@ import { EGenderType, EItemSortType, EItemStatus, ESortOrderType, LIST_LIMIT_NUM
 import auctionService from "./auction-service";
 import { ClientSession, startSession } from 'mongoose';
 import bidService from "./bid-service";
+import categoryService from "./category-service";
 
 /**
  * Add an item.
@@ -197,6 +198,13 @@ async function getById(id: string | Schema.Types.ObjectId, projection?: any): Pr
         .populate({
           path: "formId"
         });
+      if (item?.metadata.categoryId) {
+        const categoryId = await categoryService.getById(item.metadata.categoryId, { name: 1 });
+        if (!categoryId) {
+          throw new NotFoundError('Category not found');
+        }
+        item.metadata.categoryId = categoryId.name;
+      }
       return item;
     } else {
       return null;
