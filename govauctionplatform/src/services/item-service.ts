@@ -198,13 +198,13 @@ async function getById(id: string | Schema.Types.ObjectId, projection?: any): Pr
         .populate({
           path: "formId"
         });
-      if (item?.metadata.categoryId) {
-        const categoryId = await categoryService.getById(item.metadata.categoryId, { name: 1 });
-        if (!categoryId) {
-          throw new NotFoundError('Category not found');
-        }
-        item.metadata.categoryId = categoryId.name;
-      }
+      // if (item?.metadata.categoryId) {
+      //   const categoryId = await categoryService.getById(item.metadata.categoryId, { name: 1 });
+      //   if (!categoryId) {
+      //     throw new NotFoundError('Category not found');
+      //   }
+      //   item.metadata.categoryId = categoryId.name;
+      // }
       return item;
     } else {
       return null;
