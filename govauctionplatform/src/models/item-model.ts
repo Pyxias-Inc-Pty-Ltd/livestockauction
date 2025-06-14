@@ -8,6 +8,7 @@ import { esService } from '../services/elasticsearch-service';
 export interface IItemMetadata {
   categoryId?: Schema.Types.ObjectId | string;
   isLivestock?: boolean;
+  isMultipleAnimals?: boolean;
   isAStud?: boolean;
   dob?: Date;
   studRegistrationNumber?: string;
@@ -15,8 +16,10 @@ export interface IItemMetadata {
   gender?: genderType;
   breed?: string;
   animalEID?: string;
+  animalEIDs?: Array<string>;
   serialNumber?: string;
   baitsDump?: string;
+  baitsDumps?: Array<string>;
   machineType?: string;
   make?: string;
   model?: string;
