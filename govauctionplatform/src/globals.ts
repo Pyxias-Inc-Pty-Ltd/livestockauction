@@ -12,6 +12,7 @@ export type sectorType = "GOVERNMENT" | "PRIVATE";
 export type productStatus = "DRAFT" | "ACTIVE" | "INACTIVE" | "OUT_OF_STOCK";
 export type productCondition = "NEW" | "USED" | "REFURBISHED";
 export type publishedStatus = "PUBLISHED" | "UNPUBLISHED" | "IN_REVIEW" | "REJECTED";
+export type languageType = `${ELanguageType}`;
 export type identityNumberVerificationStatus = "PENDING" | "VERIFIED" | "VERIFICATION_REJECTED";
 export type fauxObject = {[key: string]: any};
 
@@ -315,6 +316,11 @@ export const COUNTRY_PHONE_CODES = [{"country":"Afghanistan","code":"93","iso":"
 export interface GeoLocation {
  lat: number;
  lon: number;
+}
+
+export enum ELanguageType {
+  ENGLISH = "en",
+  SETSWANA = "tn"
 }
 
 export enum EAuctionStatus {
