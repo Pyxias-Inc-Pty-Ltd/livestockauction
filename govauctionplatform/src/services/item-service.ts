@@ -4,7 +4,7 @@ import { formatBAITSAnimalEID, getAnimalBreedById, getAnimalByEID, isBeforeStart
 import { ForbiddenError, InternalServerError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { Schema } from 'mongoose';
-import { EGenderType, EItemSortType, EItemStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { EGenderType, EItemSortType, EItemStatus, ESortOrderType, languageType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
 import auctionService from "./auction-service";
 import { ClientSession, startSession } from 'mongoose';
 import bidService from "./bid-service";
@@ -209,6 +209,42 @@ async function getById(id: string | Schema.Types.ObjectId, projection?: any): Pr
     } else {
       return null;
     }
+  } catch (error) {
+    // Rethrow error
+    throw error;
+  }
+}
+
+/**
+ * Get an item by titleSlug.
+ * 
+ * @param titleSlug
+ * @param lang
+ * @param projection
+ * @return
+ */
+async function getByTitleSlug(titleSlug: string, lang: languageType, projection?: any): Promise<IItem | null> {
+  try {
+    let item: IItem | null = null;
+    if (lang === 'en') {
+      item = await Item.findOne({ 'titleSlug.en': titleSlug }, projection)
+      .populate({
+        path: "formId"
+      });
+    } else {
+      item = await Item.findOne({ 'titleSlug.tn': titleSlug }, projection)
+      .populate({
+        path: "formId"
+      });
+    }
+    // if (item?.metadata.categoryId) {
+    //   const categoryId = await categoryService.getById(item.metadata.categoryId, { name: 1 });
+    //   if (!categoryId) {
+    //     throw new NotFoundError('Category not found');
+    //   }
+    //   item.metadata.categoryId = categoryId.name;
+    // }
+    return item;
   } catch (error) {
     // Rethrow error
     throw error;
@@ -464,6 +500,7 @@ export default {
   getEligibleBidders,
   deleteItem,
   trackItemStatus,
+  getByTitleSlug,
   getById,
   getItems,
   getItemsWon
