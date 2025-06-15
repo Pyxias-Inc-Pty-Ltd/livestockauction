@@ -3,7 +3,7 @@ import { generateAuctionNumber, isBeforeStartDate, isStartDateBeforeEndDate } fr
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession, Types } from 'mongoose';
-import { MAX_GEO_DISTANCE_AUCTION, EAuctionSortType, EAuctionStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { MAX_GEO_DISTANCE_AUCTION, EAuctionSortType, EAuctionStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, languageType } from "../globals";
 import { Auction, IAuction, IAuctionInput, IRequiredAttribute, IRequiredAttributeInput, RequiredAttribute } from "../models/auction-model";
 import categoryService from "./category-service";
 import forumService from "./forum-service";
@@ -138,6 +138,29 @@ async function getById(id: string | Schema.Types.ObjectId, projection?: any): Pr
     } else {
       return null;
     }
+  } catch (error) {
+    // Rethrow error
+    throw error;
+  }
+}
+
+/**
+ * Get an auction by titleSlug.
+ * 
+ * @param titleSlug
+ * @param lang
+ * @param projection
+ * @return
+ */
+async function getByTitleSlug(titleSlug: string, lang: languageType, projection?: any): Promise<IAuction | null> {
+  try {
+    let auction: IAuction | null = null;
+    if (lang === 'en') {
+      auction = await Auction.findOne({ 'titleSlug.en': titleSlug }, projection);
+    } else {
+      auction = await Auction.findOne({ 'titleSlug.tn': titleSlug }, projection);
+    }
+    return auction;
   } catch (error) {
     // Rethrow error
     throw error;
@@ -691,6 +714,7 @@ export default {
   createAuction,
   deleteAuction,
   getById,
+  getByTitleSlug,
   getAuctions,
   searchAuctions,
   getAuctionReport,
