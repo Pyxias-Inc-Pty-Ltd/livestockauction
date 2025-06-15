@@ -20,7 +20,9 @@ import {
   ElasticsearchSortOption,
   ESectorType,
   EParticipationType,
-  SearchFilters
+  SearchFilters,
+  ELanguageType,
+  languageType
 } from '../globals';
 import { verifyWebhookSignature } from '../shared/middleware';
 
@@ -40,7 +42,9 @@ export const p = {
   getCategories: '/getCategories',
   createBidder: '/createBidder',
   getItemById: '/getItemById',
+  getItemByTitleSlug: '/getItemByTitleSlug',
   getAuctionById: '/getAuctionById',
+  getAuctionByTitleSlug: '/getAuctionByTitleSlug',
   getCategoryById: '/getCategoryById',
   getBreedById: '/getBreedById',
   trackTransactionStatus: '/trackTransactionStatus',
@@ -161,6 +165,32 @@ router.get(p.getItemById, async (req: Request, res: Response) => {
 });
 
 /**
+ * Get an item by titleSlug.
+ */
+router.get(p.getItemByTitleSlug, async (req: Request, res: Response) => {
+  try {
+    // Query checks
+    const qSchema = Joi.object().keys({
+      titleSlug: Joi.string().required().messages({
+        'any.required': '"titleSlug" is a required field'
+      }),
+      lang: Joi.string().required().valid(...Object.values(ELanguageType)).messages({
+        'any.required': '"lang" is a required field'
+      })
+    }).required();
+
+    // Validate schema against query
+    Joi.assert(req.query, qSchema);
+
+    const { titleSlug, lang } = req.query;
+    const item = await itemService.getByTitleSlug(titleSlug as string, lang as languageType);
+    return res.status(OK).json({ item });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
  * Get an auction by id.
  */
 router.get(p.getAuctionById, async (req: Request, res: Response) => {
@@ -177,6 +207,32 @@ router.get(p.getAuctionById, async (req: Request, res: Response) => {
 
     const { id } = req.query;
     const auction = await auctionService.getById(id as string);
+    return res.status(OK).json({ auction });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Get an auction by titleSlug.
+ */
+router.get(p.getAuctionByTitleSlug, async (req: Request, res: Response) => {
+  try {
+    // Query checks
+    const qSchema = Joi.object().keys({
+      titleSlug: Joi.string().required().messages({
+        'any.required': '"titleSlug" is a required field'
+      }),
+      lang: Joi.string().required().valid(...Object.values(ELanguageType)).messages({
+        'any.required': '"lang" is a required field'
+      })
+    }).required();
+
+    // Validate schema against query
+    Joi.assert(req.query, qSchema);
+
+    const { titleSlug, lang } = req.query;
+    const auction = await auctionService.getByTitleSlug(titleSlug as string, lang as languageType);
     return res.status(OK).json({ auction });
   } catch (error) {
     throw error;
