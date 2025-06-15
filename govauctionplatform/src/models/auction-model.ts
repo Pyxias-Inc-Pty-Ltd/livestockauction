@@ -24,9 +24,12 @@ export interface IAuction extends Document {
     en: string;
     tn: string;
   };
+  titleSlug: {
+    en: string;
+    tn: string;
+  };
   isInviteOnly: boolean;
   inviteList: string[];
-  titleSlug: string;
   auctionNumber: string;
   auctionLocation: string;
   sectorType: sectorType;
@@ -138,7 +141,10 @@ const auctionSchema = new Schema<IAuction>({
     en: { type: String, required: true, trim: true },
     tn: { type: String, required: true, trim: true }
   },
-  titleSlug: {type: String, trim: true, sparse: true, unique: true},
+  titleSlug: {
+    en: { type: String, sparse: true, trim: true, unique: true },
+    tn: { type: String, sparse: true, trim: true, unique: true }
+  },
   auctionNumber: { type: String, trim: true, required: true },
   publishedStatus: { type: String, enum: [EPublishedStatus.IN_REVIEW, EPublishedStatus.PUBLISHED, EPublishedStatus.REJECTED, EPublishedStatus.UNPUBLISHED], default: EPublishedStatus.UNPUBLISHED, required: true },
   reasonForRejection: { type: String, required: function(): boolean {
@@ -219,7 +225,11 @@ auctionSchema.pre('save', async function () {
   const doc = this;
 
   if (doc.isNew || doc.isModified('title.en')) {
-    doc.titleSlug = generateSlug(doc.title.en);
+    doc.titleSlug.en = generateSlug(doc.title.en);
+  }
+
+  if (doc.isNew || doc.isModified('title.tn')) {
+    doc.titleSlug.tn = generateSlug(doc.title.tn);
   }
 
   // TODO: Remove?
@@ -380,7 +390,9 @@ auctionSchema.post('save', async function(doc) {
 
 auctionSchema.post('save', function(error: any, doc: any, next: any) {
   if (error.name === 'MongoServerError' && error.code === 11000) {
-    if (error.message.includes('titleSlug_1')) {
+    if (error.message.includes('titleSlug.en_1')) {
+      next(new ConflictError('An auction with this title already exists'));
+    } else if (error.message.includes('titleSlug.tn_1')) {
       next(new ConflictError('An auction with this title already exists'));
     } else {
       next(new ConflictError('Duplicate key error'));
