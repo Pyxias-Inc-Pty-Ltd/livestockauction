@@ -70,7 +70,10 @@ export interface IItem extends Document {
   eligibleBidders: Array<string>;
   winningBidder?: Schema.Types.ObjectId;
   currentBid?: number; // Used in non closed bid scenarios, to show other users the current bid amount to compete against
-  titleSlug: string;
+  titleSlug: {
+    en: string;
+    tn: string;
+  };
   buyoutPrice?: number;
   startTime: Date;
   endTime: Date;
@@ -124,7 +127,10 @@ const schema = new Schema<IItem>({
     en: { type: String, required: true, trim: true },
     tn: { type: String, required: true, trim: true }
   },
-  titleSlug: {type: String, trim: true},
+  titleSlug: {
+    en: { type: String, trim: true },
+    tn: { type: String, trim: true }
+  },
   description: {
     en: { type: String, required: true, trim: true },
     tn: { type: String, required: true, trim: true }
@@ -268,7 +274,8 @@ const schema = new Schema<IItem>({
   }
 });
 
-schema.index({ titleSlug: 1, _id: 1 }, { unique: true });
+schema.index({ 'titleSlug.en': 1, 'auctionId': 1 }, { unique: true, sparse: true });
+schema.index({ 'titleSlug.tn': 1, 'auctionId': 1 }, { unique: true, sparse: true });
 
 schema.set('toJSON', {
   virtuals: true,
@@ -299,7 +306,10 @@ schema.pre('save', async function () {
   }
 
   if (doc.isNew || doc.isModified('title.en')) {
-    doc.titleSlug = generateSlug(doc.title.en);
+    doc.titleSlug.en = generateSlug(doc.title.en);
+  }
+  if (doc.isNew || doc.isModified('title.tn')) {
+    doc.titleSlug.tn = generateSlug(doc.title.tn);
   }
 });
 
@@ -382,7 +392,9 @@ schema.post('remove', async function(doc: IItem) {
 
 schema.post('save', function(error: any, doc: any, next: any) {
   if (error.name === 'MongoServerError' && error.code === 11000) {
-    if (error.message.includes('titleSlug_1__id_1')) {
+    if (error.message.includes('titleSlug.en_1')) {
+      next(new ConflictError('An item with this title already exists'));
+    } else if (error.message.includes('titleSlug.tn_1')) {
       next(new ConflictError('An item with this title already exists'));
     } else {
       next(new ConflictError('Duplicate key error'));
@@ -391,5 +403,6 @@ schema.post('save', function(error: any, doc: any, next: any) {
     next();
   }
 });
+
 
 export const Item = model(EModels.ITEM, schema);
