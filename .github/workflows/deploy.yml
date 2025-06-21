@@ -65,7 +65,7 @@ jobs:
         for VM_IP in "${OFFLINE_VMS[@]}"; do
           echo "---"
           echo "Attempting to connect to $VM_IP..."
-          ssh -T -o StrictHostKeyChecking=no -o ConnectTimeout=20 -vvv administrator@$VM_IP 'echo "SSH connection successful"' || echo "Failed to connect to $VM_IP"
+          ssh -vvv administrator@$VM_IP 'echo "SSH connection successful"' || echo "Failed to connect to $VM_IP"
           echo "---"
         done
 
