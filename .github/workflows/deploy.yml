@@ -61,7 +61,7 @@ jobs:
     - name: Update offline VMs
       if: github.ref == 'refs/heads/main'
       run: |
-        OFFLINE_VMS=("10.36.149.178") # Update this with the correct IP(s)
+        OFFLINE_VMS=("10.36.149.178")
         for VM_IP in "${OFFLINE_VMS[@]}"; do
           echo "Updating VM: $VM_IP"
           ssh -T -o StrictHostKeyChecking=no -o ConnectTimeout=20 administrator@$VM_IP << EOF || echo "Failed to update $VM_IP"
@@ -86,10 +86,8 @@ EOF
     - name: Clean up old images
       run: |
         echo "Cleaning up old Docker images..."
-        # Remove images older than 24 hours
         docker image prune -f
         
-        # Remove untagged images
         docker images --filter "dangling=true" -q | xargs -r docker rmi
 
     - name: Deployment summary
