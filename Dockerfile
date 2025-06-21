@@ -4,13 +4,13 @@ FROM node:18
 WORKDIR /app
 
 # Copy only package.json and package-lock.json (if available)
-COPY package*.json ./
+COPY govauctionplatform/package*.json ./
 
 # Install the dependencies
 RUN npm install
 
 # Copy the rest of the application code
-COPY . .
+COPY govauctionplatform/ .
 
 # Expose port 8891
 EXPOSE 8891

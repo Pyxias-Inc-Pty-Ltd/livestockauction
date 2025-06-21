@@ -11,7 +11,7 @@ on:
 
 env:
   REGISTRY_URL: auctions.gov.bw
-  IMAGE_NAME: govauctionweb
+  IMAGE_NAME: livestockauctionnode
 
 jobs:
   build-and-deploy:
