@@ -2,30 +2,32 @@ import { Schema, model, Document } from 'mongoose';
 import { EModels } from '../globals';
 
 export interface IMessage extends Document {
-  itemId: Schema.Types.ObjectId;
-  userId: Schema.Types.ObjectId;
-  message: string;
+  adminId: Schema.Types.ObjectId;
+  bidderId: Schema.Types.ObjectId;
+  authorId: Schema.Types.ObjectId;
+  content: string;
   createdDate: any;
 }
 
 export interface IMessageInput {
-  itemId: Schema.Types.ObjectId;
-  userId: Schema.Types.ObjectId;
-  message: string;
+  adminId: Schema.Types.ObjectId;
+  bidderId: Schema.Types.ObjectId;
+  authorId: Schema.Types.ObjectId;
+  content: string;
 }
 
-const schema = new Schema<IMessage>({
-  userId: { type: Schema.Types.ObjectId, required: true, ref: EModels.USER },
-  itemId: { type: Schema.Types.ObjectId, required: true, ref: EModels.ITEM },
-  message: { type: String, required: true, trim: true }
+const messageSchema = new Schema<IMessage>({
+  adminId: { type: Schema.Types.ObjectId, required: true, ref: EModels.ADMIN },
+  bidderId: { type: Schema.Types.ObjectId, required: true, ref: EModels.BIDDER },
+  authorId: { type: Schema.Types.ObjectId, required: true, ref: EModels.USER },
+  content: { type: String, required: true, trim: true }
 }, {
   timestamps: {
-    createdAt: "createdDate",
-    updatedAt: "updatedDate"
+    createdAt: "createdDate"
   }
 });
 
-schema.set('toJSON', {
+messageSchema.set('toJSON', {
   virtuals: true,
   versionKey: false,
   transform: function (doc, ret) {
@@ -34,4 +36,4 @@ schema.set('toJSON', {
   }
 });
 
-export const Message = model(EModels.MESSAGE, schema);
+export const Message = model(EModels.MESSAGE, messageSchema);

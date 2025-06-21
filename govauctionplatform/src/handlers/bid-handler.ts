@@ -16,6 +16,16 @@ export default {
       throw error;
     }
   },
+  retractBid: async function (socket: any, data: string): Promise<IBid> {
+    try {
+      const bidder = socket.user as IBidder;
+      console.log("retractBid: ", data);
+
+      return await bidService.retractBid(bidder, data);
+    } catch (error) {
+      throw error;
+    }
+  },
   joinBiddingRoom: function (socket: any, data: string): undefined {
     try {
       socket.join(`${data}-bid`);

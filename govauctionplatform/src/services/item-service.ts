@@ -1,19 +1,20 @@
-import { IAdmin } from "../models/user-model";
-import { IItem, IItemInput, Item } from "../models/item-model";
-import { isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
+import { Bidder, IAdmin, IBidder } from "../models/user-model";
+import { IEligibleBidder, IItem, IItemInput, Item } from "../models/item-model";
+import { formatBAITSAnimalEID, getAnimalBreedById, getAnimalByEID, isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
 import { ForbiddenError, InternalServerError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { Schema } from 'mongoose';
-import { EItemSortType, EItemStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { EGenderType, EItemSortType, EItemStatus, ESortOrderType, languageType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
 import auctionService from "./auction-service";
 import { ClientSession, startSession } from 'mongoose';
 import bidService from "./bid-service";
+import categoryService from "./category-service";
 
 /**
  * Add an item.
  * 
  * @param input
- * @returns 
+ * @return 
  */
 async function createItem(currentUser: IAdmin, input: IItemInput): Promise<IItem> {
 
@@ -22,7 +23,22 @@ async function createItem(currentUser: IAdmin, input: IItemInput): Promise<IItem
   try {
     const newItem = new Item(input);
 
+    if (newItem.metadata.isLivestock) {
+      const formattedEID = formatBAITSAnimalEID(input.metadata.animalEID!);
+      const animalData = await getAnimalByEID(formattedEID);
+      const breedData = await getAnimalBreedById(animalData.AnimalBreedID);
+
+      newItem.metadata.dob = new Date(animalData.DateOfBirth);
+      newItem.metadata.gender = animalData.Gender === "Female" ? EGenderType.FEMALE : EGenderType.MALE;
+      newItem.metadata.breed = breedData.AnimalBreedDescription;
+      newItem.metadata.baitsDump = JSON.stringify(animalData);
+    }
+
     newItem.creatorId = currentUser.id;
+
+    if (newItem.isBidIncrementedManually) {
+      newItem.manualBidAmount = newItem.startingBid;
+    }
 
     // TOOD: Should we have a buffer window? e.g. You can not create an item 2 hours before auction starts?
 
@@ -44,11 +60,11 @@ async function createItem(currentUser: IAdmin, input: IItemInput): Promise<IItem
 
     // Check status
     if (auction.status !== 'NOT_BEGUN') {
-      throw new ForbiddenError('Can not delete a processed auction');
+      throw new ForbiddenError('Can not add an item to a processed auction');
     }
 
     newItem.status = 'NOT_BEGUN';
-    newItem.categoryId = auction.categoryId;
+    newItem.metadata.categoryId = auction.categoryId;
 
     auction.numberOfLots += 1;
 
@@ -83,7 +99,7 @@ async function createItem(currentUser: IAdmin, input: IItemInput): Promise<IItem
  * 
  * @param id 
  * @param projection
- * @returns 
+ * @return 
  */
 async function deleteItem(currentUser: IAdmin, itemId: string | Schema.Types.ObjectId): Promise<undefined> {
   try {
@@ -113,20 +129,122 @@ async function deleteItem(currentUser: IAdmin, itemId: string | Schema.Types.Obj
 }
 
 /**
+ * Sets the new bid amount manually.
+ * 
+ * @param amount
+ * @return 
+ */
+async function setNewBidAmountManually(input: { itemId: string | Schema.Types.ObjectId, amount: number }): Promise<IItem> {
+  try {
+
+    // Find item
+    const item = await getById(input.itemId);
+
+    // Check if exists
+    if (!item) {
+      throw new NotFoundError('Item not found');
+    }
+
+    if (!item.isBidIncrementedManually) {
+      throw new ForbiddenError('Bid amount can not be set manually on this item');
+    }
+
+    item.manualBidAmount = input.amount;
+
+    return await item.save();
+    
+  } catch (error) {
+    // Rethrow error
+    throw error;
+  }
+}
+
+/**
+ * Get manual bid amount.
+ * 
+ * @param amount
+ * @return 
+ */
+async function getManualBidAmount(itemId: string | Schema.Types.ObjectId): Promise<number> {
+  try {
+    
+    // Find item
+    const item = await getById(itemId, { manualBidAmount: 1 });
+
+    // Check if exists
+    if (!item) {
+      throw new NotFoundError('Item not found');
+    }
+
+    return item.manualBidAmount;
+
+  } catch (error) {
+    // Rethrow error
+    throw error;
+  }
+}
+
+/**
  * Get an item by id.
  * 
  * @param id 
  * @param projection
- * @returns 
+ * @return 
  */
 async function getById(id: string | Schema.Types.ObjectId, projection?: any): Promise<IItem | null> {
   try {
     if (isMongoId(id.toString())) {
-      const item = await Item.findById(id, projection);
+      const item = await Item.findById(id, projection)
+        .populate({
+          path: "formId"
+        });
+      // if (item?.metadata.categoryId) {
+      //   const categoryId = await categoryService.getById(item.metadata.categoryId, { name: 1 });
+      //   if (!categoryId) {
+      //     throw new NotFoundError('Category not found');
+      //   }
+      //   item.metadata.categoryId = categoryId.name;
+      // }
       return item;
     } else {
       return null;
     }
+  } catch (error) {
+    // Rethrow error
+    throw error;
+  }
+}
+
+/**
+ * Get an item by titleSlug.
+ * 
+ * @param titleSlug
+ * @param lang
+ * @param projection
+ * @return
+ */
+async function getByTitleSlug(titleSlug: string, lang: languageType, projection?: any): Promise<IItem | null> {
+  try {
+    let item: IItem | null = null;
+    if (lang === 'en') {
+      item = await Item.findOne({ 'titleSlug.en': titleSlug }, projection)
+      .populate({
+        path: "formId"
+      });
+    } else {
+      item = await Item.findOne({ 'titleSlug.tn': titleSlug }, projection)
+      .populate({
+        path: "formId"
+      });
+    }
+    // if (item?.metadata.categoryId) {
+    //   const categoryId = await categoryService.getById(item.metadata.categoryId, { name: 1 });
+    //   if (!categoryId) {
+    //     throw new NotFoundError('Category not found');
+    //   }
+    //   item.metadata.categoryId = categoryId.name;
+    // }
+    return item;
   } catch (error) {
     // Rethrow error
     throw error;
@@ -155,20 +273,27 @@ async function setWinningBidder(input: { itemId: string | Schema.Types.ObjectId,
       throw new ForbiddenError('Bidder must be in list of eligible bidders');
     }
 
-    const highestBid = await bidService.getWinningBid(input.itemId);
+    const conditions = new Map<string, any>();
 
-    // Check if exists
-    if (!highestBid) {
-      throw new NotFoundError('Bid not found');
+    conditions.set('itemId', item.id);
+
+    // Get bids
+    const bids = await bidService.getBids(item.id.toString(), conditions);
+
+    // Check length
+    if (bids.length < 1) {
+      throw new InternalServerError('Bids are empty');
     }
+
+    const highestBid = bids[0];
 
     // Check if bidder supplied is the highest bidder
-    console.log('highest bidder', input.bidderId.toString(), highestBid.userId.toString());
-    if (highestBid.userId.toString() !== input.bidderId.toString()) {
-      throw new ForbiddenError('Bidder supplied is not the highest bidder');
-    }
+    // if (highestBid.userId.toString() !== input.bidderId.toString()) {
+    //   throw new ForbiddenError('Bidder supplied is not the highest bidder');
+    // }
 
     item.winningBidder = input.bidderId as any;
+    item.status = EItemStatus.ENDED;
 
     return await item.save();
 
@@ -178,12 +303,39 @@ async function setWinningBidder(input: { itemId: string | Schema.Types.ObjectId,
   }
 }
 
+async function updateItemWithBid(item: IItem, newBidAmount: number, session: ClientSession): Promise<boolean> {
+  const result = await Item.updateOne(
+    { _id: item._id, version: item.version },
+    { $set: { currentBid: newBidAmount }, $inc: { version: 1 } },
+    { session }
+  );
+
+  return result.modifiedCount === 1;
+}
+
+/**
+ * Get items won by a bidder.
+ * 
+ * @param currentUser
+ * @param conditions
+ * @param projection
+ * @return 
+ */
+async function getItemsWon(currentUser: IBidder, conditions: Map<string, any>, projection?: any): Promise<IItem[]> {
+  // Ensure the winningBidder condition is set
+  conditions.set('status', EItemStatus.ENDED);
+  conditions.set('winningBidder', currentUser.id);
+  
+  // Call getItems with the modified conditions
+  return await getItems(conditions, projection);
+}
+
 /**
  * Get items.
  * 
  * @param conditions
  * @param projection
- * @returns 
+ * @return
  */
 async function getItems(conditions: Map<string, any>, projection?: any): Promise<IItem[]> {
   try {
@@ -208,6 +360,10 @@ async function getItems(conditions: Map<string, any>, projection?: any): Promise
 
     if (conditions.get('auctionId')) {
       q.where({auctionId: conditions.get('auctionId')});
+    }
+
+    if (conditions.get('winningBidder')) {
+      q.where({winningBidder: conditions.get('winningBidder')});
     }
 
     if (conditions.get('status')) {
@@ -256,11 +412,96 @@ async function getItems(conditions: Map<string, any>, projection?: any): Promise
   }
 }
 
+/**
+ * Get eligible bidders.
+ * 
+ * @param itemId
+ * @return
+ */
+async function getEligibleBidders(itemId: string | Schema.Types.ObjectId): Promise<IEligibleBidder[]> {
+  try {
+    const item = await getById(itemId);
+
+    // Check if exists
+    if (!item) {
+      throw new NotFoundError('Item not found');
+    }
+
+    const auction = await auctionService.getById(item.auctionId, { participantsWithBiddingNumbers: 1 });
+
+    // Check if exists
+    if (!auction) {
+      throw new NotFoundError('Auction not found');
+    }
+
+    const eligibleBidders = await Bidder.find({ _id: { $in: item.eligibleBidders } });
+
+    if (eligibleBidders.length > 0) {
+      // Filter bidders who have bidding numbers in the auction
+      return eligibleBidders
+        .filter((bidder: IBidder) => 
+          auction.participantsWithBiddingNumbers.some(
+            (participant: string) => participant.split(':')[0] === bidder._id.toString()
+          )
+        )
+        .map((bidder: IBidder) => {
+          const participantInfo = auction.participantsWithBiddingNumbers.find(
+            (p: string) => p.split(':')[0] === bidder._id.toString()
+          );
+
+          return {
+            firstName: bidder.firstName,
+            lastName: bidder.lastName,
+            name: bidder.name,
+            keeperId: bidder.keeperId || '',
+            bidderNumber: participantInfo ? participantInfo.split(':')[1] : null
+          };
+        });
+    } else {
+      return [];
+    }
+  } catch (error) {
+    // Rethrow error
+    throw error;
+  }
+}
+
+/**
+ * Updates the status of items based on their start and end times.
+ *
+ * - Marks items as `ENDED` if their `endTime` has passed.
+ * - Marks items as `ACTIVE` if their `startTime` has passed and they are still `NOT_BEGUN`.
+ *
+ * @throws {Error} If an error occurs during the database update operation.
+ * @return {Promise<void>} A promise that resolves once the updates are complete.
+ */
+async function trackItemStatus(): Promise<void> {
+  try {
+    await Promise.all([
+      Item.updateMany({ endTime: { $lte: new Date() } }, { $set: { status: EItemStatus.ENDED } }),
+      Item.updateMany(
+        { startTime: { $lte: new Date() }, status: EItemStatus.NOT_BEGUN },
+        { $set: { status: EItemStatus.ACTIVE } }
+      )
+    ]);
+    return;
+  } catch (error) {
+    throw error;
+  }
+}
+
 // Export default
 export default {
   createItem,
   setWinningBidder,
+  updateItemWithBid,
+  getManualBidAmount,
+  setNewBidAmountManually,
+  getEligibleBidders,
   deleteItem,
+  trackItemStatus,
+  getByTitleSlug,
   getById,
-  getItems
+  getItems,
+  getItemsWon
 } as const;

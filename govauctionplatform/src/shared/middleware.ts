@@ -4,26 +4,57 @@ import { ENVIRONMENT_PRODUCTION, EUserType, EAdminType, fauxObject, STATE_JWT_SE
 import { IAdmin, IUser } from '../models/user-model';
 import { verify } from 'jsonwebtoken';
 import userService from '../services/user-service';
+import { createHash, createVerify } from 'crypto';
+import { webhookSignaturePublicKey } from '../index';
+
+/**
+ * Middleware to allow access if the user is a SUPER_ADMIN, SELLER, or AUCTION_APPROVER.
+ * 
+ * @param errorMessage
+ * @return Middleware function
+ */
+export function AnyAdminMiddleware(errorMessage?: string) {
+  return function (req: Request, res: Response, next: NextFunction) {
+    try {
+      const user = (req as any).user as IUser;
+
+      // Check if the user has any of the required roles
+      if (
+        (user.userType === 'ADMIN' && (user as IAdmin).adminType === 'SUPER') ||
+        user.userType === 'SELLER' ||
+        user.userType === EUserType.AUCTION_APPROVER
+      ) {
+        next(); // Allow access
+      } else {
+        // Deny access if the user doesn't have any of the required roles
+        throw new UnauthorizedError(errorMessage || 'You do not have permission to access this resource.');
+      }
+    } catch (error) {
+      next(error);
+    }
+  };
+}
 
 /**
  * Check if current user is a super admin
- * 
- * @param isSkippable
+ *
  * @param errorMessage
- * @returns 
+ * @return Middleware function
  */
-export function SuperAdminOnly(isSkippable = false, errorMessage?: string) {
+export function SuperAdminOnly(errorMessage?: string) {
   return function (req: Request, res: Response, next: NextFunction) {
     try {
       if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) {
         if ((((req as any).user as IUser).userType !== 'ADMIN') && (((req as any).user as IAdmin).adminType !== 'SUPER')) {
-          if (!isSkippable) {
+          if (!res.locals.isSkippable) {
             if (errorMessage) {
               throw new UnauthorizedError(errorMessage);
             } else {
               throw new UnauthorizedError(`Admin must be of type ${EAdminType.SUPER}`);
             }
           }
+        } else {
+          res.locals.isSkippable = true;
         }
       }
       next();
@@ -36,20 +67,22 @@ export function SuperAdminOnly(isSkippable = false, errorMessage?: string) {
 /**
  * Check if current user is a bidder
  * 
- * @returns 
+ * @return Middleware function
  */
-export function BidderOnly(isSkippable = false, errorMessage?: string) {
+export function BidderOnly(errorMessage?: string) {
   return function (req: Request, res: Response, next: NextFunction) {
     try {
       if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) {
         if (((req as any).user as IUser).userType !== 'BIDDER') {
-          if (!isSkippable) {
+          if (!res.locals.isSkippable) {
             if (errorMessage) {
               throw new UnauthorizedError(errorMessage);
             } else {
               throw new UnauthorizedError(`User must be of type ${EUserType.BIDDER}`);
             }
           }
+        } else {
+          res.locals.isSkippable = true;
         }
       }
       next();
@@ -62,20 +95,51 @@ export function BidderOnly(isSkippable = false, errorMessage?: string) {
 /**
  * Check if current user is a seller
  * 
- * @returns 
+ * @return Middleware function
  */
-export function SellerOnly(isSkippable = false, errorMessage?: string) {
+export function SellerOnly(errorMessage?: string) {
   return function (req: Request, res: Response, next: NextFunction) {
     try {
       if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) {
         if (((req as any).user as IUser).userType !== 'SELLER') {
-          if (!isSkippable) {
+          if (!res.locals.isSkippable) {
             if (errorMessage) {
               throw new UnauthorizedError(errorMessage);
             } else {
               throw new UnauthorizedError(`User must be of type ${EUserType.SELLER}`);
             }
           }
+        } else {
+          res.locals.isSkippable = true;
+        }
+      }
+      next();
+    } catch (error) {
+      next(error);
+    }
+  }
+}
+
+/**
+ * Check if current user is an auction approver
+ * 
+ * @param errorMessage Optional custom error message
+ * @return Middleware function
+ */
+export function AuctionApproverOnly(errorMessage?: string) {
+  return function (req: Request, res: Response, next: NextFunction) {
+    try {
+      if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) {
+        if (((req as any).user as IUser).userType !== EUserType.AUCTION_APPROVER) {
+          if (!res.locals.isSkippable) {
+            if (errorMessage) {
+              throw new UnauthorizedError(errorMessage);
+            } else {
+              throw new UnauthorizedError(`User must be of type ${EUserType.AUCTION_APPROVER}`);
+            }
+          }
+        } else {
+          res.locals.isSkippable = true;
         }
       }
       next();
@@ -88,7 +152,7 @@ export function SellerOnly(isSkippable = false, errorMessage?: string) {
 /**
  * Verify jwt and return user.
  * 
- * @returns 
+ * @return
  */
 export async function deserializeUser(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -134,6 +198,40 @@ export async function deserializeUser(req: Request, res: Response, next: NextFun
       throw new UnauthorizedError('No token supplied');
     }
 
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Middleware to verify the request payload signature
+ * 
+ * @return
+ */
+export function verifyWebhookSignature(req: Request, res: Response, next: NextFunction) {
+  try {
+    // Extract the x-signature header
+    const signature = req.headers["x-signature"];
+    if (!signature || typeof signature !== "string") {
+      throw new UnauthorizedError("Missing or invalid x-signature header");
+    }
+
+    // Get the raw request body
+    const rawBody = JSON.stringify(req.body);
+
+    const payloadHash = createHash("sha256").update(rawBody).digest("hex");
+
+    const verifier = createVerify("SHA256");
+    verifier.update(payloadHash);
+    verifier.end();
+    
+    const isValid = verifier.verify(webhookSignaturePublicKey, Buffer.from(signature, "base64"));
+    
+    if (!isValid) {
+      throw new UnauthorizedError("Invalid signature");
+    }
+
+    next();
   } catch (error) {
     next(error);
   }

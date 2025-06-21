@@ -12,7 +12,7 @@ import openRouter from './routes/main/open';
 import logger from 'jet-logger';
 import passport from 'passport';
 import { CustomError } from './shared/errors';
-import { ENVIRONMENT_PRODUCTION } from './globals';
+import { ENVIRONMENT_PRODUCTION, SERVICE_URLS } from './globals';
 import { deserializeUser } from './shared/middleware';
 
 
@@ -26,9 +26,9 @@ const app = express();
 // Common middlewares
 
 // TODO: Configure PRE-FLIGHT CORS (Set allowed origins)
-app.use(cors({origin: ['http://localhost:5173', 'https://livestock-auction-demo.netlify.app','https://auctiondev.xyz'], credentials: true}));
+app.use(cors({origin: ['http://localhost:5173', SERVICE_URLS.clientURI], credentials: true}));
 app.use(express.json());
-app.use(express.urlencoded({extended: true}));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Show routes called in console during development
 if (process.env.NODE_ENV === 'development') {

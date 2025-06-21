@@ -1,27 +1,30 @@
-import { IAdmin, IBidder } from "../models/user-model";
 import { ForbiddenError } from "../shared/errors";
-import { EMessageSortType, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
-import { IMessage, IMessageInput, Message } from "../models/message-model";
+import { ClientSession } from "mongoose";
+import { ENotificationSortType, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { INotification, INotificationInput, Notification } from "../models/notification-model";
+import { IUser } from "../models/user-model";
 
 /**
- * Create a chat message.
+ * Add notification.
+ *
+ * @param input
+ * @param sess
+ * @returns
  */
-async function createMessage(currentUser: IBidder | IAdmin, input: IMessageInput): Promise<IMessage> {
+async function addOne(input: INotificationInput, sess: ClientSession): Promise<INotification> {
   try {
-    
-    input.authorId = currentUser.id;
-    const newMessage = new Message(input);
-    return await newMessage.save();
-
+    const notification = new Notification(input);
+    await notification.save({ session: sess });
+    return notification;
   } catch (error) {
     throw error;
   }
 }
 
 /**
- * Retrieves a list of messages based on provided conditions.
+ * Retrieves a list a users own notifications.
  */
-async function getMessages(conditions: Map<string, any>, projection?: any): Promise<IMessage[]> {
+async function getOwnNotifications(currentUser: IUser, conditions: Map<string, any>, projection?: any): Promise<INotification[]> {
   try {
 
     let _limit: number = LIST_LIMIT_NUMBER;
@@ -35,12 +38,10 @@ async function getMessages(conditions: Map<string, any>, projection?: any): Prom
     }
 
     // Query builder
-    const q = Message.find({}, projection);
+    const q = Notification.find({}, projection);
 
     // Filters
-    if (conditions.get('adminId') && conditions.get('bidderId')) {
-      q.and([{adminId: conditions.get('adminId')}, {bidderId: conditions.get('bidderId')}]);
-    }
+    q.where({ notifier: currentUser.id });
 
     // Range
     if (conditions.get('startDate') && conditions.get('endDate')) {
@@ -53,7 +54,7 @@ async function getMessages(conditions: Map<string, any>, projection?: any): Prom
 
     // Sort
     if (conditions.get('sortBy')) {
-      if (conditions.get('sortBy') === EMessageSortType.DATE) {
+      if (conditions.get('sortBy') === ENotificationSortType.DATE) {
         q.sort({'_id': conditions.get('sortOrder')});
       }
     }
@@ -81,6 +82,6 @@ async function getMessages(conditions: Map<string, any>, projection?: any): Prom
 
 // Export default
 export default {
-  createMessage,
-  getMessages
+  addOne,
+  getOwnNotifications
 } as const;

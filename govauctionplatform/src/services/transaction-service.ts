@@ -1,46 +1,63 @@
-import { IBidder } from "../models/user-model";
+import { IAdmin, IBidder } from "../models/user-model";
 import { ForbiddenError, InternalServerError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
-import { ClientSession, Schema, startSession, Types } from 'mongoose';
+import { ClientSession, Schema, startSession } from 'mongoose';
 import { ITransaction, Transaction, ITransactionInput } from "../models/transaction-model";
 import itemService from "./item-service";
-import { EPaymentStatus, ESortOrderType, ETransactionSortType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, paymentProvider, SERVICE_URLS, TINGG_BILLING_SERVICE_ID, transactionType, UNIPAY_APP_AUTH_TOKEN } from "../globals";
+import { EPaymentStatus, ESortOrderType, ETransactionSortType, ETransactionType, LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, MAX_LIST_LIMIT_NUMBER, PAYGATE_ENCRYPTION_KEY, PAYGATE_ID, paymentProvider, SERVICE_URLS, transactionType, UNIPAY_APP_AUTH_TOKEN, LOCAL_CURRENCY, DEFAULT_LANG, DEFAULT_PAYMENT_EMAIL, LOCALY_COUNTRY_ALPHA_3_CODE } from "../globals";
 import bidService from "./bid-service";
 import * as luxon from "luxon";
-import { formatPhoneTinggNumber, generateUniPayAppPaymentURL } from "../shared/functions";
+import { generateUniPayAppPaymentURL, generatePayGatePaymentURL, prefixWithZero, convertToPaygateFormat } from "../shared/functions";
 import tokenService from "./token-service";
+import auctionService from "./auction-service";
+import forumService from "./forum-service";
+import { BidderCounter } from "../models/bidder-counter";
 
 /**
  * Intiates a reservation payment transaction for an item.
  * 
  * @param currentUser
  * @param input
- * @returns 
+ * @return 
  */
 async function initiateItemReservation(currentUser: IBidder, input: { itemId: string, paymentProvider: paymentProvider }): Promise<ITransaction> {
   try {
 
-    const result = await Promise.all([itemService.getById(input.itemId, { reservePrice: 1, sellerId: 1 }), tokenService.getActiveToken()]);
+    const [item, token] = await Promise.all([itemService.getById(input.itemId, { reservePrice: 1, sellerId: 1, auctionId: 1 }), tokenService.getActiveToken()]);
 
     // Check if exists
-    if (!result[0]) {
+    if (!item) {
       throw new NotFoundError('Item not found');
     }
 
     // Check if exists
-    if (!result[1]) {
+    if (!token) {
       throw new NotFoundError('Token not found');
     }
 
-    const item = result[0];
-    const token = result[1];
+    // Find auction
+    const auction = await auctionService.getById(item.auctionId, { participationType: 1 });
+
+    // Check if exists
+    if (!auction) {
+      throw new NotFoundError('Auction not found');
+    }
+
+    // Check participation type
+    if (auction.participationType === 'CITIZEN_ONLY') {
+      // Check current bidder nationality
+      if (currentUser.nationality !== LOCAL_NATIONALITY) {
+        throw new ForbiddenError('This auction is reserved for citizens only');
+      }
+    }
 
     const now = luxon.DateTime.now().setZone(currentUser.tz);
     const endOfDate = now.endOf('day');
 
     // Create payment transaction
     const paymentInput: ITransactionInput = {
-      currency: 'BWP',
+      auctionId: item.auctionId,
+      currency: LOCAL_CURRENCY,
       transactionType: 'RESERVATION',
       itemId: item.id,
       amount: item.reservePrice,
@@ -54,54 +71,26 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
     // Save transaction
     const savedReservation = await newReservation.save();
 
-    if (input.paymentProvider === 'CELLULANT') {
+    if (input.paymentProvider === 'PAY_GATE') {
+      // Generate payment link using PayGate
+      const formattedString = convertToPaygateFormat(PAYGATE_ID, savedReservation.id.toString(), item.reservePrice, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/auction/${item.auctionId.toString()}/lot/${item._id.toString()}`, savedReservation.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
 
-      // Generate payment link from tingg
-      const queryResponse = await fetch(`${SERVICE_URLS.tinggCreatePaymentLinkURI}`, {
+      const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
         method: "POST",
-        body: JSON.stringify({
-          "billingServiceID": TINGG_BILLING_SERVICE_ID,
-          "accountNumber": savedReservation.id.toString(),
-          "accountName": "Pyxias",
-          "dueAmount": item.reservePrice,
-          "paidAmount": 0,
-          "deliveryChannel": "EMAIL",
-          "countryCode": "BWA",
-          "currencyCode": "BWP",
-          "msisdn": formatPhoneTinggNumber(currentUser.phone),
-          "dueDate": endOfDate.toMillis(),
-          "email": currentUser.email
-      }),
+        body: formattedString,
         headers: {
-          "Authorization": `Bearer ${token.value}`,
-          "apiKey": `${token.apiKey}`,
-          "Content-Type": "application/json"
+          "Content-Type": "application/x-www-form-urlencoded"
         }
       });
 
-      if (queryResponse.status !== 201) {
-        if (queryResponse.ok === false) {
-          if (queryResponse.status === 401) {
-            const { message, statusCode } = await queryResponse.json();
-            if (statusCode === 132) {
-              throw new InternalServerError(message);
-            } else {
-              throw new InternalServerError(message);
-            }
-          } else {
-            const { message } = await queryResponse.json();
-            throw new InternalServerError(message);
-          }
-        } else {
-          throw new InternalServerError('Failed to create payment link');
-        }
+      // Check if the response is okay
+      if (!queryResponse.ok) {
+        throw new InternalServerError(`Failed to create payment link: ${queryResponse.status}`);
       }
 
-      const { data } = await queryResponse.json();
+      const textReponse = await queryResponse.text();
 
-      (savedReservation.metadata as Map<string, string>).set('paymentLink', `https://billpay.tingg.africa/${data.billID}`);
-      savedReservation.externalReference = data.uniqueHash;
-
+      (savedReservation.metadata as Map<string, string>).set('paymentLink', generatePayGatePaymentURL(textReponse));
     } else {
 
       // Generate payment link from UniPay
@@ -149,25 +138,22 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
  * 
  * @param currentUser
  * @param input
- * @returns 
+ * @return 
  */
 async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: { itemId: string, paymentProvider: paymentProvider }): Promise<ITransaction> {
   try {
 
-    const result = await Promise.all([itemService.getById(input.itemId, { reservePrice: 1, sellerId: 1, winningBidder: 1 }), tokenService.getActiveToken()]);
+    const [item, token] = await Promise.all([itemService.getById(input.itemId, { reservePrice: 1, sellerId: 1, winningBidder: 1, auctionId: 1 }), tokenService.getActiveToken()]);
 
     // Check if exists
-    if (!result[0]) {
+    if (!item) {
       throw new NotFoundError('Item not found');
     }
 
     // Check if exists
-    if (!result[1]) {
+    if (!token) {
       throw new NotFoundError('Token not found');
     }
-
-    const item = result[0];
-    const token = result[1];
 
     // Check if the bidder is the winner
     if (!item.winningBidder) {
@@ -179,11 +165,16 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
     }
 
     // Find reservation by item
-    const reservation = await Transaction.findOne({ itemId: item._id }, { _id: 1 });
+    const [reservation, auction] = await Promise.all([Transaction.findOne({ itemId: item._id, buyerId: item.winningBidder }, { _id: 1 }), auctionService.getById(item.auctionId, { hasRegistrationFee: 1 })]);
 
     // Check if exists
     if (!reservation) {
       throw new NotFoundError('Transaction not found');
+    }
+
+    // Check if exists
+    if (!auction) {
+      throw new NotFoundError('Auction not found');
     }
 
     const winningBid = await bidService.getWinningBid(input.itemId);
@@ -195,11 +186,23 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
 
     const now = luxon.DateTime.now().setZone(currentUser.tz);
     const endOfDate = now.endOf('day');
-    const amount = winningBid.bidAmount - item.reservePrice;
+    let amount = 0;
+    // TODO: Check for "Registration Fee"
+    if (auction.hasRegistrationFee) {
+      const purchase = await Transaction.findOne({ buyerId: item.winningBidder, auctionId: auction._id, transactionType: "PURCHASE" }, { _id: 1 });
+      if (purchase) {
+        amount = winningBid.bidAmount;
+      } else {
+        amount = winningBid.bidAmount - item.reservePrice;
+      }
+    } else {
+      amount = winningBid.bidAmount - item.reservePrice;
+    }
 
     // Create payment transaction
     const paymentInput: ITransactionInput = {
-      currency: 'BWP',
+      auctionId: item.auctionId,
+      currency: LOCAL_CURRENCY,
       transactionType: 'PURCHASE',
       itemId: item.id,
       amount,
@@ -214,54 +217,26 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
     // Save payment transaction
     const savedPurchase = await newPurchase.save();
 
-    if (input.paymentProvider === 'CELLULANT') {
-
-      // Generate payment link from tingg
-      const queryResponse = await fetch(`${SERVICE_URLS.tinggCreatePaymentLinkURI}`, {
+    if (input.paymentProvider === 'PAY_GATE') {
+      // Generate payment link using PayGate
+      const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), savedPurchase.amount, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/auction/${item.auctionId.toString()}/lot/${item._id.toString()}`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
+      
+      const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
         method: "POST",
-        body: JSON.stringify({
-          "billingServiceID": TINGG_BILLING_SERVICE_ID,
-          "accountNumber": savedPurchase.id.toString(),
-          "accountName": "Pyxias",
-          "dueAmount": amount,
-          "paidAmount": 0,
-          "deliveryChannel": "EMAIL",
-          "countryCode": "BWA",
-          "currencyCode": "BWP",
-          "msisdn": formatPhoneTinggNumber(currentUser.phone),
-          "dueDate": endOfDate.toMillis(),
-          "email": currentUser.email
-      }),
+        body: formattedString,
         headers: {
-          "Authorization": `Bearer ${token.value}`,
-          "apiKey": `${token.apiKey}`,
-          "Content-Type": "application/json"
+          "Content-Type": "application/x-www-form-urlencoded"
         }
       });
 
-      if (queryResponse.status !== 201) {
-        if (queryResponse.ok === false) {
-          if (queryResponse.status === 401) {
-            const { message, statusCode } = await queryResponse.json();
-            if (statusCode === 132) {
-              throw new InternalServerError(message);
-            } else {
-              throw new InternalServerError(message);
-            }
-          } else {
-            const { message } = await queryResponse.json();
-            throw new InternalServerError(message);
-          }
-        } else {
-          throw new InternalServerError('Failed to create payment link');
-        }
+      // Check if the response is okay
+      if (!queryResponse.ok) {
+        throw new InternalServerError(`Failed to create payment link: ${queryResponse.status}`);
       }
 
-      const { data } = await queryResponse.json();
+      const textReponse = await queryResponse.text();
 
-      (savedPurchase.metadata as Map<string, string>).set('paymentLink', `https://billpay.tingg.africa/${data.billID}`);
-      savedPurchase.externalReference = data.uniqueHash;
-
+      (savedPurchase.metadata as Map<string, string>).set('paymentLink', generatePayGatePaymentURL(textReponse));
     } else {
 
       // Generate payment link from UniPay
@@ -308,27 +283,40 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
  * 
  * @param currentUser
  * @param input
- * @returns 
+ * @return 
  */
 async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input: { itemId: string, paymentProvider: paymentProvider }): Promise<ITransaction> {
   try {
 
     // TODO: Make sure bidder can not purchase once bidding has begun
 
-    const result = await Promise.all([itemService.getById(input.itemId, { buyoutPrice: 1, sellerId: 1 }), tokenService.getActiveToken()]);
+    const [item, token] = await Promise.all([itemService.getById(input.itemId, { buyoutPrice: 1, sellerId: 1, auctionId: 1 }), tokenService.getActiveToken()]);
 
     // Check if exists
-    if (!result[0]) {
+    if (!item) {
       throw new NotFoundError('Item not found');
     }
 
     // Check if exists
-    if (!result[1]) {
+    if (!token) {
       throw new NotFoundError('Token not found');
     }
 
-    const item = result[0];
-    const token = result[1];
+    // Find auction
+    const auction = await auctionService.getById(item.auctionId, { participationType: 1 });
+
+    // Check if exists
+    if (!auction) {
+      throw new NotFoundError('Auction not found');
+    }
+
+    // Check participation type
+    if (auction.participationType === 'CITIZEN_ONLY') {
+      // Check current bidder nationality
+      if (currentUser.nationality !== LOCAL_NATIONALITY) {
+        throw new ForbiddenError('This auction is reserved for citizens only');
+      }
+    }
 
     // Check if buyout price is set
     if (!item.buyoutPrice) {
@@ -340,7 +328,8 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
 
     // Create payment transaction
     const paymentInput: ITransactionInput = {
-      currency: 'BWP',
+      auctionId: item.auctionId,
+      currency: LOCAL_CURRENCY,
       transactionType: 'PURCHASE',
       itemId: item.id,
       amount: item.buyoutPrice,
@@ -354,43 +343,27 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
     // Save payment transaction
     const savedPurchase = await newPurchase.save();
 
-    if (input.paymentProvider === 'CELLULANT') {
-      // Generate payment link from tingg
-      const queryResponse = await fetch(`${SERVICE_URLS.tinggCreatePaymentLinkURI}`, {
+    if (input.paymentProvider === 'PAY_GATE') {
+
+      // Generate payment link using PayGate
+      const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), item.reservePrice, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/auction/${item.auctionId.toString()}/lot/${item._id.toString()}`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
+      
+      const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
         method: "POST",
-        body: JSON.stringify({
-          "billingServiceID": TINGG_BILLING_SERVICE_ID,
-          "accountNumber": savedPurchase.id.toString(),
-          "accountName": "Pyxias",
-          "dueAmount": item.buyoutPrice,
-          "paidAmount": 0,
-          "deliveryChannel": "EMAIL",
-          "countryCode": "BWA",
-          "currencyCode": "BWP",
-          "msisdn": formatPhoneTinggNumber(currentUser.phone),
-          "dueDate": endOfDate.toMillis(),
-          "email": currentUser.email
-      }),
+        body: formattedString,
         headers: {
-          "Authorization": `Bearer ${token.value}`,
-          "apiKey": `${token.apiKey}`,
-          "Content-Type": "application/json"
+          "Content-Type": "application/x-www-form-urlencoded"
         }
       });
 
-      if (queryResponse.status !== 201) {
-        if (queryResponse.ok === false) {
-          const bodyResponse = await queryResponse.json();
-          throw new InternalServerError(bodyResponse.error);
-        } else {
-          throw new InternalServerError('Failed to create payment link');
-        }
+      // Check if the response is okay
+      if (!queryResponse.ok) {
+        throw new InternalServerError(`Failed to create payment link: ${queryResponse.status}`);
       }
 
-      const { data } = await queryResponse.json();
+      const textReponse = await queryResponse.text();
 
-      (savedPurchase.metadata as Map<string, string>).set('paymentLink', `https://billpay.tingg.africa/${data.billID}`);
-      savedPurchase.externalReference = data.uniqueHash;
+      (savedPurchase.metadata as Map<string, string>).set('paymentLink', generatePayGatePaymentURL(textReponse));
     } else {
       // Generate payment link from UniPay
       const queryResponse = await fetch(`${SERVICE_URLS.unipayInitiatePaymentApplication}`, {
@@ -435,7 +408,7 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
  * 
  * @param currentUser 
  * @param input 
- * @returns 
+ * @return 
  */
 async function pollPaidTransaction (currentUser: IBidder, input: { itemId: string, transactionType: transactionType }): Promise<boolean> {
   try {
@@ -459,6 +432,7 @@ async function processSuccessfulPaymentFromTingg (input: { accountNumber: string
 
   try {
 
+    let needle = false;
     // Find transaction
     const transaction = await getById(input.accountNumber);
 
@@ -470,24 +444,80 @@ async function processSuccessfulPaymentFromTingg (input: { accountNumber: string
     // Start session and mongo acid transaction
     sess = await startSession();
 
+    // Find item
+    const item = await itemService.getById(transaction.itemId);
+
+    // Check if exists
+    if (!item) {
+      throw new NotFoundError('Item not found');
+    }
+
     // Check transaction type
     if (transaction.transactionType === 'RESERVATION') {
 
       transaction.status = 'COMPLETED';
       transaction.paymentMethod = input.paymentMethod;
 
-      // Find item
-      const item = await itemService.getById(transaction.itemId);
+      const forum = await forumService.getForumByAuctionId(item.auctionId);
 
       // Check if exists
-      if (!item) {
-        throw new NotFoundError('Item not found');
+      if (!forum) {
+        throw new NotFoundError('Forum not found');
       }
 
-      // Insert buyer into list of eligible bidders
-      item.eligibleBidders.push(transaction.buyerId.toString());
+      const stringBuyerId = transaction.buyerId.toString();
+
+      if (item.eligibleBidders.indexOf(stringBuyerId) === -1) {
+        item.eligibleBidders.push(stringBuyerId);
+      }
+
+      if (forum.participants.indexOf(stringBuyerId) === -1) {
+        forum.participants.push(stringBuyerId);
+      }
+
+      const auction = await auctionService.getById(item.auctionId);
+
+      // Check if exists
+      if (!auction) {
+        throw new NotFoundError('Auction not found');
+      }
+
+      // Check if auction has registration fee
+      if (auction.hasRegistrationFee) {
+        if (auction.globallyEligibleBidders.indexOf(stringBuyerId) === -1) {
+          auction.globallyEligibleBidders.push(stringBuyerId);
+        }
+      }
+
+      if (auction.participantsWithBiddingNumbers.length > 0) {
+        for (let index = 0; index < auction.participantsWithBiddingNumbers.length; index++) {
+          const element = auction.participantsWithBiddingNumbers[index];
+          if (element.includes(stringBuyerId)) {
+            needle = true;
+            break;
+          }
+        }
+      }
 
       await sess.withTransaction(async () => {
+
+        if (!needle) {
+          const bidderCounter = await BidderCounter.findOneAndUpdate({ auctionId: item.auctionId }, { $inc: { sequenceValue: 1 } }, { new: true, upsert: true, session: sess });
+
+          auction.participantsWithBiddingNumbers.push(`${stringBuyerId}:BIDDER${prefixWithZero(bidderCounter.sequenceValue)}`);
+
+          await auction.save({
+            session: sess
+          });
+        } else if (auction.hasRegistrationFee) {
+          await auction.save({
+            session: sess
+          });
+        }
+
+        await forum.save({
+          session: sess
+        });
 
         await item.save({
           session: sess
@@ -501,11 +531,17 @@ async function processSuccessfulPaymentFromTingg (input: { accountNumber: string
 
     } else if (transaction.transactionType === 'PURCHASE') {
 
+      item.isPurchased = true;
       transaction.status = 'COMPLETED';
       transaction.paymentMethod = input.paymentMethod;
 
       await sess.withTransaction(async () => {
-        await transaction.save();
+        await transaction.save({
+          session: sess
+        });
+        await item.save({
+          session: sess
+        });
       });
 
     }
@@ -533,6 +569,7 @@ async function processSuccessfulPaymentFromUniPay(input: { payload: string, tran
 
   try {
 
+    let needle = false;
     const payload = JSON.parse(input.payload);
     const paymentMethod = 'UniPay';
 
@@ -547,6 +584,14 @@ async function processSuccessfulPaymentFromUniPay(input: { payload: string, tran
     // Start session and mongo acid transaction
     sess = await startSession();
 
+    // Find item
+    const item = await itemService.getById(transaction.itemId);
+
+    // Check if exists
+    if (!item) {
+      throw new NotFoundError('Item not found');
+    }
+
     // Check transaction type
     if (transaction.transactionType === 'RESERVATION') {
 
@@ -554,18 +599,62 @@ async function processSuccessfulPaymentFromUniPay(input: { payload: string, tran
       transaction.paymentMethod = paymentMethod;
       transaction.externalReference = input.transaction.id;
 
-      // Find item
-      const item = await itemService.getById(transaction.itemId);
+      const forum = await forumService.getForumByAuctionId(item.auctionId);
 
       // Check if exists
-      if (!item) {
-        throw new NotFoundError('Item not found');
+      if (!forum) {
+        throw new NotFoundError('Forum not found');
       }
 
-      // Insert buyer into list of eligible bidders
-      item.eligibleBidders.push(transaction.buyerId.toString());
+      const stringBuyerId = transaction.buyerId.toString();
+
+      if (item.eligibleBidders.indexOf(stringBuyerId) === -1) {
+        item.eligibleBidders.push(stringBuyerId);
+      }
+
+      if (forum.participants.indexOf(stringBuyerId) === -1) {
+        forum.participants.push(stringBuyerId);
+      }
+
+      const auction = await auctionService.getById(item.auctionId);
+
+      // Check if exists
+      if (!auction) {
+        throw new NotFoundError('Auction not found');
+      }
+
+      // Check if auction has registration fee
+      if (auction.hasRegistrationFee) {
+        if (auction.globallyEligibleBidders.indexOf(stringBuyerId) === -1) {
+          auction.globallyEligibleBidders.push(stringBuyerId);
+        }
+      }
+
+      if (auction.participantsWithBiddingNumbers.length > 0) {
+        for (let index = 0; index < auction.participantsWithBiddingNumbers.length; index++) {
+          const element = auction.participantsWithBiddingNumbers[index];
+          if (element.includes(stringBuyerId)) {
+            needle = true;
+            break;
+          }
+        }
+      }
 
       await sess.withTransaction(async () => {
+
+        if (!needle) {
+          const bidderCounter = await BidderCounter.findOneAndUpdate({ auctionId: item.auctionId }, { $inc: { sequenceValue: 1 } }, { new: true, upsert: true, session: sess });
+
+          auction.participantsWithBiddingNumbers.push(`${stringBuyerId}:BIDDER${prefixWithZero(bidderCounter.sequenceValue)}`);
+
+          await auction.save({
+            session: sess
+          });
+        } else if (auction.hasRegistrationFee) {
+          await auction.save({
+            session: sess
+          });
+        }
 
         await item.save({
           session: sess
@@ -579,12 +668,18 @@ async function processSuccessfulPaymentFromUniPay(input: { payload: string, tran
 
     } else if (transaction.transactionType === 'PURCHASE') {
 
+      item.isPurchased = true;
       transaction.status = 'COMPLETED';
       transaction.paymentMethod = paymentMethod;
       transaction.externalReference = input.transaction.id;
 
       await sess.withTransaction(async () => {
-        await transaction.save();
+        await transaction.save({
+          session: sess
+        });
+        await item.save({
+          session: sess
+        });
       });
 
     }
@@ -602,11 +697,163 @@ async function processSuccessfulPaymentFromUniPay(input: { payload: string, tran
 }
 
 /**
+ * Process a successful payment from the PayGate platform
+ * 
+ * @param input 
+ */
+async function processSuccessfulPaymentFromPayGate(input: { 
+  REFERENCE: string, 
+  PAY_METHOD: string, 
+  PAY_METHOD_DETAIL: string, 
+  TRANSACTION_STATUS: string, 
+  RESULT_CODE: string 
+}) {
+
+  let sess: ClientSession | null = null;
+
+  try {
+    let needle = false;
+
+    // Find transaction
+    const transaction = await getById(input.REFERENCE);
+
+    // Check if exists
+    if (!transaction) {
+      throw new NotFoundError('Transaction not found');
+    }
+
+    (transaction.metadata as Map<string, string>).set('resultCode', input.RESULT_CODE);
+
+    // Handle transaction status codes
+    switch (input.TRANSACTION_STATUS) {
+      case "0": // Not Done
+        transaction.status = 'PENDING';
+        await transaction.save();
+        throw new InternalServerError('Error processing transaction.');
+
+      case "1": // Approved
+        // Continue processing, as this indicates success
+        transaction.status = 'COMPLETED';
+        transaction.paymentMethod = `${input.PAY_METHOD} - ${input.PAY_METHOD_DETAIL}`;
+        break;
+
+      case "2": // Declined
+        transaction.status = 'FAILED';
+        await transaction.save();
+        throw new InternalServerError('Error processing transaction.');
+
+      case "3": // Cancelled
+      case "4": // User Cancelled
+        transaction.status = 'CANCELLED';
+        await transaction.save();
+        throw new InternalServerError('Error processing transaction.');
+
+      case "5": // Received by PayGate
+        transaction.status = 'PENDING';
+        await transaction.save();
+        throw new InternalServerError('Error processing transaction.');
+
+      case "7": // Settlement Voided
+        transaction.status = 'FAILED';
+        await transaction.save();
+        throw new InternalServerError('Error processing transaction.');
+
+      default:
+        throw new InternalServerError('Unknown transaction status.');
+    }
+
+    // Start session and mongo ACID transaction
+    sess = await startSession();
+
+    // Find item
+    const item = await itemService.getById(transaction.itemId);
+
+    if (!item) {
+      throw new NotFoundError('Item not found');
+    }
+
+    // Handle transaction types
+    if (transaction.transactionType === 'RESERVATION') {
+      const forum = await forumService.getForumByAuctionId(item.auctionId);
+      if (!forum) {
+        throw new NotFoundError('Forum not found');
+      }
+
+      const stringBuyerId = transaction.buyerId.toString();
+
+      if (item.eligibleBidders.indexOf(stringBuyerId) === -1) {
+        item.eligibleBidders.push(stringBuyerId);
+      }
+
+      if (forum.participants.indexOf(stringBuyerId) === -1) {
+        forum.participants.push(stringBuyerId);
+      }
+
+      const auction = await auctionService.getById(item.auctionId);
+      if (!auction) {
+        throw new NotFoundError('Auction not found');
+      }
+
+      if (auction.hasRegistrationFee) {
+        if (auction.globallyEligibleBidders.indexOf(stringBuyerId) === -1) {
+          auction.globallyEligibleBidders.push(stringBuyerId);
+        }
+      }
+
+      if (auction.participantsWithBiddingNumbers.length > 0) {
+        for (let index = 0; index < auction.participantsWithBiddingNumbers.length; index++) {
+          const element = auction.participantsWithBiddingNumbers[index];
+          if (element.includes(stringBuyerId)) {
+            needle = true;
+            break;
+          }
+        }
+      }
+
+      if (!needle) {
+        const bidderCounter = await BidderCounter.findOneAndUpdate(
+          { auctionId: item.auctionId },
+          { $inc: { sequenceValue: 1 } },
+          { new: true, upsert: true, session: sess }
+        );
+
+        auction.participantsWithBiddingNumbers.push(
+          `${stringBuyerId}:BIDDER${prefixWithZero(bidderCounter.sequenceValue)}`
+        );
+        await auction.save({ session: sess });
+      } else if (auction.hasRegistrationFee) {
+        await auction.save({ session: sess });
+      }
+
+      await forum.save({ session: sess });
+      await item.save({ session: sess });
+      await transaction.save({ session: sess });
+
+    } else if (transaction.transactionType === 'PURCHASE') {
+      item.isPurchased = true;
+      await sess.withTransaction(async () => {
+        await transaction.save({ session: sess });
+        await item.save({ session: sess });
+      });
+    }
+
+    return transaction;
+
+  } catch (error) {
+    throw error;
+  } finally {
+    if (sess) {
+      await sess.endSession();
+    }
+  }
+}
+
+/**
  * Get a transaction by id.
  * 
  * @param id 
  * @param projection
- * @returns 
+ * @return 
  */
 async function getById(id: string | Schema.Types.ObjectId, projection?: any): Promise<ITransaction | null> {
   try {
@@ -627,14 +874,15 @@ async function getById(id: string | Schema.Types.ObjectId, projection?: any): Pr
  * 
  * @param conditions
  * @param projection
- * @returns 
+ * @return 
  */
-async function getTransactions(conditions: Map<string, any>, projection?: any): Promise<ITransaction[]> {
+async function getTransactions(currentUser: IAdmin | IBidder, conditions: Map<string, any>, projection?: any): Promise<ITransaction[]> {
   try {
 
     let _limit: number = LIST_LIMIT_NUMBER;
+    let _skip: number = 0;
 
-    //set custom limit
+    // Set custom limit
     if (conditions.get('limit') && conditions.get('limit') >= 1) {
       if (conditions.get('limit') > MAX_LIST_LIMIT_NUMBER) {
         throw new ForbiddenError(`limit must not exceed ${MAX_LIST_LIMIT_NUMBER}`);
@@ -642,33 +890,45 @@ async function getTransactions(conditions: Map<string, any>, projection?: any): 
       _limit = conditions.get('limit');
     }
 
+    // Set custom skip
+    if (conditions.get('skip') && conditions.get('skip') >= 0) {
+      _skip = conditions.get('skip');
+    }
+
     // Query builder
     const q = Transaction.find({}, projection);
 
     // Filters
     if (conditions.get('itemId')) {
-      q.where({itemId: conditions.get('itemId')});
+      q.where({ itemId: conditions.get('itemId') });
     }
 
-    if (conditions.get('buyerId')) {
-      q.where({buyerId: conditions.get('buyerId')});
+    if (currentUser.userType === "BIDDER") {
+      q.where({ buyerId: currentUser._id });
+    } else {
+      if (conditions.get('buyerId')) {
+        q.where({ buyerId: conditions.get('buyerId') });
+      }
     }
 
     if (conditions.get('sellerId')) {
-      q.where({sellerId: conditions.get('sellerId')});
+      q.where({ sellerId: conditions.get('sellerId') });
     }
 
     if (conditions.get('status')) {
-      q.where({status: conditions.get('status')});
+      q.where({ status: conditions.get('status') });
     }
 
     if (conditions.get('transactionType')) {
-      q.where({transactionType: conditions.get('transactionType')});
+      q.where({ transactionType: conditions.get('transactionType') });
     }
 
     // Range
     if (conditions.get('startDate') && conditions.get('endDate')) {
-      q.and([{ 'createdDate': { $gte: new Date(conditions.get('startDate')) } }, { 'createdDate': { $lte: new Date(conditions.get('endDate')) } }]);
+      q.and([
+        { 'createdDate': { $gte: new Date(conditions.get('startDate')) } },
+        { 'createdDate': { $lte: new Date(conditions.get('endDate')) } }
+      ]);
     } else if (conditions.get('startDate')) {
       q.where({ 'createdDate': { $gte: new Date(conditions.get('startDate')) } });
     } else if (conditions.get('endDate')) {
@@ -678,15 +938,17 @@ async function getTransactions(conditions: Map<string, any>, projection?: any): 
     // Sort
     if (conditions.get('sortBy')) {
       if (conditions.get('sortBy') === ETransactionSortType.DATE) {
-        q.sort({'_id': conditions.get('sortOrder')});
+        q.sort({ '_id': conditions.get('sortOrder') });
       }
       if (conditions.get('sortBy') === ETransactionSortType.AMOUNT) {
-        q.sort({'amount': conditions.get('sortOrder')});
+        q.sort({ 'amount': conditions.get('sortOrder') });
       }
     }
 
-    // Pagination
-    if (conditions.get('lastDocumentId')) {
+    // Pagination - Skip or Last Document ID
+    if (_skip > 0) {
+      q.skip(_skip);
+    } else if (conditions.get('lastDocumentId')) {
       // Check the sort order
       if (conditions.get('sortOrder') === ESortOrderType.ASC || conditions.get('sortOrder') === ESortOrderType.asc) {
         q.where("_id").gt(conditions.get('lastDocumentId'));
@@ -698,8 +960,43 @@ async function getTransactions(conditions: Map<string, any>, projection?: any): 
     // Limit
     q.limit(_limit);
 
+    // Populate buyerId, itemId, and sellerId
+    q.populate('buyerId')
+      .populate('itemId')
+      .populate('sellerId');
+
     return await q;
 
+  } catch (error) {
+    // Rethrow error
+    throw error;
+  }
+}
+
+/**
+ * Tracks transactions that have been pending for more than 15 minutes.
+ * 
+ * This function updates transactions of type `RESERVATION` or `PURCHASE`
+ * that were created at least 15 minutes ago and are still in the `PENDING` state,
+ * marking them as `FAILED`.
+ * 
+ * @throws {Error} If an error occurs during the database update operation.
+ * @return {Promise<void>} A promise that resolves once the update is complete.
+ */
+async function trackTransactionStatus (): Promise<void> {
+  try {
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+    await Transaction.updateMany(
+      {
+        createdDate: { $lte: fifteenMinutesAgo },
+        status: EPaymentStatus.PENDING,
+        $or: [
+          { transactionType: ETransactionType.RESERVATION },
+          { transactionType: ETransactionType.PURCHASE }
+        ],
+      },
+      { $set: { status: EPaymentStatus.FAILED } }
+    );
   } catch (error) {
     // Rethrow error
     throw error;
@@ -712,8 +1009,10 @@ export default {
   pollPaidTransaction,
   processSuccessfulPaymentFromTingg,
   processSuccessfulPaymentFromUniPay,
+  processSuccessfulPaymentFromPayGate,
   initiatePurchaseItemByWinningBidder,
   initiatePurchaseItemUsingBuyoutPrice,
   getTransactions,
+  trackTransactionStatus,
   getById
 } as const;

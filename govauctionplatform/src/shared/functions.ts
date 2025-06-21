@@ -3,16 +3,24 @@ import * as Joi from 'joi';
 import isEmail from 'validator/lib/isEmail';
 import isMongoId from 'validator/lib/isMongoId'
 import isISO8601 from 'validator/lib/isISO8601';
-import { parsePhoneNumber } from 'libphonenumber-js';
+import { parsePhoneNumber, parsePhoneNumberFromString } from 'libphonenumber-js';
+import { compare, genSalt, hash } from 'bcrypt';
 import * as luxon from 'luxon';
-import { COUNTRY_PHONE_CODES } from '../globals';
-import { randomBytes } from 'crypto';
+import { BAITS_API_TOKEN, COUNTRY_PHONE_CODES, SALT_ROUNDS, SERVICE_URLS } from '../globals';
+import { randomBytes, createHash } from 'crypto';
+import { InternalServerError, NotFoundError } from './errors';
+import * as axios from 'axios';
+import { createVerify } from 'crypto';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+const publicKey = readFileSync(join(__dirname, 'sec/public_key.pem'), 'utf8');
 
 export const isoAlpha2CountryValidation
   = Joi.string().regex(/^[A-Z]{2}$/);
 export const isoAlpha3CurrencyValidation
   = Joi.string().regex(/^[A-Z]{3}$/);
-  export const iataCodeValidation
+export const iataCodeValidation
   = Joi.string().regex(/^[A-Z]{3}$/);
 export const parcelDimensionValidation
   = Joi.number().greater(-1);
@@ -74,7 +82,7 @@ export const emailValidation
       return v;
     }
   });
-  export const userNameValidation
+export const userNameValidation
   = Joi.string().custom((v: string, helper) => {
     // Check length
     if (v.length < 5 || v.length > 15) {
@@ -87,7 +95,7 @@ export const emailValidation
     }
     return v;
   });
-  export const phoneValidation
+export const phoneValidation
   = Joi.string().custom((v: string, helper) => {
     try {
       const phoneNumberTokens = v.split(' ');
@@ -105,7 +113,7 @@ export const emailValidation
       if (!needle) {
         throw new Error('Invalid phone');
       } else {
-        const phoneNumber = parsePhoneNumber(v, needle.iso as any);   
+        const phoneNumber = parsePhoneNumber(v, needle.iso as any);
         // Check if phone number is valid
         if (!phoneNumber.isValid()) {
           throw new Error('Invalid phone');
@@ -122,7 +130,7 @@ export const emailValidation
 export const isoDateValidation
   = Joi.string().custom((v: string, helper) => {
     if (!isISO8601(v)) {
-      return helper.message({custom: 'Invalid ISO8601 date'});
+      return helper.message({ custom: 'Invalid ISO8601 date' });
     } else {
       return v;
     }
@@ -138,24 +146,24 @@ export const mongoIdValidation
 export const isStringNumberLike
   = Joi.string().custom((v: any, helper) => {
     if (isNaN(v)) {
-      return helper.message({custom: 'Value not number like'});
+      return helper.message({ custom: 'Value not number like' });
     } else {
       return v;
     }
   });
-  export const isArrayLike
+export const isArrayLike
   = Joi.string().custom((v: any, helper) => {
     if (typeof v === 'string') {
 
       if (v.charAt(0) !== '[') {
-        return helper.message({custom: 'Value not array like'});
+        return helper.message({ custom: 'Value not array like' });
       }
       if (v.charAt(v.length - 1) !== ']') {
-        return helper.message({custom: 'Value not array like'});
+        return helper.message({ custom: 'Value not array like' });
       }
       return v;
     } else {
-      return helper.message({custom: 'Value not a string array'});
+      return helper.message({ custom: 'Value not a string array' });
     }
   });
 export const isStringBooleanLike
@@ -165,7 +173,7 @@ export const isStringBooleanLike
     } else if (v.toLowerCase() === "false") {
       return v;
     } else {
-      return helper.message({custom: 'Value not boolean like'});
+      return helper.message({ custom: 'Value not boolean like' });
     }
   });
 
@@ -173,7 +181,7 @@ export const isStringBooleanLike
  * Sorts an array of numbers by asc order
  * @param list
  */
-export function sortNumberListAsc (list: Array<number>): Array<number> {
+export function sortNumberListAsc(list: Array<number>): Array<number> {
   return list.sort((a, b) => {
     if (a < b) {
       return -1;
@@ -201,7 +209,7 @@ export function formatTimeGoogleCalendar(date: Date): string {
  * @param v 
  * @returns true or false
  */
-function isLatitudeCoordinate (v: number): boolean {
+function isLatitudeCoordinate(v: number): boolean {
   return (v > -90) && (v < 90);
 }
 
@@ -211,7 +219,7 @@ function isLatitudeCoordinate (v: number): boolean {
  * @param v 
  * @returns true or false
  */
-function isLongitudeCoordinate (v: number): boolean {
+function isLongitudeCoordinate(v: number): boolean {
   return (v > -180) && (v < 180);
 }
 
@@ -219,7 +227,7 @@ function isLongitudeCoordinate (v: number): boolean {
  * Creates a slug from a string value e.g. Hello world becomes hello_world
  * @param { string } v The value to create a slug from
  */
-export function generateSlug (v: string): string {
+export function generateSlug(v: string): string {
   // Check if string
   if (Object.prototype.toString.call(v) !== "[object String]") {
     throw new Error("Argument supplied must be a string");
@@ -304,25 +312,520 @@ export function generateRandomPassword(length = 20): string {
 }
 
 /**
- * Format phone number as per tingg requirements
- * @param phoneNumber 
- * @returns 
- */
-export function formatPhoneTinggNumber(phoneNumber: string): string {
-  // Remove non-numeric characters
-  const cleanedNumber = phoneNumber.replace(/\D/g, "");
-  return cleanedNumber;
-}
-
-/**
  * Generates a UniPay payment URL
  * 
  * @param applicationId 
- * @returns 
  */
 export function generateUniPayAppPaymentURL(applicationId: string): string {
-  const payload = {"a":"d","b":`${applicationId}:null`};
+  const payload = { "a": "d", "b": `${applicationId}:null` };
   const jsonString = JSON.stringify(payload);
   const base64Encoded = Buffer.from(jsonString).toString('base64');
   return `https://unipay.africa/misc/${base64Encoded}`;
+}
+
+/**
+ * Converts the provided payment information to the Paygate format
+ * and generates a checksum for verification.
+ *
+ * @param PAYGATE_ID - The unique identifier for the Paygate merchant.
+ * @param REFERENCE - A unique transaction reference.
+ * @param AMOUNT - The amount to be processed in the transaction.
+ * @param CURRENCY - The currency code (e.g., "ZAR" for South African Rand).
+ * @param RETURN_URL - The URL to return to after processing.
+ * @param TRANSACTION_DATE - The transaction date formatted as "YYYY-MM-DD HH:MM:SS".
+ * @param LOCALE - The locale for the transaction (e.g., "en-za" for South Africa).
+ * @param COUNTRY - The ISO country code (e.g., "ZAF" for South Africa).
+ * @param EMAIL - The email address of the customer.
+ * @param NOTIFY_URL - The URL to receive notifications about the transaction.
+ * @param encryptionKey - The secret key used to generate the checksum.
+ *
+ * @returns A URL-encoded string in the Paygate format.
+ */
+export function convertToPaygateFormat(
+    PAYGATE_ID: string,
+    REFERENCE: string,
+    AMOUNT: number,
+    CURRENCY: string,
+    RETURN_URL: string,
+    TRANSACTION_DATE: Date,
+    LOCALE: string,
+    COUNTRY: string,
+    EMAIL: string,
+    NOTIFY_URL: string,
+    encryptionKey: string
+): string {
+    const amount = AMOUNT * 100;
+    const transactionDate = luxon.DateTime.fromJSDate(TRANSACTION_DATE).toFormat('yyyy-LL-dd HH:mm:ss');
+
+    // Create the checksum string by concatenating the input values
+    const checksumString = `${PAYGATE_ID}${REFERENCE}${amount}${CURRENCY}${RETURN_URL}${transactionDate}${LOCALE}${COUNTRY}${EMAIL}${NOTIFY_URL}${encryptionKey}`;
+
+    // Calculate the MD5 checksum for the concatenated string
+    const CHECKSUM = createHash('md5').update(checksumString).digest('hex');
+
+    // Construct the final query string using URLSearchParams
+    const formattedString = new URLSearchParams({
+        PAYGATE_ID,
+        REFERENCE,
+        AMOUNT: `${amount}`,
+        CURRENCY,
+        RETURN_URL,
+        TRANSACTION_DATE: transactionDate,
+        LOCALE,
+        COUNTRY,
+        EMAIL,
+        NOTIFY_URL,
+        CHECKSUM,
+    }).toString();
+
+    return formattedString;
+}
+
+/**
+ * Formats a PayGate query string into a URL suitable for processing.
+ *
+ * @param {string} baseString - The query string containing PayGate parameters.
+ *                              Example: "PAYGATE_ID=1050469100015&PAY_REQUEST_ID=D7F69068-6E36-E02F-CBD0-FD558C436AF4&REFERENCE=675df518df5dde426982a090&CHECKSUM=8753b7de0e6781762275b1fd6cd8ac0f"
+ * @return {string} A formatted URL including only the PAY_REQUEST_ID and CHECKSUM.
+ *                   Example: "https://secure.paygate.co.za/payweb3/process.trans?PAY_REQUEST_ID=D7F69068-6E36-E02F-CBD0-FD558C436AF4&CHECKSUM=8753b7de0e6781762275b1fd6cd8ac0f"
+ * @throws {Error} If either PAY_REQUEST_ID or CHECKSUM is missing in the input string.
+ */
+export function generatePayGatePaymentURL(baseString: string) {
+  // Define the base URL
+  const baseUrl = `${SERVICE_URLS.paygateBaseURI}/process.trans`;
+
+  // Convert the base string into an object
+  const params = new URLSearchParams(baseString);
+
+  // Extract required parameters
+  const payRequestId = params.get("PAY_REQUEST_ID");
+  const checksum = params.get("CHECKSUM");
+
+  // Construct the formatted URL
+  if (payRequestId && checksum) {
+    return `${baseUrl}?PAY_REQUEST_ID=${encodeURIComponent(payRequestId)}&CHECKSUM=${encodeURIComponent(checksum)}`;
+  } else {
+    throw new Error("Missing required parameters: PAY_REQUEST_ID or CHECKSUM");
+  }
+}
+
+/**
+ * Prefixes a single-digit number with a zero.
+ *
+ * @param {number} input The number to be prefixed.
+ * @returns {string} The number as a two-digit string, with a leading zero if necessary.
+ */
+export function prefixWithZero(input: number): string {
+  if (input < 10) {
+    return '0' + input;
+  }
+  return input.toString();
+}
+
+/**
+ * Fetches animal data from the BAITS API by Electronic Identification (EID) tag number.
+ *
+ * This function uses Axios to make an asynchronous GET request to the BAITS API.
+ *
+ * @param {string} tagNumber - The Electronic Identification (EID) tag number of the animal.
+ * @return {Promise<object>} A promise that resolves with the animal data object on success,
+ * or rejects with an error object. The structure of the animal data object depends on the BAITS API response.
+ * @throws {NotFoundError}  If the BAITS API returns a 404 status code (resource not found).
+ * @throws {Error}  If the BAITS API returns any other unexpected status code or there's an error during the request.
+ */
+export async function getAnimalByEID(tagNumber: string): Promise<any> {
+  try {
+    const response = await axios.default.get(
+      `${SERVICE_URLS.baits3URICore}/GetAnimalByEID`,
+      {
+        params: { TagNumber: tagNumber },
+        headers: {
+          'x-api-key': BAITS_API_TOKEN
+        }
+      }
+    );
+
+    if (response.status === 200) {
+      return response.data; // Return the animal data from BAITS API
+    } else if (response.status === 404) {
+      throw new NotFoundError('Resource not found on BAITS API');
+    } else {
+      throw new Error('Invalid response from BAITS API');
+    }
+  } catch (error) {
+    throw error; // Rethrow the error for the caller to handle
+  }
+}
+
+// // TODO: Remove this function once we have a new API endpoint for fetching animal data from HMS
+// export async function getAnimalByEIDFromHMS(tagNumber: string): Promise<any> {
+//   try {
+//     const response = await axios.default.get(
+//       `${SERVICE_URLS.animalhealthURI}/open/getAnimalByEID`,
+//       {
+//         params: { eid: tagNumber }
+//       }
+//     );
+
+//     if (response.status === 200) {
+//       return response.data; // Return the animal data from HMS API
+//     } else if (response.status === 404) {
+//       throw new NotFoundError('Resource not found on HMS API');
+//     } else {
+//       throw new Error('Invalid response from HMS API');
+//     }
+//   } catch (error) {
+//     throw error; // Rethrow the error for the caller to handle
+//   }
+// }
+
+/**
+ * Fetches animal data from the BAITS API by Modisar Animal ID.
+ *
+ * This function uses Axios to make an asynchronous GET request to the BAITS API.
+ *
+ * @param {string} modisarId - The Modisar Animal ID.
+ * @return {Promise<object>} A promise that resolves with the animal data object on success,
+ * or rejects with an error object. The structure of the animal data object depends on the BAITS API response.
+ * @throws {NotFoundError}  If the BAITS API returns a 404 status code (resource not found).
+ * @throws {Error}  If the BAITS API returns any other unexpected status code or there's an error during the request.
+ */
+export async function getAnimalByModisarId(modisarId: string): Promise<any> {
+  try {
+    const response = await axios.default.get(
+      `${SERVICE_URLS.baits3URICore}/Animals/${modisarId}/details`,
+      {
+        headers: {
+          'x-api-key': BAITS_API_TOKEN
+        }
+      }
+    );
+
+    if (response.status === 200) {
+      return response.data; // Return the animal data from BAITS API
+    } else if (response.status === 404) {
+      throw new NotFoundError('Resource not found on BAITS API');
+    } else {
+      throw new Error('Invalid response from BAITS API');
+    }
+  } catch (error) {
+    throw error; // Rethrow the error for the caller to handle
+  }
+}
+
+/**
+ * Transfers ownership of animals between keepers.
+ *
+ * This function asynchronously transfers ownership of animals between keepers
+ * by sending a POST request to the BAITS3 URICore API endpoint.
+ *
+ * @param {object} input - The transfer details.
+ * @param {string} input.OfficerID - The ID of the officer performing the transfer.
+ * @param {string} input.CurrentHolding - The current holding location of the animals.
+ * @param {string} input.CurrentKeeperID - The ID of the current keeper.
+ * @param {string} input.NewBrandID - The ID of the new brand for the animals.
+ * @param {string} input.NewBrandShapeID - The ID of the new brand shape for the animals.
+ * @param {string} input.NewKeeperID - The ID of the new keeper.
+ * @param {string} input.Remarks - Any remarks or notes about the transfer.
+ * @param {string[]} input.AnimalTagRegIDs - An array containing the IDs of the animal tags being transferred.
+ * @param {string} input.SupportingDocument - The ID of a supporting document for the transfer (optional).
+ * @return {Promise<any>} A promise that resolves with the response data from the BAITS API on success,
+ * or rejects with an error. The response data format depends on the BAITS API.
+ * @throws {NotFoundError} If the BAITS API returns a 404 Not Found status code.
+ * @throws {Error} If the BAITS API returns any other error status code or an invalid response.
+ */
+export async function transferAnimalBetweenKeepers(input: {
+  OfficerID: string,
+  CurrentHolding: string,
+  CurrentKeeperID: string,
+  NewBrandID: string,
+  NewBrandShapeID: string,
+  NewKeeperID: string,
+  Remarks: string,
+  AnimalTagRegIDs: Array<string>,
+  SupportingDocument: string
+}): Promise<any> {
+  try {
+    const response = await axios.default.post(
+      `${SERVICE_URLS.baits3URICore}/AnimalsOwnershipTransfer?OfficerID=${input.OfficerID}`,
+      {
+        data: {
+          CurrentHolding: input.CurrentHolding,
+          CurrentKeeperID: input.CurrentKeeperID,
+          NewBrandID: input.NewBrandID,
+          NewBrandShapeID: input.NewBrandShapeID,
+          NewKeeperID: input.NewKeeperID,
+          Remarks: input.Remarks,
+          AnimalTagRegIDs: input.AnimalTagRegIDs,
+          SupportingDocument: input.SupportingDocument
+        },
+        headers: {
+          'x-api-key': BAITS_API_TOKEN
+        }
+      }
+    );
+
+    if (response.status === 200) {
+      return response.data; // Return the response data from BAITS API
+    } else if (response.status === 404) {
+      throw new NotFoundError('Resource not found on BAITS API');
+    } else {
+      throw new Error('Invalid response from BAITS API');
+    }
+  } catch (error) {
+    throw error; // Rethrow the error for the caller to handle
+  }
+}
+
+/**
+ * Fetches animal breed data from the BAITS API by breed ID.
+ *
+ * This function uses Axios to make an asynchronous GET request to the BAITS API.
+ *
+ * @param {number} breedId - The unique identifier of the animal breed.
+ * @return {Promise<object>} A promise that resolves with the animal breed data object on success,
+ * or rejects with an error object. The structure of the breed data object depends on the BAITS API response.
+ * @throws {NotFoundError}  If the BAITS API returns a 404 status code (resource not found).
+ * @throws {Error}  If the BAITS API returns any other unexpected status code or there's an error during the request.
+ */
+export async function getAnimalBreedById(breedId: number): Promise<any> {
+  try {
+    const response = await axios.default.get(
+      `${SERVICE_URLS.baits3URICore}/AnimalBreeds/${breedId}`,
+      {
+        headers: {
+          'x-api-key': BAITS_API_TOKEN
+        }
+      }
+    );
+
+    if (response.status === 200) {
+      return response.data; // Return the breed data from BAITS API
+    } else if (response.status === 404) {
+      throw new NotFoundError('Resource not found on BAITS API');
+    } else {
+      throw new Error('Invalid response from BAITS API');
+    }
+  } catch (error) {
+    throw error; // Rethrow the error for the caller to handle
+  }
+}
+
+/**
+ * Fetches keeper information from the BAITS API by their registration number.
+ *
+ * This function uses Axios to make an asynchronous GET request to the BAITS API.
+ *
+ * @param {string} keeperRegNumber - The unique registration number of the keeper.
+ * @return {Promise<object>} A promise that resolves with the keeper data object on success,
+ * or rejects with an error object. The structure of the keeper data object depends on the BAITS API response.
+ * @throws {NotFoundError}  If the BAITS API returns a 404 status code (resource not found).
+ * @throws {Error}  If the BAITS API returns any other unexpected status code or there's an error during the request.
+ */
+export async function getKeeperByRegNumber(keeperRegNumber: string): Promise<any> {
+  try {
+    const response = await axios.default.get(
+      `${SERVICE_URLS.baits3URICore}/Keepers/KeeperID-byKeeperRegNumber`,
+      {
+        params: { KeeperRegNumber: keeperRegNumber },
+        headers: {
+          'x-api-key': BAITS_API_TOKEN
+        }
+      }
+    );
+
+    console.log("Logged Response: ", response.status);
+
+    if (response.status === 200) {
+      return response.data; // Return the breed data from BAITS API
+    } else if (response.status === 404) {
+      throw new NotFoundError('Resource not found on BAITS API');
+    } else {
+      throw new InternalServerError('Invalid response from BAITS API');
+    }
+  } catch (error) {
+    throw error; // Rethrow the error for the caller to handle
+  }
+}
+
+/**
+ * Fetches farmer information from the BAITS API by keeper ID.
+ *
+ * This function uses Axios to make an asynchronous GET request to the BAITS API.
+ *
+ * @param {number} keeperId - The unique identifier of the keeper.
+ * @return {Promise<object>} A promise that resolves with the farmer data object on success,
+ * or rejects with an error object. The structure of the farmer data object depends on the BAITS API response.
+ * @throws {NotFoundError}  If the BAITS API returns a 404 status code (resource not found).
+ * @throws {Error}  If the BAITS API returns any other unexpected status code or there's an error during the request.
+ */
+export async function getFarmerByKeeperId(keeperId: number): Promise<any> {
+  try {
+    const response = await axios.default.get(
+      `${SERVICE_URLS.baits3URICore}/Keepers/${keeperId}`,
+      {
+        headers: {
+          'x-api-key': BAITS_API_TOKEN
+        }
+      }
+    );
+
+    if (response.status === 200) {
+      return response.data; // Return the breed data from BAITS API
+    } else if (response.status === 404) {
+      throw new NotFoundError('Resource not found on BAITS API');
+    } else {
+      throw new InternalServerError('Invalid response from BAITS API');
+    }
+  } catch (error) {
+    throw error; // Rethrow the error for the caller to handle
+  }
+}
+
+/**
+ * Formats a BAITS Animal EID by inserting a space after the 4th character.
+ * 
+ * The input string should be exactly 16 characters long. If the length is
+ * not 16 characters, an error is thrown.
+ * 
+ * @param {string} eid - The BAITS Animal EID string to format.
+ * @return {string} - The formatted EID with a space between the 4th and 5th character.
+ * @throws {Error} - If the input EID is not 16 characters long.
+ * 
+ */
+export function formatBAITSAnimalEID(eid: string): string {
+  if (eid.length !== 16) {
+    throw new Error('Invalid EID format. EID must be 16 characters long.');
+  }
+
+  // Insert a space after the 4th character
+  return `${eid.slice(0, 4)} ${eid.slice(4)}`;
+}
+
+/**
+ * Generates a 6-digit OTP (One-Time Password) code using crypto.randomBytes.
+ *
+ * @return {string} A 6-digit OTP code.
+ */
+export function generateOTP(): string {
+  // Generate random bytes
+  const randomBuffer = randomBytes(4); // 4 bytes is enough to generate a large random number
+
+  // Convert to a numeric value (using base 10)
+  const otp = parseInt(randomBuffer.toString('hex'), 16) % 1000000; // Ensures it's a 6-digit number
+
+  // Ensure OTP is padded to 6 digits
+  return otp.toString().padStart(6, '0');
+}
+
+/**
+ * Hashes a given OTP using bcrypt.
+ *
+ * The function generates a salt using the specified number of salt rounds and then hashes the OTP.
+ * 
+ * @param {string} otp - The One-Time Password (OTP) to be hashed.
+ * @return {Promise<string>} - The hashed OTP.
+ */
+export async function hashOTP(otp: string): Promise<string> {
+  const salt = await genSalt(SALT_ROUNDS);
+  return await hash(otp, salt);
+}
+
+/**
+ * Verifies an OTP by comparing the input OTP to the stored hashed OTP.
+ * 
+ * This function uses bcrypt's `compare` method to securely compare the input OTP with the stored hash.
+ *
+ * @param {string} inputOTP - The OTP provided by the user to verify.
+ * @param {string} storedHash - The hashed OTP stored in the database.
+ * @return {Promise<boolean>} - Returns `true` if the OTP matches the hash, otherwise `false`.
+ */
+export async function verifyOTP(inputOTP: string, storedHash: string): Promise<boolean> {
+  return await compare(inputOTP, storedHash);
+}
+
+/**
+ * Generates a unique auction number based on the current date and auction count.
+ * 
+ * @param {number} currentCount - The current count of auctions.
+ * @returns {string} - The generated auction number.
+ */
+export function generateAuctionNumber(currentCount: number): string {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  const count = (currentCount + 1).toString().padStart(3, '0');
+
+  return `${year}${month}${day}${count}`;
+}
+
+/**
+ * Verifies a digital signature using a given hash and signature.
+ *
+ * @param {string} hash - The hashed data that was signed.
+ * @param {string} signature - The digital signature to verify.
+ * @returns {boolean} - Returns `true` if the signature is valid, otherwise `false`.
+ *
+ * @throw {Error} - Logs an error if verification fails.
+ */
+export function verifySignature(hash: string, signature: string): boolean {
+  try {
+    // Create a verifier
+    const verifier = createVerify('sha256');
+    verifier.update(hash);
+    verifier.end();
+
+    // Verify the signature
+    const isVerified = verifier.verify(publicKey, signature, 'base64');
+    return isVerified;
+  } catch (error) {
+    console.error('Error verifying signature:', error);
+    return false;
+  }
+}
+
+/**
+ * Formats a phone number to remove spaces and country code prefix.
+ * @param {string} phoneNumber - The phone number in international format.
+ * @return {string} - The formatted phone number or null if invalid.
+ */
+export function formatPhoneNumber(phoneNumber: string): string {
+  const parsedNumber = parsePhoneNumberFromString(phoneNumber);
+  
+  if (!parsedNumber || !parsedNumber.isValid()) {
+    throw new InternalServerError('Invalid phone');
+  }
+  
+  return `${parsedNumber.countryCallingCode}${parsedNumber.nationalNumber}`;
+}
+
+/**
+ * Normalizes and compares two names to determine if they match, 
+ * regardless of differences in case, whitespace, or hyphens.
+ * 
+ * The function trims the input names, converts them to lowercase, 
+ * and splits them into parts using spaces or hyphens. 
+ * It then checks if all parts of one name exist in the other and vice versa.
+ * 
+ * @param {string} name1 - The first name to compare.
+ * @param {string} name2 - The second name to compare.
+ * @return {boolean} - Returns `true` if the names match after normalization, otherwise `false`.
+ * 
+ * @example
+ * normalizeAndCompareNames("John-Doe", "john doe"); // true
+ * normalizeAndCompareNames("Alice Smith", "Alice-Smith"); // true
+ * normalizeAndCompareNames("Jane Doe", "Jane D"); // false
+ */
+export function normalizeAndCompareNames(name1: string, name2: string): boolean {
+  // Normalize names: trim, convert to lowercase, and split into parts
+  const normalize = (name: string) => name.trim().toLowerCase().split(/[\s-]+/);
+  const parts1 = normalize(name1);
+  const parts2 = normalize(name2);
+
+  // Check if all parts of name1 exist in name2 and vice versa
+  return (
+    parts1.every(part => parts2.includes(part)) &&
+    parts2.every(part => parts1.includes(part))
+  );
 }

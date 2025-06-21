@@ -2,16 +2,19 @@ import './pre-start'; // Must be the first import
 import logger from 'jet-logger';
 import app from './server';
 import { connect } from 'mongoose';
-import { formatMoney } from 'accounting';
 import { createServer } from 'http';
 import { Server, Socket } from "socket.io";
 import StatusCodes from 'http-status-codes';
-import { ESocketEventCode, SERVICE_URLS} from './globals';
+import { ESocketEventCode, SERVICE_URLS, FIREBASE_SERVICE_ACCOUNT_CREDENTIALS } from './globals';
 import bidHandler from './handlers/bid-handler';
 import transactionHandler from './handlers/transaction-handler';
 import messageHandler from './handlers/message-handler';
+import itemHandler from './handlers/item-handler';
+import * as admin from 'firebase-admin';
 import authHandler from './handlers/auth-handler';
 import { CustomError } from './shared/errors';
+import { join } from 'path';
+import { readFileSync } from 'fs-extra';
 
 const { OK, INTERNAL_SERVER_ERROR, CREATED } = StatusCodes;
 
@@ -19,15 +22,23 @@ const { OK, INTERNAL_SERVER_ERROR, CREATED } = StatusCodes;
 const serverStartMsg = 'Express server started on port: ',
   port = (process.env.PORT || 3000);
 
+// Init firebase
+export const firebase = admin.initializeApp({
+  credential: admin.credential.cert(JSON.parse(FIREBASE_SERVICE_ACCOUNT_CREDENTIALS))
+});
+
 const httpServer = createServer(app);
 
 // Init socket.io
 export const io = new Server(httpServer, { 
   cors: {
     credentials: true,
-    origin: ['http://localhost:5173', 'https://livestock-auction-demo.netlify.app', 'https://auctiondev.xyz']
+    origin: ['http://localhost:5173', SERVICE_URLS.clientURI]
   }
 });
+
+// Load the public key once at startup
+export const webhookSignaturePublicKey = readFileSync(join(__dirname, "shared/sec/public_key.pem"), "utf8");
 
 // Check for auth on handshake
 io.use(async (socket: any, next: any) => {
@@ -79,11 +90,52 @@ const onConnection = (socket: Socket) => {
       }
     }
   });
+  socket.on(ESocketEventCode.CREATE_NEW_MANUAL_BID_AMOUNT, async function (data, cb) {
+    try {
+      console.log("ESocketEventCode.CREATE_NEW_MANUAL_BID_AMOUNT: ", data);
+      const item = await itemHandler.setNewBidAmountManually(socket, data);
+      socket.to(`${item._id.toString()}-bid`).emit(ESocketEventCode.BROADCAST_NEW_MANUAL_BID_AMOUNT, item.manualBidAmount);
+      cb({ status: CREATED });
+    } catch (error) {
+      if (error instanceof CustomError) {
+        cb({ status: error.HttpStatus, msg: error.message });
+      } else {
+        cb({ status: INTERNAL_SERVER_ERROR });
+      }
+    }
+  });
+  socket.on(ESocketEventCode.REFRESH_AFTER_WINNING, async function (data, cb) {
+    try {
+      console.log("ESocketEventCode.REFRESH_AFTER_WINNING: ", data);
+      socket.to(`${data.itemId}-bid`).emit(ESocketEventCode.BROADCAST_REFRESH_AFTER_WINNING, data.itemId);
+      cb({ status: OK });
+    } catch (error) {
+      if (error instanceof CustomError) {
+        cb({ status: error.HttpStatus, msg: error.message });
+      } else {
+        cb({ status: INTERNAL_SERVER_ERROR });
+      }
+    }
+  });
   socket.on(ESocketEventCode.CREATE_CHAT_MESSAGE, async function (data, cb) {
     try {
       console.log("ESocketEventCode.CREATE_CHAT_MESSAGE: ", data);
       const message = await messageHandler.createChatMessage(socket, data);
-      socket.to(`${message.itemId.toString()}-chat`).emit(ESocketEventCode.BROADCAST_CHAT_MESSAGE, message.message);
+      socket.to(`${message.adminId}-${message.bidderId}-chat`).emit(ESocketEventCode.BROADCAST_CHAT_MESSAGE, JSON.stringify(message));
+      cb({ status: CREATED });
+    } catch (error) {
+      if (error instanceof CustomError) {
+        cb({ status: error.HttpStatus, msg: error.message });
+      } else {
+        cb({ status: INTERNAL_SERVER_ERROR });
+      }
+    }
+  });
+  socket.on(ESocketEventCode.CREATE_FORUM_COMMENT, async function (data, cb) {
+    try {
+      console.log("ESocketEventCode.CREATE_FORUM_COMMENT: ", data);
+      const comment = await messageHandler.createForumComment(socket, data);
+      socket.to(`${comment.forumId}-forum`).emit(ESocketEventCode.BROADCAST_FORUM_COMMENT, JSON.stringify(comment));
       cb({ status: CREATED });
     } catch (error) {
       if (error instanceof CustomError) {
@@ -100,6 +152,21 @@ const onConnection = (socket: Socket) => {
       console.log("ESocketEventCode.CREATED_BID: ", `${bid.itemId.toString()}-bid`, bid);
       socket.to(`${bid.itemId.toString()}-bid`).emit(ESocketEventCode.UPDATE_BID_AMOUNT, bid.bidAmount);
       cb({ status: CREATED });
+    } catch (error) {
+      if (error instanceof CustomError) {
+        cb({ status: error.HttpStatus, msg: error.message });
+      } else {
+        cb({ status: INTERNAL_SERVER_ERROR });
+      }
+    }
+  });
+  socket.on(ESocketEventCode.RETRACT_BID, async function (data: any, cb: any) {
+    try {
+      const bid = await bidHandler.retractBid(socket, data);
+      console.log("ESocketEventCode.RETRACT_BID: ", data);
+      console.log("ESocketEventCode.RETRACTED_BID: ", `${bid.itemId.toString()}-bid`, bid);
+      socket.to(`${bid.itemId.toString()}-bid`).emit(ESocketEventCode.RETRACTED_BID, bid.id.toString());
+      cb({ status: OK });
     } catch (error) {
       if (error instanceof CustomError) {
         cb({ status: error.HttpStatus, msg: error.message });
@@ -127,9 +194,10 @@ httpServer.listen(port, async () => {
     logger.info(serverStartMsg + port);
 
     // Start connection to mongodb
+    logger.info(SERVICE_URLS.mongoDBURI);
     await connect(SERVICE_URLS.mongoDBURI);
     logger.info('Connection to mongodb established');
-    
+
   } catch (error) {
     logger.err(error);
   }

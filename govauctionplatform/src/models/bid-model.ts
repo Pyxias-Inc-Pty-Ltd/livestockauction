@@ -4,8 +4,11 @@ import { EModels } from '../globals';
 export interface IBid extends Document {
   itemId: Schema.Types.ObjectId;
   userId: Schema.Types.ObjectId;
+  isRetracted: boolean;
   bidAmount: number;
   bidTime: Date;
+  bidNumber: string;
+  _bidNumber?: string; // For internal use
   createdDate: any;
   updatedDate: any;
 }
@@ -17,23 +20,27 @@ export interface IBidInput {
   bidTime: Date;
 }
 
-// export interface IUpdateBidderInput {
-//   currentBid?: number;
-//   buyoutPrice?: number;
-//   status?: itemStatus;
-// }
-
 const schema = new Schema<IBid>({
   userId: { type: Schema.Types.ObjectId, required: true, ref: EModels.USER },
   itemId: { type: Schema.Types.ObjectId, required: true, ref: EModels.ITEM },
+  isRetracted: { type: Boolean, default: false, required: true },
   bidAmount: { type: Number, required: true },
-  bidTime: { type: Date, required: true }
+  bidTime: { type: Date, required: true },
+  _bidNumber: { type: String } // Internal storage for the virtual, not exposed directly
 }, {
   timestamps: {
     createdAt: "createdDate",
     updatedAt: "updatedDate"
   }
 });
+
+schema.virtual('bidNumber')
+  .get(function() {
+    return this._bidNumber;
+  })
+  .set(function(value: string) {
+    this._bidNumber = value;
+  });
 
 schema.set('toJSON', {
   virtuals: true,

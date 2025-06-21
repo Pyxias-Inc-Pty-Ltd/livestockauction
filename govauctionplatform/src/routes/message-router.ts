@@ -2,23 +2,53 @@ import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isStringNumberLike, mongoIdValidation } from '../shared/functions';
-import { BidderOnly } from '../shared/middleware';
-import bidService from '../services/bid-service';
-import { EBidSortType, ESortOrderType } from '../globals';
+import { BidderOnly, SuperAdminOnly } from '../shared/middleware';
+import { IAdmin, IBidder } from '../models/user-model';
+import messageService from '../services/message-service';
+import {EMessageSortType, ESortOrderType} from '../globals';
 
 // Constants
 const router = Router();
-const { OK } = StatusCodes;
+const { OK, CREATED } = StatusCodes;
 
 // Paths
 export const p = {
-  getMessages: '/getMessages',
+  createMessage: '/createMessage',
+  getMessages: '/getMessages'
 } as const;
 
 /**
- * Get bids.
+ * Create a message
  */
-router.get(p.getMessages, BidderOnly(), async (req: Request, res: Response) => {
+router.post(p.createMessage, BidderOnly(), SuperAdminOnly(), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      adminId: mongoIdValidation.required().messages({
+        'any.required': '"adminId" is required'
+      }),
+      bidderId: mongoIdValidation.required().messages({
+        'any.required': '"bidderId" is required'
+      }),
+      content: Joi.string().required().messages({
+        'any.required': '"content" is required'
+      })
+    })
+    .required();
+
+    // Validate schema against input
+    Joi.assert(req.body, schema);
+
+    const message = await messageService.createMessage(req.user as IBidder | IAdmin, req.body as any);
+    return res.status(CREATED).json({message});
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Get messages.
+ */
+router.get(p.getMessages, BidderOnly(), SuperAdminOnly(), async (req: Request, res: Response) => {
   try {
 
     const conditions = new Map<string, any>();
@@ -27,11 +57,14 @@ router.get(p.getMessages, BidderOnly(), async (req: Request, res: Response) => {
       sortOrder: Joi.string().required().valid(ESortOrderType.ASC, ESortOrderType.DESC, ESortOrderType.asc, ESortOrderType.desc).messages({
         'any.required': '"sortOrder" is a required field'
       }),
-      sortBy: Joi.string().required().valid(EBidSortType.DATE, EBidSortType.AMOUNT).messages({
+      sortBy: Joi.string().required().valid(EMessageSortType.DATE).messages({
         'any.required': '"sortBy" is a required field'
       }),
-      itemId: mongoIdValidation.required().messages({
-        'any.required': '"itemId" is a required field'
+      adminId: mongoIdValidation.required().messages({
+        'any.required': '"adminId" is a required field'
+      }),
+      bidderId: mongoIdValidation.required().messages({
+        'any.required': '"bidderId" is a required field'
       }),
       limit: isStringNumberLike.required().messages({
         'any.required': '"limit" is a required field'
@@ -42,19 +75,20 @@ router.get(p.getMessages, BidderOnly(), async (req: Request, res: Response) => {
     // Validate schema against query
     Joi.assert(req.query, qSchema);
 
-    const { limit, sortBy, sortOrder, lastDocumentId, itemId } = req.query;
+    const { limit, sortBy, sortOrder, lastDocumentId, adminId, bidderId } = req.query;
   
     conditions.set('limit', parseInt(limit as string));
     conditions.set('sortBy', sortBy);
     conditions.set('sortOrder', sortOrder);
-    conditions.set('itemId', itemId);
+    conditions.set('adminId', adminId);
+    conditions.set('bidderId', bidderId);
 
     if (lastDocumentId) {
       conditions.set('lastDocumentId', lastDocumentId);
     }
 
-    const bids = await bidService.getBids(conditions);
-    return res.status(OK).json({bids});
+    const messages = await messageService.getMessages(conditions);
+    return res.status(OK).json({messages});
   } catch (error) {
     throw error;
   }

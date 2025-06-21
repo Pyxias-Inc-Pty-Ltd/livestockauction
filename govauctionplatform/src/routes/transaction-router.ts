@@ -1,6 +1,6 @@
-import { IBidder } from '../models/user-model';
+import { IAdmin, IBidder } from '../models/user-model';
 import transactionService from '../services/transaction-service';
-import { BidderOnly } from '../shared/middleware';
+import { BidderOnly, SuperAdminOnly } from '../shared/middleware';
 import * as Joi from 'joi';
 import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
@@ -28,7 +28,7 @@ router.post(p.initiateItemReservation, BidderOnly(), async (req: Request, res: R
       itemId: mongoIdValidation.required().messages({
         'any.required': '"itemId" is a required field'
       }),
-      paymentProvider: Joi.string().valid(EPaymentProvider.CELLULANT, EPaymentProvider.UNIPAY).required().messages({
+      paymentProvider: Joi.string().valid(...Object.values(EPaymentProvider)).required().messages({
         'any.required': '"paymentProvider" is a required field'
       })
     }).required();
@@ -52,7 +52,7 @@ router.post(p.initiatePurchaseItemByWinningBidder, BidderOnly(), async (req: Req
       itemId: mongoIdValidation.required().messages({
         'any.required': '"itemId" is a required field'
       }),
-      paymentProvider: Joi.string().valid(EPaymentProvider.CELLULANT, EPaymentProvider.UNIPAY).required().messages({
+      paymentProvider: Joi.string().valid(...Object.values(EPaymentProvider)).required().messages({
         'any.required': '"paymentProvider" is a required field'
       })
     }).required();
@@ -76,7 +76,7 @@ router.post(p.initiatePurchaseItemUsingBuyoutPrice, BidderOnly(), async (req: Re
       itemId: mongoIdValidation.required().messages({
         'any.required': '"itemId" is a required field'
       }),
-      paymentProvider: Joi.string().valid(EPaymentProvider.CELLULANT, EPaymentProvider.UNIPAY).required().messages({
+      paymentProvider: Joi.string().valid(...Object.values(EPaymentProvider)).required().messages({
         'any.required': '"paymentProvider" is a required field'
       })
     }).required();
@@ -94,7 +94,7 @@ router.post(p.initiatePurchaseItemUsingBuyoutPrice, BidderOnly(), async (req: Re
 /**
  * Get transactions.
  */
-router.get(p.getTransactions, BidderOnly(), async (req: Request, res: Response) => {
+router.get(p.getTransactions, SuperAdminOnly(), BidderOnly(), async (req: Request, res: Response) => {
   try {
 
     const conditions = new Map<string, any>();
@@ -110,7 +110,7 @@ router.get(p.getTransactions, BidderOnly(), async (req: Request, res: Response) 
       buyerId: mongoIdValidation,
       sellerId: mongoIdValidation,
       transactionType: Joi.string().valid(ETransactionType.PURCHASE, ETransactionType.REFUND, ETransactionType.RESERVATION),
-      status: Joi.string().valid(EPaymentStatus.COMPLETED, EPaymentStatus.FAILED, EPaymentStatus.PENDING),
+      status: Joi.string().valid(EPaymentStatus.CANCELLED, EPaymentStatus.COMPLETED, EPaymentStatus.FAILED, EPaymentStatus.PENDING),
       limit: isStringNumberLike.required().messages({
         'any.required': '"limit" is a required field'
       }),
@@ -150,7 +150,7 @@ router.get(p.getTransactions, BidderOnly(), async (req: Request, res: Response) 
       conditions.set('status', status);
     }
 
-    const transactions = await transactionService.getTransactions(conditions);
+    const transactions = await transactionService.getTransactions(req.user as IAdmin | IBidder, conditions);
     return res.status(OK).json({transactions});
   } catch (error) {
     throw error;
