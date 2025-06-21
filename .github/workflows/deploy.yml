@@ -58,29 +58,6 @@ jobs:
           docker push ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ env.BRANCH_NAME }}
         fi
 
-    - name: Deploy to production
-      if: github.ref == 'refs/heads/main'
-      run: |
-        echo "Deploying to production..."
-        
-        # Update container on the same VM (auctions.gov.bw)
-        docker pull ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:latest
-        
-        # Stop and remove existing container
-        docker stop ${{ env.IMAGE_NAME }} 2>/dev/null || echo "Container not running"
-        docker rm ${{ env.IMAGE_NAME }} 2>/dev/null || echo "Container not found"
-        
-        # Run new container
-        docker run -d \
-          -p 8891:8891 \
-          --name ${{ env.IMAGE_NAME }} \
-          --restart unless-stopped \
-          ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:latest
-        
-        # Wait a moment and check if container is running
-        sleep 5
-        docker ps | grep ${{ env.IMAGE_NAME }} || echo "Warning: Container may not be running"
-
     - name: Update offline VMs
       if: github.ref == 'refs/heads/main'
       run: |
@@ -127,6 +104,5 @@ jobs:
         echo "🚀 Deployment Summary:"
         echo "✅ Image built: ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}"
         echo "✅ Image pushed to registry"
-        echo "✅ Production container updated"
         echo "✅ Offline VMs updated"
         echo "🔗 Registry: https://${{ env.REGISTRY_URL }}/v2/_catalog" 
