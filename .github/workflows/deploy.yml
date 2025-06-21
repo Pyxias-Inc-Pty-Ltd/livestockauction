@@ -24,7 +24,13 @@ jobs:
     - name: Set up environment variables
       run: |
         echo "SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_ENV
-        echo "BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_ENV
+        BRANCH_NAME=""
+        if [ -n "${{ github.head_ref }}" ]; then
+          BRANCH_NAME="${{ github.head_ref }}"
+        else
+          BRANCH_NAME="${{ github.ref_name }}"
+        fi
+        echo "BRANCH_NAME=${BRANCH_NAME//\//-}" >> $GITHUB_ENV
 
     - name: Login to private registry
       run: |
