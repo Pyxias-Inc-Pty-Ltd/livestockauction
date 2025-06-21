@@ -61,12 +61,26 @@ jobs:
     - name: Update offline VMs
       if: github.ref == 'refs/heads/main'
       run: |
-        OFFLINE_VMS=("10.36.139.178")
+        OFFLINE_VMS=("10.36.149.178") # Update this with the correct IP(s)
         for VM_IP in "${OFFLINE_VMS[@]}"; do
-          echo "---"
-          echo "Attempting to connect to $VM_IP..."
-          ssh -vvv administrator@$VM_IP 'echo "SSH connection successful"' || echo "Failed to connect to $VM_IP"
-          echo "---"
+          echo "Updating VM: $VM_IP"
+          ssh -T -o StrictHostKeyChecking=no -o ConnectTimeout=20 administrator@$VM_IP << EOF || echo "Failed to update $VM_IP"
+            echo "Pulling latest image on $VM_IP..."
+            docker pull ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:latest
+            
+            echo "Stopping existing container..."
+            docker stop ${{ env.IMAGE_NAME }} 2>/dev/null || echo "Container not running"
+            docker rm ${{ env.IMAGE_NAME }} 2>/dev/null || echo "Container not found"
+            
+            echo "Starting new container..."
+            docker run -d \
+              -p 8891:8891 \
+              --name ${{ env.IMAGE_NAME }} \
+              --restart unless-stopped \
+              ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:latest
+            
+            echo "Container updated on $VM_IP"
+EOF
         done
 
     - name: Clean up old images
