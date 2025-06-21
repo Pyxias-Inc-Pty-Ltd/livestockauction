@@ -615,7 +615,10 @@ router.get(p.search, async (req: Request, res: Response) => {
     const qSchema = Joi.object().keys({
       // Text search
       searchTerm: Joi.string().trim(),
-
+      language: Joi.string().valid(...Object.values(ELanguageType))
+      .messages({
+        'any.required': '"language" is a required field'
+      }),
       // Pagination
       from: Joi.number().min(0).default(0).required()
       .messages({
@@ -672,6 +675,7 @@ router.get(p.search, async (req: Request, res: Response) => {
 
     const {
       searchTerm,
+      language,
       from,
       size,
       sortOption,
@@ -718,7 +722,8 @@ router.get(p.search, async (req: Request, res: Response) => {
     const results = await esService.search(
       filters,
       sortOption as ElasticsearchSortOption,
-      location
+      location,
+      language as any
     );
 
     return res.status(OK).json(results);
