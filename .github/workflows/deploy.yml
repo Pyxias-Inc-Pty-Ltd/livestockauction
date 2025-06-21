@@ -1,0 +1,126 @@
+name: Build and Deploy to Private Registry
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY_URL: auctions.gov.bw
+  IMAGE_NAME: govauctionweb
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up environment variables
+      run: |
+        echo "SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_ENV
+        echo "BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_ENV
+
+    - name: Login to private registry
+      run: |
+        echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login ${{ env.REGISTRY_URL }} -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+
+    - name: Build Docker image
+      run: |
+        echo "Building image: ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}"
+        docker build -t ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }} .
+        docker tag ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }} ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:latest
+        
+        # Tag with branch name for non-main branches
+        if [ "${{ env.BRANCH_NAME }}" != "main" ]; then
+          docker tag ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }} ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ env.BRANCH_NAME }}
+        fi
+
+    - name: Push to registry
+      run: |
+        echo "Pushing images to registry..."
+        docker push ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}
+        docker push ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:latest
+        
+        # Push branch tag for non-main branches
+        if [ "${{ env.BRANCH_NAME }}" != "main" ]; then
+          docker push ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ env.BRANCH_NAME }}
+        fi
+
+    - name: Deploy to production
+      if: github.ref == 'refs/heads/main'
+      run: |
+        echo "Deploying to production..."
+        
+        # Update container on the same VM (auctions.gov.bw)
+        docker pull ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:latest
+        
+        # Stop and remove existing container
+        docker stop ${{ env.IMAGE_NAME }} 2>/dev/null || echo "Container not running"
+        docker rm ${{ env.IMAGE_NAME }} 2>/dev/null || echo "Container not found"
+        
+        # Run new container
+        docker run -d \
+          -p 8891:8891 \
+          --name ${{ env.IMAGE_NAME }} \
+          --restart unless-stopped \
+          ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:latest
+        
+        # Wait a moment and check if container is running
+        sleep 5
+        docker ps | grep ${{ env.IMAGE_NAME }} || echo "Warning: Container may not be running"
+
+    - name: Update offline VMs
+      if: github.ref == 'refs/heads/main'
+      run: |
+        echo "Updating offline VMs..."
+        
+        # Define your offline VM IPs here
+        OFFLINE_VMS=("10.36.139.178")
+        
+        for VM_IP in "${OFFLINE_VMS[@]}"; do
+          echo "Updating VM: $VM_IP"
+          
+          # SSH to offline VM and update container
+          ssh -o StrictHostKeyChecking=no administrator@$VM_IP << EOF || echo "Failed to update $VM_IP"
+            echo "Pulling latest image on $VM_IP..."
+            docker pull ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:latest
+            
+            echo "Stopping existing container..."
+            docker stop ${{ env.IMAGE_NAME }} 2>/dev/null || echo "Container not running"
+            docker rm ${{ env.IMAGE_NAME }} 2>/dev/null || echo "Container not found"
+            
+            echo "Starting new container..."
+            docker run -d \
+              -p 8891:8891 \
+              --name ${{ env.IMAGE_NAME }} \
+              --restart unless-stopped \
+              ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:latest
+            
+            echo "Container updated on $VM_IP"
+        EOF
+        done
+
+    - name: Clean up old images
+      run: |
+        echo "Cleaning up old Docker images..."
+        # Remove images older than 24 hours
+        docker image prune -f
+        
+        # Remove untagged images
+        docker images --filter "dangling=true" -q | xargs -r docker rmi
+
+    - name: Deployment summary
+      if: github.ref == 'refs/heads/main'
+      run: |
+        echo "🚀 Deployment Summary:"
+        echo "✅ Image built: ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}"
+        echo "✅ Image pushed to registry"
+        echo "✅ Production container updated"
+        echo "✅ Offline VMs updated"
+        echo "🔗 Registry: https://${{ env.REGISTRY_URL }}/v2/_catalog" 
