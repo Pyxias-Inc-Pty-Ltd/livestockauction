@@ -1,42 +1,13 @@
 import { Client } from '@elastic/elasticsearch';
 import { IItem, IItemMetadata, Item } from '../models/item-model';
 import { IAuction, Auction } from '../models/auction-model';
-import { ELASTICSEARCH_NODE, ELASTICSEARCH_USERNAME, ELASTICSEARCH_PASSWORD, GeoLocation, ElasticsearchSortOption, SearchFilters } from '../globals';
+import { ELASTICSEARCH_NODE, ELASTICSEARCH_USERNAME, ELASTICSEARCH_PASSWORD, GeoLocation, ElasticsearchSortOption, SearchFilters, languageType } from '../globals';
 import { Schema } from 'mongoose';
 
-// ** FILTERS **
-// Distance
-// SectorType
-// Has Registration Fee
-// Participation Type
-// Start Time - End Time
-// Lot Status
-// Is Being Livestreamed
-
-
-// ** CONTEXT DEPENDENT FILTES **
-// Age
-// Sex/Gender
-
-// ** SORT BY **
-// Closest To Me
-// Date Listed (New To Old)
-// Date Listed (Old To New)
-// Time Until Sale Date
-
-/**
- * Service for handling Elasticsearch operations for auction items
- * Manages indexing, updating, and removing items and their associated auction data
- * Maintains synchronization between MongoDB and Elasticsearch
- */
 class ElasticsearchService {
   private client: Client;
   private itemIndex: string = 'items';
 
-  /**
-   * Initializes the Elasticsearch service with configured client
-   * Sets up MongoDB hooks for automatic synchronization
-   */
   constructor() {
     this.client = new Client({
       node: ELASTICSEARCH_NODE,
@@ -47,13 +18,6 @@ class ElasticsearchService {
     });
   }
 
-  /**
-   * Generates sort configuration based on standard sort options
-   * @param sortOption - The sort option to apply
-   * @param location - User's location for distance-based sorting
-   * @return Sort configuration for Elasticsearch query
-   * @private
-   */
   private getSortConfig(sortOption: ElasticsearchSortOption, location?: GeoLocation): any[] {
     switch (sortOption) {
       case ElasticsearchSortOption.CLOSEST_TO_ME:
@@ -99,25 +63,13 @@ class ElasticsearchService {
     }
   }
 
-  /**
-   * Prepares an item document for Elasticsearch indexing
-   * Fetches and transforms associated auction data
-   * Formats all fields according to Elasticsearch mapping
-   * 
-   * @param item - The Mongoose item document to prepare
-   * @return Promise resolving to the prepared Elasticsearch document
-   * @throws Error if associated auction is not found
-   * @private
-   */
   private async prepareItemDocument(item: IItem): Promise<any> {
     try {
-      // Populate the auction data
       const auction = await Auction.findById(item.auctionId);
       if (!auction) {
         throw new Error('Auction not found');
       }
 
-      // Transform auction data to match Elasticsearch mapping
       const auctionData = {
         _id: auction._id.toString(),
         title: auction.title,
@@ -197,7 +149,6 @@ class ElasticsearchService {
         metadata.baitsDump = item.metadata.baitsDump;
       }
 
-      // Construct the full document
       return {
         creatorId: item.creatorId.toString(),
         auctionId: auctionData,
@@ -231,14 +182,6 @@ class ElasticsearchService {
     }
   }
 
-  /**
-   * Indexes a single item document in Elasticsearch
-   * Includes associated auction data and all metadata
-   * 
-   * @param item - The Mongoose item document to index
-   * @throws Error if indexing fails
-   * @public
-   */
   public async indexItem(item: IItem): Promise<void> {
     try {
       const document = await this.prepareItemDocument(item);
@@ -254,13 +197,6 @@ class ElasticsearchService {
     }
   }
 
-  /**
-   * Removes an item document from the Elasticsearch index
-   * 
-   * @param itemId - MongoDB ObjectId of the item to remove
-   * @throws Error if deletion fails
-   * @public
-   */
   public async removeItem(itemId: Schema.Types.ObjectId): Promise<void> {
     try {
       await this.client.delete({
@@ -274,21 +210,9 @@ class ElasticsearchService {
     }
   }
 
-  /**
-   * Updates all items associated with an auction in Elasticsearch
-   * Called automatically when an auction is updated
-   * Re-indexes all items to ensure auction data is current
-   * 
-   * @param auction - The updated auction document
-   * @throws Error if update fails
-   * @public
-   */
   public async updateItemsWithAuction(auction: IAuction): Promise<void> {
     try {
-      // Find all items that reference this auction
       const items = await Item.find({ auctionId: auction._id });
-      
-      // Update each item in Elasticsearch
       const updatePromises = items.map(item => this.indexItem(item));
       await Promise.all(updatePromises);
     } catch (error) {
@@ -297,225 +221,178 @@ class ElasticsearchService {
     }
   }
 
-  /**
-   * Enhanced search method with standard sort options
-   * @param filters - Search filters
-   * @param sortOption - Standard sort option to apply
-   * @param location - User's location for distance-based sorting
-   * @return Search results
-   * @public
-   */
+  private buildQuery(filters: SearchFilters, language: languageType): any {
+    const {
+      searchTerm,
+      distance,
+      sectorType,
+      hasRegistrationFee,
+      participationType,
+      timeRange,
+      lotStatus,
+      isBeingLivestreamed
+    } = filters;
+
+    const must: any[] = [];
+    const filter: any[] = [];
+
+    if (searchTerm) {
+      must.push({
+        bool: {
+          minimum_should_match: 1,
+          should: [
+            {
+              match: {
+                [`title.${language}`]: {
+                  query: searchTerm,
+                  minimum_should_match: "70%",
+                  fuzziness: "auto",
+                  prefix_length: 3,
+                  max_expansions: 5,
+                  boost: 2
+                }
+              }
+            },
+            {
+              match_phrase: {
+                [`title.${language}`]: {
+                  query: searchTerm,
+                  slop: 0
+                }
+              }
+            },
+            {
+              match: {
+                [`description.${language}`]: {
+                  query: searchTerm,
+                  minimum_should_match: "100%",
+                  fuzziness: "auto",
+                  prefix_length: 3,
+                  max_expansions: 5
+                }
+              }
+            }
+          ]
+        }
+      });
+    }
+
+    if (distance) {
+      filter.push({
+        geo_distance: {
+          distance: distance.distance,
+          'auctionId.auctionCoordinates': [distance.lon, distance.lat]
+        }
+      });
+    }
+
+    if (sectorType?.length) {
+      filter.push({ terms: { 'auctionId.sectorType': sectorType } });
+    }
+
+    if (hasRegistrationFee !== undefined) {
+      filter.push({ term: { 'auctionId.hasRegistrationFee': hasRegistrationFee } });
+    }
+
+    if (participationType?.length) {
+      filter.push({ terms: { 'auctionId.participationType': participationType } });
+    }
+
+    if (timeRange) {
+      const timeRangeFilter: any = { range: { 'startTime': {} } };
+      if (timeRange.startTime) timeRangeFilter.range['startTime'].gte = timeRange.startTime;
+      if (timeRange.endTime) timeRangeFilter.range['startTime'].lte = timeRange.endTime;
+      filter.push(timeRangeFilter);
+    }
+
+    if (lotStatus?.length) {
+      filter.push({ terms: { status: lotStatus } });
+    }
+
+    if (isBeingLivestreamed !== undefined) {
+      filter.push({ term: { 'auctionId.isBeingLivestreamed': isBeingLivestreamed } });
+    }
+
+    return {
+      bool: {
+        must: must.length ? must : [{ match_all: {} }],
+        filter
+      }
+    };
+  }
+
+  private transformResults(result: any, sortOption: ElasticsearchSortOption): any {
+    return {
+      total: typeof result.body.hits.total === 'number' 
+        ? result.body.hits.total 
+        : result.body.hits.total.value,
+      hits: result.body.hits.hits.map((hit: any) => {
+        const baseResult = {
+          id: hit._id,
+          score: hit._score,
+          item: {
+            ...hit._source,
+            highlights: hit.highlight || {}
+          }
+        };
+
+        if (sortOption === ElasticsearchSortOption.CLOSEST_TO_ME && hit.sort?.[0]) {
+          return { ...baseResult, distance: hit.sort[0] };
+        }
+        return baseResult;
+      })
+    };
+  }
+
   public async search(
     filters: SearchFilters,
     sortOption: ElasticsearchSortOption,
-    location?: GeoLocation
+    location?: GeoLocation,
+    language: languageType = 'en'
   ): Promise<any> {
     try {
-      const {
-        searchTerm,
-        distance,
-        sectorType,
-        hasRegistrationFee,
-        participationType,
-        timeRange,
-        lotStatus,
-        isBeingLivestreamed,
-        from = 0,
-        size = 10
-      } = filters;
-  
-      // Build query
-      const must: any[] = [];
-      const filter: any[] = [];
-  
-      // Text search with nested bool query
-      if (searchTerm) {
-        must.push({
-          bool: {
-            minimum_should_match: 1,
-            should: [
-              {
-                bool: {
-                  minimum_should_match: 1,
-                  should: [
-                    {
-                      match: {
-                        "title.en": {
-                          query: searchTerm,
-                          minimum_should_match: "70%",
-                          fuzziness: "auto",
-                          prefix_length: 3,
-                          max_expansions: 5,
-                          boost: 2
-                        }
-                      }
-                    },
-                    {
-                      match_phrase: {
-                        "title.en": {
-                          query: searchTerm,
-                          slop: 0
-                        }
-                      }
-                    },
-                    {
-                      match: {
-                        "description.en": {
-                          query: searchTerm,
-                          minimum_should_match: "100%",
-                          fuzziness: "auto",
-                          prefix_length: 3,
-                          max_expansions: 5
-                        }
-                      }
-                    }
-                  ]
-                }
-              },
-              {
-                bool: {
-                  minimum_should_match: 1,
-                  should: [
-                    {
-                      match: {
-                        "title.tn": {
-                          query: searchTerm,
-                          minimum_should_match: "70%",
-                          fuzziness: "auto",
-                          prefix_length: 3,
-                          max_expansions: 5,
-                          boost: 2
-                        }
-                      }
-                    },
-                    {
-                      match_phrase: {
-                        "title.tn": {
-                          query: searchTerm,
-                          slop: 0
-                        }
-                      }
-                    },
-                    {
-                      match: {
-                        "description.tn": {
-                          query: searchTerm,
-                          minimum_should_match: "100%",
-                          fuzziness: "auto",
-                          prefix_length: 3,
-                          max_expansions: 5
-                        }
-                      }
-                    }
-                  ]
-                }
-              }
-            ]
-          }
-        });
-      }
-  
-      // Distance/Geo filter
-      if (distance) {
-        filter.push({
-          geo_distance: {
-            distance: distance.distance,
-            'auctionId.auctionCoordinates': [distance.lon, distance.lat]
-          }
-        });
-      }
-  
-      // Add other filters
-      if (sectorType?.length) {
-        filter.push({ terms: { 'auctionId.sectorType': sectorType } });
-      }
-  
-      if (hasRegistrationFee !== undefined) {
-        filter.push({ term: { 'auctionId.hasRegistrationFee': hasRegistrationFee } });
-      }
-  
-      if (participationType?.length) {
-        filter.push({ terms: { 'auctionId.participationType': participationType } });
-      }
-  
-      if (timeRange) {
-        const timeRangeFilter: any = { range: { 'startTime': {} } };
-        if (timeRange.startTime) timeRangeFilter.range['startTime'].gte = timeRange.startTime;
-        if (timeRange.endTime) timeRangeFilter.range['startTime'].lte = timeRange.endTime;
-        filter.push(timeRangeFilter);
-      }
-  
-      if (lotStatus?.length) {
-        filter.push({ terms: { status: lotStatus } });
-      }
-  
-      if (isBeingLivestreamed !== undefined) {
-        filter.push({ term: { 'auctionId.isBeingLivestreamed': isBeingLivestreamed } });
-      }
-  
-      // Get sort configuration
-      const sort = this.getSortConfig(sortOption, location);
-      const payload = {
+      // First get max_score
+      const maxScoreResponse = await this.client.search({
         index: this.itemIndex,
         body: {
-          from,
-          size,
-          sort,
+          _source: false,
+          size: 1,
           track_scores: true,
-          query: {
-            bool: {
-              must: must.length ? must : [{ match_all: {} }],
-              filter
-            }
-          },
+          query: this.buildQuery(filters, language)
+        }
+      });
+
+      const maxScore = maxScoreResponse.body.hits.max_score;
+      const minScoreThreshold = maxScore * 0.5; // 50% cutoff
+
+      // Then execute filtered search
+      const result = await this.client.search({
+        index: this.itemIndex,
+        body: {
+          from: filters.from || 0,
+          size: filters.size || 10,
+          min_score: minScoreThreshold,
+          sort: this.getSortConfig(sortOption, location),
+          track_scores: true,
+          query: this.buildQuery(filters, language),
           highlight: {
             fields: {
-              title: {
-                number_of_fragments: 0
-              },
-              description: {
+              [`title.${language}`]: { number_of_fragments: 0 },
+              [`description.${language}`]: {
                 number_of_fragments: 3,
                 fragment_size: 150
               }
             }
           }
         }
-      };
-  
-      const result = await this.client.search(payload);
-  
-      // Transform results with conditional distance
-      return {
-        total: typeof result.body.hits.total === 'number' 
-          ? result.body.hits.total 
-          : result.body.hits.total.value,
-        hits: result.body.hits.hits.map((hit: any) => {
-          const baseResult = {
-            id: hit._id,
-            score: hit._score,
-            item: {
-              ...hit._source,
-              highlights: hit.highlight || {}
-            }
-          };
-  
-          // Only add distance for CLOSEST_TO_ME sort option
-          if (sortOption === ElasticsearchSortOption.CLOSEST_TO_ME && hit.sort?.[0]) {
-            return {
-              ...baseResult,
-              distance: hit.sort[0]
-            };
-          }
-  
-          return baseResult;
-        })
-      };
+      });
+
+      return this.transformResults(result, sortOption);
     } catch (error) {
-      console.error('Error performing search:', error);
+      console.error('Error performing filtered search:', error);
       throw error;
     }
   }
 }
 
-// Export a singleton instance
 export const esService = new ElasticsearchService();
