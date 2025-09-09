@@ -673,6 +673,7 @@ async function rejectAuction(currentUser: IAuctionApprover, auctionId: string, r
 
 /**
  * Updates the status of auctions based on their start and end times, considering their published status.
+ * Updates each document individually to trigger Mongoose post-save middleware within a transaction.
  *
  * - Only updates auctions that are `PUBLISHED`.
  * - Auctions that have started (`startTime <= now`) and are `PUBLISHED` are marked as `ACTIVE`.
@@ -683,29 +684,53 @@ async function rejectAuction(currentUser: IAuctionApprover, auctionId: string, r
  * @return {Promise<void>} A promise that resolves once the updates are complete.
  */
 async function trackAuctionStatus(): Promise<void> {
+  const sess = await startSession();
   try {
-    await Promise.all([
-      // Mark only PUBLISHED auctions as ENDED if their end time has passed
-      Auction.updateMany(
-        { 
+    await sess.withTransaction(async () => {
+      const [auctionsToEnd, auctionsToActivate] = await Promise.all([
+        Auction.find({ 
           endTime: { $lte: new Date() }, 
           status: { $ne: EAuctionStatus.ENDED },
           publishedStatus: EPublishedStatus.PUBLISHED 
-        },
-        { $set: { status: EAuctionStatus.ENDED } }
-      ),
-      // Mark only PUBLISHED auctions as ACTIVE if their start time has passed and they are NOT_BEGUN
-      Auction.updateMany(
-        { 
+        }).session(sess),
+        
+        Auction.find({
           startTime: { $lte: new Date() }, 
           status: EAuctionStatus.NOT_BEGUN, 
           publishedStatus: EPublishedStatus.PUBLISHED
-        },
-        { $set: { status: EAuctionStatus.ACTIVE } }
-      )
-    ]);
+        }).session(sess)
+      ]);
+      
+      const allAuctionsToUpdate = new Map<string, any>();
+      
+      // Add auctions to end
+      auctionsToEnd.forEach(auction => {
+        allAuctionsToUpdate.set(auction._id.toString(), {
+          auction,
+          newStatus: EAuctionStatus.ENDED
+        });
+      });
+      
+      auctionsToActivate.forEach(auction => {
+        allAuctionsToUpdate.set(auction._id.toString(), {
+          auction,
+          newStatus: EAuctionStatus.ACTIVE
+        });
+      });
+      
+      // Update each auction individually
+      const updatePromises = Array.from(allAuctionsToUpdate.values()).map(({ auction, newStatus }) => {
+        auction.status = newStatus;
+        return auction.save({ session: sess });
+      });
+      
+      await Promise.all(updatePromises);
+    });
   } catch (error) {
+    console.error('Error in trackAuctionStatus transaction:', error);
     throw error;
+  } finally {
+    await sess.endSession();
   }
 }
 
