@@ -175,6 +175,19 @@ const onConnection = (socket: Socket) => {
       }
     }
   });
+  socket.on(ESocketEventCode.MOVE_AUDIENCE_TO_ITEM, async function (data: any, cb: any) {
+    try {
+      console.log("ESocketEventCode.MOVE_AUDIENCE_TO_ITEM: ", data);
+      socket.to(`${data.currentItemId}-bid`).emit(ESocketEventCode.BROADCAST_MOVE_AUDIENCE_TO_ITEM, data.nextitemId);
+      cb({ status: OK });
+    } catch (error) {
+      if (error instanceof CustomError) {
+        cb({ status: error.HttpStatus, msg: error.message });
+      } else {
+        cb({ status: INTERNAL_SERVER_ERROR });
+      }
+    }
+  });
 };
 
 // Listen for events
