@@ -287,6 +287,17 @@ auctionSchema.pre('save', async function () {
 
 auctionSchema.post('save', async function(doc: IAuction) {
   try {
+    if (doc.isModified('status')) {
+      // TODO: Run with transaction?
+      await esService.updateItemsWithAuction(doc);
+    }
+  } catch (error) {
+    console.error('Error handling auction status change:', error); // TODO: Log to winston
+  }
+});
+
+auctionSchema.post('save', async function(doc: IAuction) {
+  try {
     if (doc.isModified('publishedStatus')) {
       if (doc.publishedStatus === EPublishedStatus.PUBLISHED) {
         // If published, update all related items
