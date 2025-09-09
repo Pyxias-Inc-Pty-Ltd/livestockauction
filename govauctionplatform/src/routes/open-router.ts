@@ -655,16 +655,19 @@ router.get(p.search, async (req: Request, res: Response) => {
       distance: Joi.string().pattern(/^\d+(km|mi)$/),
 
       // Filters
-      sectorType: Joi.array().items(
+      sectorType: Joi.alternatives().try(
+        Joi.array().items(Joi.string().valid(...Object.values(ESectorType))),
         Joi.string().valid(...Object.values(ESectorType))
       ),
       hasRegistrationFee: Joi.boolean(),
-      participationType: Joi.array().items(
+      participationType: Joi.alternatives().try(
+        Joi.array().items(Joi.string().valid(...Object.values(EParticipationType))),
         Joi.string().valid(...Object.values(EParticipationType))
       ),
       startTime: Joi.string().isoDate(),
       endTime: Joi.string().isoDate(),
-      lotStatus: Joi.array().items(
+      lotStatus: Joi.alternatives().try(
+        Joi.array().items(Joi.string().valid(...Object.values(EItemStatus))),
         Joi.string().valid(...Object.values(EItemStatus))
       ),
       isBeingLivestreamed: Joi.boolean()
