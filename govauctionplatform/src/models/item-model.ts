@@ -381,7 +381,6 @@ schema.post('save', async function(doc: IItem) {
   }
 });
 
-
 schema.post('remove', async function(doc: IItem) {
   try {
     await esService.removeItem(doc._id);
