@@ -468,6 +468,8 @@ async function getEligibleBidders(itemId: string | Schema.Types.ObjectId): Promi
 
 /**
  * Updates the status of items based on their start and end times.
+ * Updates each document individually to trigger Mongoose post-save middleware
+ * within a MongoDB transaction for atomicity.
  *
  * - Marks items as `ENDED` if their `endTime` has passed.
  * - Marks items as `ACTIVE` if their `startTime` has passed and they are still `NOT_BEGUN`.
@@ -476,17 +478,49 @@ async function getEligibleBidders(itemId: string | Schema.Types.ObjectId): Promi
  * @return {Promise<void>} A promise that resolves once the updates are complete.
  */
 async function trackItemStatus(): Promise<void> {
+  const sess = await startSession();
   try {
-    await Promise.all([
-      Item.updateMany({ endTime: { $lte: new Date() } }, { $set: { status: EItemStatus.ENDED } }),
-      Item.updateMany(
-        { startTime: { $lte: new Date() }, status: EItemStatus.NOT_BEGUN },
-        { $set: { status: EItemStatus.ACTIVE } }
-      )
-    ]);
-    return;
+    await sess.withTransaction(async () => {
+      const [itemsToEnd, itemsToActivate] = await Promise.all([
+        Item.find({ 
+          endTime: { $lte: new Date() },
+          status: { $ne: EItemStatus.ENDED }
+        }).session(sess),
+        Item.find({
+          startTime: { $lte: new Date() },
+          status: EItemStatus.NOT_BEGUN
+        }).session(sess)
+      ]);
+      
+      const itemsToUpdate = new Map<string, { item: any; newStatus: EItemStatus }>();
+      
+      itemsToEnd.forEach(item => {
+        itemsToUpdate.set(item._id.toString(), {
+          item,
+          newStatus: EItemStatus.ENDED
+        });
+      });
+      
+      itemsToActivate.forEach(item => {
+        itemsToUpdate.set(item._id.toString(), {
+          item,
+          newStatus: EItemStatus.ACTIVE
+        });
+      });
+      
+      // Update each document individually
+      const updatePromises = Array.from(itemsToUpdate.values()).map(({ item, newStatus }) => {
+        item.status = newStatus;
+        return item.save({ session: sess });
+      });
+      
+      await Promise.all(updatePromises);
+    });
   } catch (error) {
+    console.error('Error in trackItemStatus transaction:', error);
     throw error;
+  } finally {
+    await sess.endSession();
   }
 }
 
