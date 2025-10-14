@@ -2,7 +2,7 @@ import itemService from '../services/item-service';
 import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
-import { isoDateValidation, mongoIdValidation, urlValidation } from '../shared/functions';
+import { isoDateValidation, mongoIdValidation, urlValidation, validateWithJoi } from '../shared/functions';
 import { SuperAdminOnly, BidderOnly } from '../shared/middleware';
 import { IAdmin, IBidder } from '../models/user-model';
 import { EItemSortType, ESortOrderType, MAX_LIST_LIMIT_NUMBER } from '../globals';
@@ -185,7 +185,7 @@ router.post(p.createItem, SuperAdminOnly(), async (req: Request, res: Response) 
     }).required();
     
     // Validate schema against input
-    Joi.assert(req.body, schema);
+    validateWithJoi(req.body, schema);
 
     const item = await itemService.createItem(req.user as IAdmin, req.body as any);
     return res.status(CREATED).json({item});
