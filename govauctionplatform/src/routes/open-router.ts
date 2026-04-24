@@ -24,7 +24,6 @@ import {
   ELanguageType,
   languageType
 } from '../globals';
-import { verifyWebhookSignature } from '../shared/middleware';
 
 // Constants
 const router = Router();
@@ -45,10 +44,6 @@ export const p = {
   getAuctionByTitleSlug: '/getAuctionByTitleSlug',
   getCategoryById: '/getCategoryById',
   getBreedById: '/getBreedById',
-  trackTransactionStatus: '/trackTransactionStatus',
-  trackAuctionStatus: '/trackAuctionStatus',
-  trackItemStatus: '/trackItemStatus',
-  trackCollectionStatus: '/trackCollectionStatus',
 } as const;
 
 /**
@@ -69,112 +64,6 @@ router.get(p.getCategoryById, async (req: Request, res: Response) => {
     const { id } = req.query;
     const category = await categoryService.getById(id as string);
     return res.status(OK).json({ category });
-  } catch (error) {
-    throw error;
-  }
-});
-
-/**
- * Track transactions status
- */
-router.post(p.trackTransactionStatus, verifyWebhookSignature, async (req: Request, res: Response) => {
-  try {
-
-    const schema = Joi.object().keys({
-      nonce: Joi.boolean().valid(true).required().messages({
-        'any.required': '"nonce" is a required field'
-      })
-    }).required();
-    
-    // Validate schema against input
-    Joi.assert(req.body, schema);
-
-    await transactionService.trackTransactionStatus();
-    return res.status(OK).json({ message: "ok" });
-  } catch (error) {
-    throw error;
-  }
-});
-
-/**
- * Track auction status
- */
-router.post(p.trackAuctionStatus, verifyWebhookSignature, async (req: Request, res: Response) => {
-  try {
-
-    const schema = Joi.object().keys({
-      nonce: Joi.boolean().valid(true).required().messages({
-        'any.required': '"nonce" is a required field'
-      })
-    }).required();
-    
-    // Validate schema against input
-    Joi.assert(req.body, schema);
-
-    await auctionService.trackAuctionStatus();
-    return res.status(OK).json({ message: "ok" });
-  } catch (error) {
-    throw error;
-  }
-});
-
-/**
- * Track item status.
- * Also triggers non-winner reservation refunds for items that just ended with a winner.
- */
-router.post(p.trackItemStatus, verifyWebhookSignature, async (req: Request, res: Response) => {
-  try {
-
-    const schema = Joi.object().keys({
-      nonce: Joi.boolean().valid(true).required().messages({
-        'any.required': '"nonce" is a required field'
-      })
-    }).required();
-
-    // Validate schema against input
-    Joi.assert(req.body, schema);
-
-    await itemService.trackItemStatus();
-
-    // After winners are assigned, initiate refunds for non-winning bidders.
-    // This runs fire-and-forget — a failure here does not affect the HTTP response.
-    itemService.getItemsWithWinnerForRefund()
-      .then((items) => {
-        return Promise.allSettled(
-          items.map((item) =>
-            transactionService.initiateNonWinnerReservationRefunds(
-              item._id.toString(),
-              item.winningBidder!.toString()
-            )
-          )
-        );
-      })
-      .catch((err: Error) => {
-        console.error(`[open-router] Non-winner refund scan failed: ${err.message}`);
-      });
-
-    return res.status(OK).json({ message: "ok" });
-  } catch (error) {
-    throw error;
-  }
-});
-
-/**
- * Track collection status — forfeit collections past their deadline.
- */
-router.post(p.trackCollectionStatus, verifyWebhookSignature, async (req: Request, res: Response) => {
-  try {
-
-    const schema = Joi.object().keys({
-      nonce: Joi.boolean().valid(true).required().messages({
-        'any.required': '"nonce" is a required field'
-      })
-    }).required();
-
-    Joi.assert(req.body, schema);
-
-    await collectionService.trackCollectionStatus();
-    return res.status(OK).json({ message: "ok" });
   } catch (error) {
     throw error;
   }
