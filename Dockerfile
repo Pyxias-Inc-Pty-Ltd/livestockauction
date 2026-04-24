@@ -1,19 +1,29 @@
-FROM node:18
+# ─── Stage 1: Build ───────────────────────────────────────────────────────────
+FROM node:20-alpine AS builder
 
-# Set the working directory inside the container
 WORKDIR /app
 
-# Copy only package.json and package-lock.json (if available)
+# Install all deps (including devDeps needed for tsc + build script)
 COPY govauctionplatform/package*.json ./
+RUN npm ci
 
-# Install the dependencies
-RUN npm install
+# Copy source and compile
+COPY govauctionplatform/tsconfig.json govauctionplatform/tsconfig.prod.json govauctionplatform/build.ts ./
+COPY govauctionplatform/src ./src
+RUN npm run build
 
-# Copy the rest of the application code
-COPY govauctionplatform/ .
+# ─── Stage 2: Production image ────────────────────────────────────────────────
+FROM node:20-alpine AS runner
 
-# Expose port 8891
+WORKDIR /app
+
+# Install production deps only
+COPY govauctionplatform/package*.json ./
+RUN npm ci --omit=dev
+
+# Copy compiled output (includes any static assets copied by build.ts)
+COPY --from=builder /app/dist ./dist
+
 EXPOSE 8891
 
-# Command to run the application
-CMD ["npm", "run", "start:dev"]
+CMD ["npm", "start"]
