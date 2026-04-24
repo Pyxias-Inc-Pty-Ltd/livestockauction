@@ -1,7 +1,7 @@
 import { ConflictError, ForbiddenError, NotFoundError } from "../shared/errors";
 import { IAdmin, IUser, User, IAdminInput, Admin, IBidder, IBidderInput, Bidder, ISeller, ISellerInput, Seller, AuctionApprover, IAuctionApprover, IAuctionApproverInput } from "../models/user-model";
 import { companyRegistrationVerificationIssuesTemplate, companyRegistrationVerificationSuccessTemplate, EAdminType, ESortOrderType, EUserSortType, EUserType, ID_VERIFICATION_API_KEY, invalidCompanyRegistrationTemplate, invalidNationalIDSMSTemplate, keeperIDVerificationTemplate, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, nameMismatchWithNationalIDSMSTemplate, nationalIDVerificationIssuesSMSTemplate, nationalIDVerificationSuccessSMSTemplate, SERVICE_URLS } from "../globals";
-import { generateOTP, generateRandomPassword, getFarmerByKeeperId, getKeeperByRegNumber, hashOTP, normalizeAndCompareNames, verifyOTP, verifySignature } from "../shared/functions";
+import { generateOTP, generateRandomPassword, getFarmerByKeeperId, getKeeperByRegNumber, hashOTP, normalizeAndCompareNames, verifyOTP } from "../shared/functions";
 import { Schema } from "mongoose";
 import * as axios from "axios";
 import { assignRealmRole, createKeycloakUser, deleteKeycloakUser, resetKeycloakUserPassword, sendWelcomeEmail } from "../shared/keycloak";
@@ -143,20 +143,11 @@ async function createBidder(input: IBidderInput): Promise<IBidder> {
 }
 
 /**
- * Verify identity number.
- * 
- * @param userId
- * @returns 
+ * Verify identity number of the authenticated user against the government CIPA / Omang API.
  */
-async function verifyIdentityNumber(input: { payload: { userId: string }, hash: string, signature: string }): Promise<void> {
+async function verifyIdentityNumber(userId: string): Promise<void> {
   try {
-
-    // Verify payload
-    if (!verifySignature(input.hash, input.signature)) {
-      throw new ForbiddenError('Invalid payload');
-    }
-
-    const user = await Bidder.findById(input.payload.userId);
+    const user = await Bidder.findById(userId);
     if (!user) {
       throw new NotFoundError('User not found');
     }
