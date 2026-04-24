@@ -13,10 +13,9 @@ import itemHandler from './handlers/item-handler';
 import * as admin from 'firebase-admin';
 import authHandler from './handlers/auth-handler';
 import { CustomError } from './shared/errors';
-import { join } from 'path';
-import { readFileSync } from 'fs-extra';
 import { bidQueue } from './queues/bid-queue';
 import { startBidWorker } from './workers/bid-worker';
+import { startCronJobs } from './cron';
 import { IBidder } from './models/user-model';
 
 const { OK, INTERNAL_SERVER_ERROR, CREATED, ACCEPTED } = StatusCodes;
@@ -39,9 +38,6 @@ export const io = new Server(httpServer, {
     origin: ['http://localhost:5173', SERVICE_URLS.clientURI]
   }
 });
-
-// Load the public key once at startup
-export const webhookSignaturePublicKey = readFileSync(join(__dirname, "shared/sec/public_key.pem"), "utf8");
 
 // Check for auth on handshake
 io.use(async (socket: any, next: any) => {
@@ -229,6 +225,10 @@ httpServer.listen(port, async () => {
     // can broadcast directly to connected sockets.
     startBidWorker(io);
     logger.info('Bid worker started');
+
+    // Start cron jobs (distributed lock via Redis prevents double-execution
+    // across multiple instances).
+    startCronJobs();
 
   } catch (error) {
     logger.err(error);
