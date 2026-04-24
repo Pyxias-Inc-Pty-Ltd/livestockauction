@@ -200,7 +200,8 @@ The active env file is **`src/pre-start/env/development.env`**. It is loaded at 
 | `KEYCLOAK_ADMIN_CLIENT_ID` | Yes | — | M2M admin client ID (`auction-platform-admin`) |
 | `KEYCLOAK_ADMIN_CLIENT_SECRET` | Yes | — | Admin client secret (from Keycloak UI) |
 | **MongoDB** | | | |
-| `MONGO_DB_USER` | Atlas only | — | Atlas DB username (local URI is hardcoded) |
+| `MONGO_DB_HOST` | No | `localhost:27017` | MongoDB host (and port). For Atlas use `cluster0.xxx.mongodb.net` |
+| `MONGO_DB_USER` | Atlas only | — | Atlas DB username |
 | `MONGO_DB_PASS` | Atlas only | — | Atlas DB password |
 | **Redis** | | | |
 | `REDIS_HOST` | No | `localhost` | Redis host |
@@ -241,13 +242,23 @@ The file already contains values for `PAYGATE_*`, `ELASTICSEARCH_*`, `SEALED_BID
 
 ### MongoDB
 
-The MongoDB connection URI is **hardcoded** in `src/globals.ts`:
+The connection URI is built automatically in `src/globals.ts`:
 
-```
-mongodb://localhost:27017/bwgovauctionplatform?retryWrites=true&w=majority
-```
+- **Atlas** (when `MONGO_DB_USER` + `MONGO_DB_PASS` are set):
+  ```
+  mongodb+srv://${MONGO_DB_USER}:${MONGO_DB_PASS}@${MONGO_DB_HOST}/bwgovauctionplatform?retryWrites=true&w=majority&appName=Cluster0
+  ```
+- **Local** (no credentials):
+  ```
+  mongodb://${MONGO_DB_HOST}/bwgovauctionplatform?retryWrites=true&w=majority
+  ```
 
-To use MongoDB Atlas instead, uncomment the `mongodb+srv://...` line in `globals.ts` and set `MONGO_DB_USER` / `MONGO_DB_PASS`.
+For Atlas, set:
+```
+MONGO_DB_HOST=cluster0.xxxxxxx.mongodb.net
+MONGO_DB_USER=<atlas-username>
+MONGO_DB_PASS=<atlas-password>
+```
 
 **Local setup (Docker):**
 ```bash
@@ -684,7 +695,7 @@ npx jest --testPathPattern=e2e     # run only E2E tests
 
 ## Deployment Notes
 
-- **MongoDB URI** is hardcoded in `src/globals.ts`. For Atlas, uncomment the `mongodb+srv://` line and set `MONGO_DB_USER` / `MONGO_DB_PASS`.
+- **MongoDB** — URI scheme is chosen automatically: `mongodb+srv` when `MONGO_DB_USER`+`MONGO_DB_PASS` are set (Atlas), plain `mongodb://` otherwise (local). Set `MONGO_DB_HOST` to the Atlas cluster hostname for Railway deployments.
 - **Firebase credentials** are stored in `FIREBASE_SERVICE_ACCOUNT_CREDENTIALS` (env var). The service account JSON must be provided as a single-line string. See the env vars table above.
 - **Cron jobs** run in-process via `node-cron` (`src/cron.ts`). A Redis distributed lock (`SET NX`, 55 s TTL) prevents double-execution across multiple instances. No external cron service or signed webhooks required.
 - **Docker / Railway**: A `Dockerfile` (two-stage build) is included. `src/pre-start/index.ts` skips the dotenv file load when `--env=production` (Railway injects env vars at runtime via the dashboard). Deploy with `npm start` (already passes `--env=production`).
