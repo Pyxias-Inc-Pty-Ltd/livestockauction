@@ -1,7 +1,8 @@
 import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
-import { SuperAdminOnly } from '../shared/middleware';
+import { requirePermission } from '../shared/middleware';
+import { EPermission } from '../globals';
 import categoryService from '@services/category-service';
 import { mongoIdValidation } from '../shared/functions';
 
@@ -19,7 +20,7 @@ export const p = {
 /**
  * Create a category
  */
-router.post(p.createCategory, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.post(p.createCategory, requirePermission(EPermission.AUCTION_MANAGE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       name: Joi.string().required().messages({
@@ -40,7 +41,7 @@ router.post(p.createCategory, SuperAdminOnly(), async (req: Request, res: Respon
 /**
  * Get all categories
  */
-router.get(p.getCategories, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.get(p.getCategories, requirePermission(EPermission.AUCTION_MANAGE), async (req: Request, res: Response) => {
   try {
     const categories = await categoryService.getCategories();
     return res.status(OK).json({ categories });
@@ -52,7 +53,7 @@ router.get(p.getCategories, SuperAdminOnly(), async (req: Request, res: Response
 /**
  * Get category by id
  */
-router.get(p.getCategoryById, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.get(p.getCategoryById, requirePermission(EPermission.AUCTION_MANAGE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       id: mongoIdValidation.required().messages({
