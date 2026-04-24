@@ -20,7 +20,8 @@ import commandLineArgs from 'command-line-args';
         },
     ]);
     // In production (e.g. Railway) env vars are injected at runtime — no .env file needed.
-    if (options.env !== 'production') {
+    // Check both the --env CLI arg and NODE_ENV to handle all deployment scenarios.
+    if (options.env !== 'production' && process.env.NODE_ENV !== 'production') {
         const result2 = dotenv.config({
             path: path.join(__dirname, `env/${options.env}.env`),
         });
