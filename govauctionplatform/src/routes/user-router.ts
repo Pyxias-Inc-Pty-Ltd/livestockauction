@@ -105,29 +105,12 @@ router.post(p.createSeller, requirePermission(EPermission.USER_MANAGE), async (r
 });
 
 /**
- * Verify identity number
+ * Verify identity number of the authenticated user against the government CIPA / Omang API.
  */
-router.post(p.verifyIdentityNumber, async (req: Request, res: Response) => {
+router.post(p.verifyIdentityNumber, requirePermission(EPermission.USER_VERIFY_SELF), async (req: Request, res: Response) => {
   try {
-    const schema = Joi.object().keys({
-      payload: Joi.object().keys({
-        userId: mongoIdValidation.required().messages({
-          'any.required': '"userId" is a required field'
-        })
-      }).required(),
-      hash: Joi.string().hex().required().messages({
-        'any.required': '"hash" is a required field'
-      }),
-      signature: Joi.string().base64().required().messages({
-        'any.required': '"signature" is a required field'
-      })
-    }).required();
-    
-    // Validate schema against input
-    Joi.assert(req.body, schema);
-
-    const user = await userService.verifyIdentityNumber(req.body as any);
-    return res.status(CREATED).json({user});
+    await userService.verifyIdentityNumber(req.user!.id.toString());
+    return res.status(OK).json({ message: 'ok' });
   } catch (error) {
     throw error;
   }

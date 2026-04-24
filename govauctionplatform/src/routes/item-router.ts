@@ -2,13 +2,8 @@ import itemService from '../services/item-service';
 import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
-<<<<<<< Updated upstream
-import { isoDateValidation, mongoIdValidation, urlValidation, validateWithJoi } from '../shared/functions';
-import { SuperAdminOnly, BidderOnly } from '../shared/middleware';
-=======
 import { isoDateValidation, mongoIdValidation, urlValidation } from '../shared/functions';
 import { requirePermission } from '../shared/middleware';
->>>>>>> Stashed changes
 import { IAdmin, IBidder } from '../models/user-model';
 import { EItemSortType, EPermission, ESortOrderType, MAX_LIST_LIMIT_NUMBER } from '../globals';
 
@@ -190,7 +185,7 @@ router.post(p.createItem, requirePermission(EPermission.LOT_CREATE), async (req:
     }).required();
     
     // Validate schema against input
-    validateWithJoi(req.body, schema);
+    Joi.assert(req.body, schema);
 
     const item = await itemService.createItem(req.user as IAdmin, req.body as any);
     return res.status(CREATED).json({item});

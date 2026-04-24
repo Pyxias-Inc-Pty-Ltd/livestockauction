@@ -1,4 +1,3 @@
-// Middleware mock: verifyWebhookSignature checks x-signature header
 jest.mock('../../../src/shared/middleware', () => {
   const { UnauthorizedError } = jest.requireActual('../../../src/shared/errors');
   return {
@@ -8,12 +7,6 @@ jest.mock('../../../src/shared/middleware', () => {
       next();
     },
     deserializeUser: (_req: any, _res: any, next: any) => next(),
-    verifyWebhookSignature: (req: any, _res: any, next: any) => {
-      if (!req.headers['x-signature']) {
-        return next(new UnauthorizedError('Missing or invalid x-signature header'));
-      }
-      next();
-    },
   };
 });
 
@@ -23,25 +16,15 @@ jest.mock('../../../src/services/user-service', () => ({
 }));
 jest.mock('../../../src/services/transaction-service', () => ({
   __esModule: true,
-  default: { trackTransactionStatus: jest.fn(), processSuccessfulPaymentFromPayGate: jest.fn() },
+  default: { processSuccessfulPaymentFromPayGate: jest.fn() },
 }));
 jest.mock('../../../src/services/auction-service', () => ({
   __esModule: true,
-  default: { trackAuctionStatus: jest.fn(), getById: jest.fn(), getByTitleSlug: jest.fn(), getAuctions: jest.fn() },
+  default: { getById: jest.fn(), getByTitleSlug: jest.fn(), getAuctions: jest.fn() },
 }));
 jest.mock('../../../src/services/item-service', () => ({
   __esModule: true,
-  default: {
-    trackItemStatus: jest.fn(),
-    getItemsWithWinnerForRefund: jest.fn(),
-    getById: jest.fn(),
-    getByTitleSlug: jest.fn(),
-    getItems: jest.fn(),
-  },
-}));
-jest.mock('../../../src/services/collection-service', () => ({
-  __esModule: true,
-  default: { trackCollectionStatus: jest.fn() },
+  default: { getById: jest.fn(), getByTitleSlug: jest.fn(), getItems: jest.fn() },
 }));
 jest.mock('../../../src/services/category-service', () => ({
   __esModule: true,
@@ -65,7 +48,6 @@ import userService from '../../../src/services/user-service';
 import transactionService from '../../../src/services/transaction-service';
 import auctionService from '../../../src/services/auction-service';
 import itemService from '../../../src/services/item-service';
-import collectionService from '../../../src/services/collection-service';
 import categoryService from '../../../src/services/category-service';
 import openRouter, { p } from '../../../src/routes/open-router';
 import { CustomError } from '../../../src/shared/errors';
@@ -90,7 +72,6 @@ const app = buildApp();
 const ITEM_ID = new Types.ObjectId().toHexString();
 const AUCTION_ID = new Types.ObjectId().toHexString();
 const CATEGORY_ID = new Types.ObjectId().toHexString();
-const WEBHOOK_BODY = { nonce: true };
 const STUB_ITEM = { _id: ITEM_ID, title: { en: 'Item', tn: 'Item' } };
 const STUB_AUCTION = { _id: AUCTION_ID, title: { en: 'Auction', tn: 'Auction' } };
 
@@ -126,82 +107,6 @@ const VALID_PAYGATE_BODY = {
 
 describe('open-router', () => {
   beforeEach(() => jest.clearAllMocks());
-
-  // ─── Webhook routes (verifyWebhookSignature) ──────────────────────────────
-
-  describe('POST /trackTransactionStatus (webhook)', () => {
-    it('returns 200 when x-signature header is present and body is valid', async () => {
-      (transactionService.trackTransactionStatus as jest.Mock).mockResolvedValue(undefined);
-      const res = await request(app)
-        .post(p.trackTransactionStatus)
-        .set('x-signature', 'valid-sig')
-        .send(WEBHOOK_BODY);
-      expect(res.status).toBe(200);
-      expect(res.body.message).toBe('ok');
-    });
-
-    it('returns 401 when x-signature header is missing', async () => {
-      const res = await request(app).post(p.trackTransactionStatus).send(WEBHOOK_BODY);
-      expect(res.status).toBe(401);
-    });
-
-    it('returns 400 when nonce body field is missing', async () => {
-      const res = await request(app)
-        .post(p.trackTransactionStatus)
-        .set('x-signature', 'sig')
-        .send({});
-      expect(res.status).toBe(400);
-    });
-  });
-
-  describe('POST /trackAuctionStatus (webhook)', () => {
-    it('returns 200 when x-signature header is present', async () => {
-      (auctionService.trackAuctionStatus as jest.Mock).mockResolvedValue(undefined);
-      const res = await request(app)
-        .post(p.trackAuctionStatus)
-        .set('x-signature', 'sig')
-        .send(WEBHOOK_BODY);
-      expect(res.status).toBe(200);
-    });
-
-    it('returns 401 when x-signature header is missing', async () => {
-      const res = await request(app).post(p.trackAuctionStatus).send(WEBHOOK_BODY);
-      expect(res.status).toBe(401);
-    });
-  });
-
-  describe('POST /trackItemStatus (webhook)', () => {
-    it('returns 200 when x-signature header is present', async () => {
-      (itemService.trackItemStatus as jest.Mock).mockResolvedValue(undefined);
-      (itemService.getItemsWithWinnerForRefund as jest.Mock).mockResolvedValue([]);
-      const res = await request(app)
-        .post(p.trackItemStatus)
-        .set('x-signature', 'sig')
-        .send(WEBHOOK_BODY);
-      expect(res.status).toBe(200);
-    });
-
-    it('returns 401 when x-signature header is missing', async () => {
-      const res = await request(app).post(p.trackItemStatus).send(WEBHOOK_BODY);
-      expect(res.status).toBe(401);
-    });
-  });
-
-  describe('POST /trackCollectionStatus (webhook)', () => {
-    it('returns 200 when x-signature header is present', async () => {
-      (collectionService.trackCollectionStatus as jest.Mock).mockResolvedValue(undefined);
-      const res = await request(app)
-        .post(p.trackCollectionStatus)
-        .set('x-signature', 'sig')
-        .send(WEBHOOK_BODY);
-      expect(res.status).toBe(200);
-    });
-
-    it('returns 401 when x-signature header is missing', async () => {
-      const res = await request(app).post(p.trackCollectionStatus).send(WEBHOOK_BODY);
-      expect(res.status).toBe(401);
-    });
-  });
 
   // ─── Public endpoints ─────────────────────────────────────────────────────
 
