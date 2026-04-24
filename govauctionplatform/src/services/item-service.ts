@@ -252,62 +252,111 @@ async function getByTitleSlug(titleSlug: string, lang: languageType, projection?
 }
 
 /**
- * Set the winning bidder of a lot in an auction
- * 
- * @param input 
+ * Set the winning bidder of a lot (admin override).
+ *
+ * This endpoint is used when an admin needs to manually confirm or override
+ * the winner — for example when the automatic selection is disputed.
+ *
+ * Enforcements:
+ *  - The lot must be in ENDED status.
+ *  - The supplied bidder must be the holder of the highest non-retracted bid.
+ *    This prevents an admin from awarding the lot to an arbitrary participant.
+ *
+ * For the automatic (non-override) path, see `autoSelectWinner`.
+ *
+ * @param input.itemId   The lot to update.
+ * @param input.bidderId The bidder who should be declared the winner.
  */
-async function setWinningBidder(input: { itemId: string | Schema.Types.ObjectId, bidderId: string | Schema.Types.ObjectId }): Promise<IItem> {
-  try {
+async function setWinningBidder(
+  input: { itemId: string | Schema.Types.ObjectId; bidderId: string | Schema.Types.ObjectId },
+): Promise<IItem> {
+  const item = await getById(input.itemId);
+  if (!item) throw new NotFoundError('Item not found');
 
-    // TODO: Check if auction is over
-
-    // Find item
-    const item = await getById(input.itemId);
-
-    // Check if exists
-    if (!item) {
-      throw new NotFoundError('Item not found');
-    }
-
-    if (item.eligibleBidders.indexOf(input.bidderId.toString()) === -1) {
-      throw new ForbiddenError('Bidder must be in list of eligible bidders');
-    }
-
-    const conditions = new Map<string, any>();
-
-    conditions.set('itemId', item.id);
-
-    // Get bids
-    const bids = await bidService.getBids(item.id.toString(), conditions);
-
-    // Check length
-    if (bids.length < 1) {
-      throw new InternalServerError('Bids are empty');
-    }
-
-    const highestBid = bids[0];
-
-    // Check if bidder supplied is the highest bidder
-    // if (highestBid.userId.toString() !== input.bidderId.toString()) {
-    //   throw new ForbiddenError('Bidder supplied is not the highest bidder');
-    // }
-
-    item.winningBidder = input.bidderId as any;
-    item.status = EItemStatus.ENDED;
-
-    return await item.save();
-
-  } catch (error) {
-    // Rethrow error
-    throw error;
+  if (item.status !== EItemStatus.ENDED) {
+    throw new ForbiddenError('Winner can only be set after the lot has ended');
   }
+
+  if (item.eligibleBidders.indexOf(input.bidderId.toString()) === -1) {
+    throw new ForbiddenError('Bidder must be in the list of eligible bidders');
+  }
+
+  const winningBid = await bidService.getWinningBid(item.id.toString());
+  if (!winningBid) {
+    throw new InternalServerError('No bids found for this lot');
+  }
+
+  if (winningBid.userId.toString() !== input.bidderId.toString()) {
+    throw new ForbiddenError(
+      'The supplied bidder did not place the highest bid — ' +
+      'winner must be the holder of the leading bid',
+    );
+  }
+
+  item.winningBidder = input.bidderId as any;
+  return await item.save();
+}
+
+/**
+ * Automatically select the winner of a lot based on the highest bid.
+ *
+ * Called by `trackItemStatus` immediately after a lot transitions to ENDED
+ * (and after sealed bids have been decrypted).  Idempotent — if a winner is
+ * already set, the function returns the existing item unchanged.
+ *
+ * Lots with no bids remain without a winner; the admin can set one manually
+ * or declare a no-sale.
+ *
+ * @param itemId  The lot that just ended.
+ * @returns       The updated item, or null if the item was not found.
+ */
+async function autoSelectWinner(itemId: string): Promise<IItem | null> {
+  const item = await getById(itemId);
+  if (!item) return null;
+
+  // Already assigned (e.g. admin set it manually before cron ran, or a
+  // buyout triggered winner assignment inside the bid transaction).
+  if (item.winningBidder) return item;
+
+  const winningBid = await bidService.getWinningBid(itemId);
+  if (!winningBid) {
+    // No bids placed — lot goes unsold, no winner to assign.
+    return item;
+  }
+
+  // Reserve price check: if the highest bid falls below the reserve, the lot
+  // goes unsold.  We still record the highest bidder for admin visibility, but
+  // flag the item so the auctioneer knows the reserve was not met.
+  if (item.reservePrice && winningBid.bidAmount < item.reservePrice) {
+    console.warn(
+      `[item-service] Item ${itemId} reserve price not met ` +
+      `(highest bid: ${winningBid.bidAmount}, reserve: ${item.reservePrice}). ` +
+      `No winner assigned — admin action required.`,
+    );
+    // Do not set winningBidder — leave it unset so admin can decide.
+    return item;
+  }
+
+  item.winningBidder = winningBid.userId as any;
+  return await item.save();
 }
 
 async function updateItemWithBid(item: IItem, newBidAmount: number, session: ClientSession): Promise<boolean> {
+  // Use an aggregation-pipeline update so $max is evaluated atomically server-side.
+  // This guarantees a lower concurrent bid can never overwrite a higher one, even if
+  // two writes land at exactly the same millisecond.
+  // The version field is still incremented so callers can detect conflicts.
   const result = await Item.updateOne(
     { _id: item._id, version: item.version },
-    { $set: { currentBid: newBidAmount }, $inc: { version: 1 } },
-    { session }
+    [
+      {
+        $set: {
+          currentBid: { $max: ['$currentBid', newBidAmount] },
+          version: { $add: ['$version', 1] },
+        },
+      },
+    ],
+    { session },
   );
 
   return result.modifiedCount === 1;
@@ -479,10 +528,13 @@ async function getEligibleBidders(itemId: string | Schema.Types.ObjectId): Promi
  */
 async function trackItemStatus(): Promise<void> {
   const sess = await startSession();
+  // Collected inside the transaction; consumed outside after commit.
+  const sealedItemIdsJustEnded: string[] = [];
+
   try {
     await sess.withTransaction(async () => {
       const [itemsToEnd, itemsToActivate] = await Promise.all([
-        Item.find({ 
+        Item.find({
           endTime: { $lte: new Date() },
           status: { $ne: EItemStatus.ENDED }
         }).session(sess),
@@ -491,31 +543,74 @@ async function trackItemStatus(): Promise<void> {
           status: EItemStatus.NOT_BEGUN
         }).session(sess)
       ]);
-      
+
       const itemsToUpdate = new Map<string, { item: any; newStatus: EItemStatus }>();
-      
+
       itemsToEnd.forEach(item => {
         itemsToUpdate.set(item._id.toString(), {
           item,
           newStatus: EItemStatus.ENDED
         });
+        // Track sealed items that are about to close so we can decrypt their
+        // bids after the transaction commits.
+        if (item.isClosedBidding) {
+          sealedItemIdsJustEnded.push(item._id.toString());
+        }
       });
-      
+
       itemsToActivate.forEach(item => {
         itemsToUpdate.set(item._id.toString(), {
           item,
           newStatus: EItemStatus.ACTIVE
         });
       });
-      
+
       // Update each document individually
       const updatePromises = Array.from(itemsToUpdate.values()).map(({ item, newStatus }) => {
         item.status = newStatus;
         return item.save({ session: sess });
       });
-      
+
       await Promise.all(updatePromises);
     });
+
+    // After the transaction commits: decrypt sealed bids for items that just
+    // ended.  This unblocks winner determination and post-auction reporting.
+    // Each item is processed independently — one failure doesn't block others.
+    if (sealedItemIdsJustEnded.length > 0) {
+      await Promise.all(
+        sealedItemIdsJustEnded.map((itemId) =>
+          bidService.decryptSealedBids(itemId).catch((err: Error) =>
+            console.error(
+              `[item-service] Failed to decrypt sealed bids for item ${itemId}: ${err.message}`,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Auto-select the winner for every lot that just ended (all modes).
+    // For sealed lots this runs after decryption so getWinningBid sees real amounts.
+    // Collect all items that transitioned to ENDED in this tick.
+    const allEndedItemIds: string[] = [];
+    // itemsToEnd was populated inside the transaction; collect via a targeted query.
+    const justEndedItems = await Item.find(
+      { endTime: { $lte: new Date() }, status: EItemStatus.ENDED, winningBidder: { $exists: false } },
+      { _id: 1 },
+    );
+    justEndedItems.forEach((item) => allEndedItemIds.push(item._id.toString()));
+
+    if (allEndedItemIds.length > 0) {
+      await Promise.all(
+        allEndedItemIds.map((itemId) =>
+          autoSelectWinner(itemId).catch((err: Error) =>
+            console.error(
+              `[item-service] autoSelectWinner failed for item ${itemId}: ${err.message}`,
+            ),
+          ),
+        ),
+      );
+    }
   } catch (error) {
     console.error('Error in trackItemStatus transaction:', error);
     throw error;
@@ -524,10 +619,23 @@ async function trackItemStatus(): Promise<void> {
   }
 }
 
+/**
+ * Return ENDED items that have a winner set and still have COMPLETED RESERVATION
+ * transactions for non-winners that have not yet been refunded.
+ * Used by the open-router to trigger non-winner refunds after trackItemStatus.
+ */
+async function getItemsWithWinnerForRefund(): Promise<IItem[]> {
+  return await Item.find(
+    { status: EItemStatus.ENDED, winningBidder: { $exists: true, $ne: null } },
+    { _id: 1, winningBidder: 1 }
+  );
+}
+
 // Export default
 export default {
   createItem,
   setWinningBidder,
+  autoSelectWinner,
   updateItemWithBid,
   getManualBidAmount,
   setNewBidAmountManually,
@@ -537,5 +645,6 @@ export default {
   getByTitleSlug,
   getById,
   getItems,
-  getItemsWon
+  getItemsWon,
+  getItemsWithWinnerForRefund
 } as const;
