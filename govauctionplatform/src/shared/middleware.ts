@@ -5,8 +5,6 @@ import { IAdmin, IUser } from '../models/user-model';
 import { jwtVerify } from 'jose';
 import { JWKS, KEYCLOAK_ISSUER } from './keycloak';
 import userService from '../services/user-service';
-import { createHash, createVerify } from 'crypto';
-import { webhookSignaturePublicKey } from '../index';
 
 // ---------------------------------------------------------------------------
 // Core: deserializeUser
@@ -192,34 +190,3 @@ export function AnyAdminMiddleware(errorMessage?: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Webhook signature verification
-// ---------------------------------------------------------------------------
-
-/**
- * Verify the request payload signature for internal webhook calls.
- */
-export function verifyWebhookSignature(req: Request, res: Response, next: NextFunction) {
-  try {
-    const signature = req.headers['x-signature'];
-    if (!signature || typeof signature !== 'string') {
-      throw new UnauthorizedError('Missing or invalid x-signature header');
-    }
-
-    const rawBody = JSON.stringify(req.body);
-    const payloadHash = createHash('sha256').update(rawBody).digest('hex');
-
-    const verifier = createVerify('SHA256');
-    verifier.update(payloadHash);
-    verifier.end();
-
-    const isValid = verifier.verify(webhookSignaturePublicKey, Buffer.from(signature, 'base64'));
-
-    if (!isValid) {
-      throw new UnauthorizedError('Invalid signature');
-    }
-
-    next();
-  } catch (error) {
-    next(error);
-  }
-}
