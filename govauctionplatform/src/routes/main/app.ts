@@ -9,6 +9,7 @@ import forumRouter from '../forum-router';
 import formRouter from '../form-router';
 import notificationTriggerRouter from '../notification-trigger-router';
 import notificationRouter from '../notification-router';
+import collectionRouter from '../collection-router';
 
 // Export the base-router
 const baseRouter = Router();
@@ -24,6 +25,7 @@ baseRouter.use('/categories', categoryRouter);
 baseRouter.use('/forums', forumRouter);
 baseRouter.use('/notificationTriggers', notificationTriggerRouter);
 baseRouter.use('/notifications', notificationRouter);
+baseRouter.use('/collections', collectionRouter);
 
 // Export default.
 export default baseRouter;
