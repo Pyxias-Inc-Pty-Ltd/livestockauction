@@ -4,14 +4,15 @@ import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession } from 'mongoose';
 import { ITransaction, Transaction, ITransactionInput } from "../models/transaction-model";
 import itemService from "./item-service";
-import { EPaymentStatus, ESortOrderType, ETransactionSortType, ETransactionType, LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, MAX_LIST_LIMIT_NUMBER, PAYGATE_ENCRYPTION_KEY, PAYGATE_ID, paymentProvider, SERVICE_URLS, transactionType, UNIPAY_APP_AUTH_TOKEN, LOCAL_CURRENCY, DEFAULT_LANG, DEFAULT_PAYMENT_EMAIL, LOCALY_COUNTRY_ALPHA_3_CODE } from "../globals";
+import { EPaymentStatus, ERefundReason, ESortOrderType, ETransactionSortType, ETransactionType, LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, MAX_LIST_LIMIT_NUMBER, PAYGATE_ENCRYPTION_KEY, PAYGATE_ID, SERVICE_URLS, transactionType, LOCAL_CURRENCY, DEFAULT_LANG, DEFAULT_PAYMENT_EMAIL, LOCALY_COUNTRY_ALPHA_3_CODE } from "../globals";
 import bidService from "./bid-service";
 import * as luxon from "luxon";
-import { generateUniPayAppPaymentURL, generatePayGatePaymentURL, prefixWithZero, convertToPaygateFormat } from "../shared/functions";
+import { generatePayGatePaymentURL, prefixWithZero, convertToPaygateFormat } from "../shared/functions";
 import tokenService from "./token-service";
 import auctionService from "./auction-service";
 import forumService from "./forum-service";
 import { BidderCounter } from "../models/bidder-counter";
+import collectionService from "./collection-service";
 
 /**
  * Intiates a reservation payment transaction for an item.
@@ -20,7 +21,7 @@ import { BidderCounter } from "../models/bidder-counter";
  * @param input
  * @return 
  */
-async function initiateItemReservation(currentUser: IBidder, input: { itemId: string, paymentProvider: paymentProvider }): Promise<ITransaction> {
+async function initiateItemReservation(currentUser: IBidder, input: { itemId: string }): Promise<ITransaction> {
   try {
 
     const [item, token] = await Promise.all([itemService.getById(input.itemId, { reservePrice: 1, sellerId: 1, auctionId: 1 }), tokenService.getActiveToken()]);
@@ -71,56 +72,29 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
     // Save transaction
     const savedReservation = await newReservation.save();
 
-    if (input.paymentProvider === 'PAY_GATE') {
-      // Generate payment link using PayGate
-      const formattedString = convertToPaygateFormat(PAYGATE_ID, savedReservation.id.toString(), item.reservePrice, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/auction/${item.auctionId.toString()}/lot/${item._id.toString()}`, savedReservation.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
+    // Generate payment link using PayGate
+    const formattedString = convertToPaygateFormat(PAYGATE_ID, savedReservation.id.toString(), item.reservePrice, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/auction/${item.auctionId.toString()}/lot/${item._id.toString()}`, savedReservation.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
 
-      const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
-        method: "POST",
-        body: formattedString,
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded"
-        }
-      });
-
-      // Check if the response is okay
-      if (!queryResponse.ok) {
-        throw new InternalServerError(`Failed to create payment link: ${queryResponse.status}`);
+    const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
+      method: "POST",
+      body: formattedString,
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
       }
+    });
 
-      const textReponse = await queryResponse.text();
+    if (!queryResponse.ok) {
+      throw new InternalServerError(`Failed to create payment link: ${queryResponse.status}`);
+    }
 
-      (savedReservation.metadata as Map<string, string>).set('paymentLink', generatePayGatePaymentURL(textReponse));
-    } else {
+    const textReponse = await queryResponse.text();
+    const paygateInitParams = new URLSearchParams(textReponse);
 
-      // Generate payment link from UniPay
-      const queryResponse = await fetch(`${SERVICE_URLS.unipayInitiatePaymentApplication}`, {
-        method: "POST",
-        body: JSON.stringify({
-          "amount": item.reservePrice,
-          "payload": JSON.stringify({
-            "transactionId": savedReservation.id.toString()
-          })
-      }),
-        headers: {
-          "Authorization": `Bearer ${UNIPAY_APP_AUTH_TOKEN}`,
-          "Content-Type": "application/json"
-        }
-      });
+    (savedReservation.metadata as Map<string, string>).set('paymentLink', generatePayGatePaymentURL(textReponse));
 
-      if (queryResponse.status !== 201) {
-        if (queryResponse.ok === false) {
-          const { message } = await queryResponse.json();
-          throw new InternalServerError(message);
-        } else {
-          throw new InternalServerError('Failed to create payment link');
-        }
-      }
-
-      const { application } = await queryResponse.json();
-
-      (savedReservation.metadata as Map<string, string>).set('paymentLink', generateUniPayAppPaymentURL(application.id));
-
+    const payRequestId = paygateInitParams.get('PAY_REQUEST_ID');
+    if (payRequestId) {
+      (savedReservation.metadata as Map<string, string>).set('PAY_REQUEST_ID', payRequestId);
     }
 
     // Save payment transaction
@@ -140,7 +114,7 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
  * @param input
  * @return 
  */
-async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: { itemId: string, paymentProvider: paymentProvider }): Promise<ITransaction> {
+async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: { itemId: string }): Promise<ITransaction> {
   try {
 
     const [item, token] = await Promise.all([itemService.getById(input.itemId, { reservePrice: 1, sellerId: 1, winningBidder: 1, auctionId: 1 }), tokenService.getActiveToken()]);
@@ -217,56 +191,29 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
     // Save payment transaction
     const savedPurchase = await newPurchase.save();
 
-    if (input.paymentProvider === 'PAY_GATE') {
-      // Generate payment link using PayGate
-      const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), savedPurchase.amount, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/auction/${item.auctionId.toString()}/lot/${item._id.toString()}`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
-      
-      const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
-        method: "POST",
-        body: formattedString,
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded"
-        }
-      });
+    // Generate payment link using PayGate
+    const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), savedPurchase.amount, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/auction/${item.auctionId.toString()}/lot/${item._id.toString()}`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
 
-      // Check if the response is okay
-      if (!queryResponse.ok) {
-        throw new InternalServerError(`Failed to create payment link: ${queryResponse.status}`);
+    const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
+      method: "POST",
+      body: formattedString,
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
       }
+    });
 
-      const textReponse = await queryResponse.text();
+    if (!queryResponse.ok) {
+      throw new InternalServerError(`Failed to create payment link: ${queryResponse.status}`);
+    }
 
-      (savedPurchase.metadata as Map<string, string>).set('paymentLink', generatePayGatePaymentURL(textReponse));
-    } else {
+    const textReponse = await queryResponse.text();
+    const paygateInitParams = new URLSearchParams(textReponse);
 
-      // Generate payment link from UniPay
-      const queryResponse = await fetch(`${SERVICE_URLS.unipayInitiatePaymentApplication}`, {
-        method: "POST",
-        body: JSON.stringify({
-          "amount": amount,
-          "payload": JSON.stringify({
-            "transactionId": savedPurchase.id.toString()
-          })
-      }),
-        headers: {
-          "Authorization": `Bearer ${UNIPAY_APP_AUTH_TOKEN}`,
-          "Content-Type": "application/json"
-        }
-      });
+    (savedPurchase.metadata as Map<string, string>).set('paymentLink', generatePayGatePaymentURL(textReponse));
 
-      if (queryResponse.status !== 201) {
-        if (queryResponse.ok === false) {
-          const { message } = await queryResponse.json();
-          throw new InternalServerError(message);
-        } else {
-          throw new InternalServerError('Failed to create payment link');
-        }
-      }
-
-      const { application } = await queryResponse.json();
-
-      (savedPurchase.metadata as Map<string, string>).set('paymentLink', generateUniPayAppPaymentURL(application.id));
-
+    const payRequestId = paygateInitParams.get('PAY_REQUEST_ID');
+    if (payRequestId) {
+      (savedPurchase.metadata as Map<string, string>).set('PAY_REQUEST_ID', payRequestId);
     }
 
     await savedPurchase.save();
@@ -285,7 +232,7 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
  * @param input
  * @return 
  */
-async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input: { itemId: string, paymentProvider: paymentProvider }): Promise<ITransaction> {
+async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input: { itemId: string }): Promise<ITransaction> {
   try {
 
     // TODO: Make sure bidder can not purchase once bidding has begun
@@ -343,55 +290,29 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
     // Save payment transaction
     const savedPurchase = await newPurchase.save();
 
-    if (input.paymentProvider === 'PAY_GATE') {
+    // Generate payment link using PayGate
+    const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), item.buyoutPrice, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/auction/${item.auctionId.toString()}/lot/${item._id.toString()}`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
 
-      // Generate payment link using PayGate
-      const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), item.reservePrice, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/auction/${item.auctionId.toString()}/lot/${item._id.toString()}`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
-      
-      const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
-        method: "POST",
-        body: formattedString,
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded"
-        }
-      });
-
-      // Check if the response is okay
-      if (!queryResponse.ok) {
-        throw new InternalServerError(`Failed to create payment link: ${queryResponse.status}`);
+    const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
+      method: "POST",
+      body: formattedString,
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
       }
+    });
 
-      const textReponse = await queryResponse.text();
+    if (!queryResponse.ok) {
+      throw new InternalServerError(`Failed to create payment link: ${queryResponse.status}`);
+    }
 
-      (savedPurchase.metadata as Map<string, string>).set('paymentLink', generatePayGatePaymentURL(textReponse));
-    } else {
-      // Generate payment link from UniPay
-      const queryResponse = await fetch(`${SERVICE_URLS.unipayInitiatePaymentApplication}`, {
-        method: "POST",
-        body: JSON.stringify({
-          "amount": item.buyoutPrice,
-          "payload": JSON.stringify({
-            "transactionId": savedPurchase.id.toString()
-          })
-      }),
-        headers: {
-          "Authorization": `Bearer ${UNIPAY_APP_AUTH_TOKEN}`,
-          "Content-Type": "application/json"
-        }
-      });
+    const textReponse = await queryResponse.text();
+    const paygateInitParams = new URLSearchParams(textReponse);
 
-      if (queryResponse.status !== 201) {
-        if (queryResponse.ok === false) {
-          const { message } = await queryResponse.json();
-          throw new InternalServerError(message);
-        } else {
-          throw new InternalServerError('Failed to create payment link');
-        }
-      }
+    (savedPurchase.metadata as Map<string, string>).set('paymentLink', generatePayGatePaymentURL(textReponse));
 
-      const { application } = await queryResponse.json();
-
-      (savedPurchase.metadata as Map<string, string>).set('paymentLink', generateUniPayAppPaymentURL(application.id));
+    const payRequestId = paygateInitParams.get('PAY_REQUEST_ID');
+    if (payRequestId) {
+      (savedPurchase.metadata as Map<string, string>).set('PAY_REQUEST_ID', payRequestId);
     }
 
     await savedPurchase.save();
@@ -418,281 +339,6 @@ async function pollPaidTransaction (currentUser: IBidder, input: { itemId: strin
 
   } catch (error) {
     throw error;
-  }
-}
-
-/**
- * Process a successful payment from the tingg platform
- * 
- * @param input 
- */
-async function processSuccessfulPaymentFromTingg (input: { accountNumber: string, paymentMethod: string }): Promise<ITransaction> {
-
-  let sess: ClientSession | null = null;
-
-  try {
-
-    let needle = false;
-    // Find transaction
-    const transaction = await getById(input.accountNumber);
-
-    // Check if exists
-    if (!transaction) {
-      throw new NotFoundError('Transaction not found');
-    }
-
-    // Start session and mongo acid transaction
-    sess = await startSession();
-
-    // Find item
-    const item = await itemService.getById(transaction.itemId);
-
-    // Check if exists
-    if (!item) {
-      throw new NotFoundError('Item not found');
-    }
-
-    // Check transaction type
-    if (transaction.transactionType === 'RESERVATION') {
-
-      transaction.status = 'COMPLETED';
-      transaction.paymentMethod = input.paymentMethod;
-
-      const forum = await forumService.getForumByAuctionId(item.auctionId);
-
-      // Check if exists
-      if (!forum) {
-        throw new NotFoundError('Forum not found');
-      }
-
-      const stringBuyerId = transaction.buyerId.toString();
-
-      if (item.eligibleBidders.indexOf(stringBuyerId) === -1) {
-        item.eligibleBidders.push(stringBuyerId);
-      }
-
-      if (forum.participants.indexOf(stringBuyerId) === -1) {
-        forum.participants.push(stringBuyerId);
-      }
-
-      const auction = await auctionService.getById(item.auctionId);
-
-      // Check if exists
-      if (!auction) {
-        throw new NotFoundError('Auction not found');
-      }
-
-      // Check if auction has registration fee
-      if (auction.hasRegistrationFee) {
-        if (auction.globallyEligibleBidders.indexOf(stringBuyerId) === -1) {
-          auction.globallyEligibleBidders.push(stringBuyerId);
-        }
-      }
-
-      if (auction.participantsWithBiddingNumbers.length > 0) {
-        for (let index = 0; index < auction.participantsWithBiddingNumbers.length; index++) {
-          const element = auction.participantsWithBiddingNumbers[index];
-          if (element.includes(stringBuyerId)) {
-            needle = true;
-            break;
-          }
-        }
-      }
-
-      await sess.withTransaction(async () => {
-
-        if (!needle) {
-          const bidderCounter = await BidderCounter.findOneAndUpdate({ auctionId: item.auctionId }, { $inc: { sequenceValue: 1 } }, { new: true, upsert: true, session: sess });
-
-          auction.participantsWithBiddingNumbers.push(`${stringBuyerId}:BIDDER${prefixWithZero(bidderCounter.sequenceValue)}`);
-
-          await auction.save({
-            session: sess
-          });
-        } else if (auction.hasRegistrationFee) {
-          await auction.save({
-            session: sess
-          });
-        }
-
-        await forum.save({
-          session: sess
-        });
-
-        await item.save({
-          session: sess
-        });
-  
-        await transaction.save({
-          session: sess
-        });
-  
-      });
-
-    } else if (transaction.transactionType === 'PURCHASE') {
-
-      item.isPurchased = true;
-      transaction.status = 'COMPLETED';
-      transaction.paymentMethod = input.paymentMethod;
-
-      await sess.withTransaction(async () => {
-        await transaction.save({
-          session: sess
-        });
-        await item.save({
-          session: sess
-        });
-      });
-
-    }
-
-    return transaction;
-
-  } catch (error) {
-    throw error;
-  } finally {
-    if (sess) {
-      // End session
-      await sess.endSession();
-    }
-  }
-}
-
-/**
- * Process a successful payment from the UniPay platform
- * 
- * @param input 
- */
-async function processSuccessfulPaymentFromUniPay(input: { payload: string, transaction: { id: string, currency: string, amount: number } }): Promise<ITransaction> {
-
-  let sess: ClientSession | null = null;
-
-  try {
-
-    let needle = false;
-    const payload = JSON.parse(input.payload);
-    const paymentMethod = 'UniPay';
-
-    // Find transaction
-    const transaction = await getById(payload.transactionId);
-
-    // Check if exists
-    if (!transaction) {
-      throw new NotFoundError('Transaction not found');
-    }
-
-    // Start session and mongo acid transaction
-    sess = await startSession();
-
-    // Find item
-    const item = await itemService.getById(transaction.itemId);
-
-    // Check if exists
-    if (!item) {
-      throw new NotFoundError('Item not found');
-    }
-
-    // Check transaction type
-    if (transaction.transactionType === 'RESERVATION') {
-
-      transaction.status = 'COMPLETED';
-      transaction.paymentMethod = paymentMethod;
-      transaction.externalReference = input.transaction.id;
-
-      const forum = await forumService.getForumByAuctionId(item.auctionId);
-
-      // Check if exists
-      if (!forum) {
-        throw new NotFoundError('Forum not found');
-      }
-
-      const stringBuyerId = transaction.buyerId.toString();
-
-      if (item.eligibleBidders.indexOf(stringBuyerId) === -1) {
-        item.eligibleBidders.push(stringBuyerId);
-      }
-
-      if (forum.participants.indexOf(stringBuyerId) === -1) {
-        forum.participants.push(stringBuyerId);
-      }
-
-      const auction = await auctionService.getById(item.auctionId);
-
-      // Check if exists
-      if (!auction) {
-        throw new NotFoundError('Auction not found');
-      }
-
-      // Check if auction has registration fee
-      if (auction.hasRegistrationFee) {
-        if (auction.globallyEligibleBidders.indexOf(stringBuyerId) === -1) {
-          auction.globallyEligibleBidders.push(stringBuyerId);
-        }
-      }
-
-      if (auction.participantsWithBiddingNumbers.length > 0) {
-        for (let index = 0; index < auction.participantsWithBiddingNumbers.length; index++) {
-          const element = auction.participantsWithBiddingNumbers[index];
-          if (element.includes(stringBuyerId)) {
-            needle = true;
-            break;
-          }
-        }
-      }
-
-      await sess.withTransaction(async () => {
-
-        if (!needle) {
-          const bidderCounter = await BidderCounter.findOneAndUpdate({ auctionId: item.auctionId }, { $inc: { sequenceValue: 1 } }, { new: true, upsert: true, session: sess });
-
-          auction.participantsWithBiddingNumbers.push(`${stringBuyerId}:BIDDER${prefixWithZero(bidderCounter.sequenceValue)}`);
-
-          await auction.save({
-            session: sess
-          });
-        } else if (auction.hasRegistrationFee) {
-          await auction.save({
-            session: sess
-          });
-        }
-
-        await item.save({
-          session: sess
-        });
-  
-        await transaction.save({
-          session: sess
-        });
-  
-      });
-
-    } else if (transaction.transactionType === 'PURCHASE') {
-
-      item.isPurchased = true;
-      transaction.status = 'COMPLETED';
-      transaction.paymentMethod = paymentMethod;
-      transaction.externalReference = input.transaction.id;
-
-      await sess.withTransaction(async () => {
-        await transaction.save({
-          session: sess
-        });
-        await item.save({
-          session: sess
-        });
-      });
-
-    }
-
-    return transaction;
-
-  } catch (error) {
-    throw error;
-  } finally {
-    if (sess) {
-      // End session
-      await sess.endSession();
-    }
   }
 }
 
@@ -835,6 +481,23 @@ async function processSuccessfulPaymentFromPayGate(input: {
         await transaction.save({ session: sess });
         await item.save({ session: sess });
       });
+
+      // Create collection record — done outside the ACID transaction so that
+      // a collection-creation failure does not roll back the payment itself.
+      // The OTP code is generated here and should be delivered to the buyer.
+      collectionService.createCollection(transaction.itemId, transaction._id)
+        .then(({ otpCode }) => {
+          // TODO: Deliver otpCode to the buyer via push notification / email.
+          // The OTP is intentionally not logged to avoid leaking it.
+          console.info(
+            `[transaction-service] Collection created for item ${transaction.itemId.toString()}`
+          );
+        })
+        .catch((err: Error) => {
+          console.error(
+            `[transaction-service] Failed to create collection for item ${transaction.itemId.toString()}: ${err.message}`
+          );
+        });
     }
 
     return transaction;
@@ -1003,16 +666,146 @@ async function trackTransactionStatus (): Promise<void> {
   }
 }
 
+/**
+ * Initiate a PayGate refund for a disputed collection.
+ * Creates a REFUND transaction linked to the original PURCHASE transaction.
+ *
+ * TODO: Call the PayGate refund API endpoint with the PAY_REQUEST_ID stored
+ *       in the original transaction's metadata once the endpoint is confirmed.
+ *       The REFUND transaction status should be updated via processRefundFromPayGate
+ *       when PayGate posts back.
+ *
+ * @param purchaseTransactionId
+ */
+async function initiateDisputeRefund(purchaseTransactionId: string): Promise<ITransaction> {
+  try {
+    const purchaseTx = await getById(purchaseTransactionId);
+
+    if (!purchaseTx) {
+      throw new NotFoundError('Purchase transaction not found');
+    }
+
+    if (purchaseTx.transactionType !== ETransactionType.PURCHASE) {
+      throw new ForbiddenError('Refund can only be initiated against a PURCHASE transaction');
+    }
+
+    const refundInput: ITransactionInput = {
+      auctionId: purchaseTx.auctionId,
+      itemId: purchaseTx.itemId,
+      buyerId: purchaseTx.buyerId,
+      sellerId: purchaseTx.sellerId,
+      currency: purchaseTx.currency,
+      amount: purchaseTx.amount,
+      transactionType: ETransactionType.REFUND,
+      relatedTransaction: purchaseTx._id,
+      metadata: {}
+    };
+
+    const refundTx = new Transaction(refundInput);
+    refundTx.status = EPaymentStatus.PENDING;
+
+    // Store the original PAY_REQUEST_ID so the PayGate refund API can reference it.
+    const originalPayRequestId = (purchaseTx.metadata as Map<string, string>).get('PAY_REQUEST_ID');
+    if (originalPayRequestId) {
+      (refundTx.metadata as Map<string, string>).set('originalPAY_REQUEST_ID', originalPayRequestId);
+    }
+
+    // TODO: Call PayGate refund endpoint here once confirmed.
+    //   const refundResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/refund.trans`, { ... });
+
+    return await refundTx.save();
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Initiate reservation refunds for all non-winning bidders after a winner is selected.
+ * Creates a REFUND transaction (PENDING) for each losing bidder who paid the reserve price.
+ *
+ * TODO: Call the PayGate refund API for each refund once the endpoint is confirmed.
+ *
+ * @param itemId
+ * @param winningBidderId
+ */
+async function initiateNonWinnerReservationRefunds(itemId: string, winningBidderId: string): Promise<void> {
+  try {
+    const losingReservations = await Transaction.find({
+      itemId,
+      transactionType: ETransactionType.RESERVATION,
+      status: EPaymentStatus.COMPLETED,
+      buyerId: { $ne: winningBidderId }
+    });
+
+    if (losingReservations.length === 0) {
+      return;
+    }
+
+    const refundPromises = losingReservations.map(async (reservation) => {
+      // Skip if a refund already exists for this reservation
+      const existingRefund = await Transaction.findOne({
+        relatedTransaction: reservation._id,
+        transactionType: ETransactionType.REFUND
+      });
+
+      if (existingRefund) {
+        return;
+      }
+
+      const refundInput: ITransactionInput = {
+        auctionId: reservation.auctionId,
+        itemId: reservation.itemId,
+        buyerId: reservation.buyerId,
+        sellerId: reservation.sellerId,
+        currency: reservation.currency,
+        amount: reservation.amount,
+        transactionType: ETransactionType.REFUND,
+        relatedTransaction: reservation._id,
+        metadata: {}
+      };
+
+      const refundTx = new Transaction(refundInput);
+      refundTx.status = EPaymentStatus.PENDING;
+
+      const originalPayRequestId = (reservation.metadata as Map<string, string>).get('PAY_REQUEST_ID');
+      if (originalPayRequestId) {
+        (refundTx.metadata as Map<string, string>).set('originalPAY_REQUEST_ID', originalPayRequestId);
+      }
+
+      // TODO: Call PayGate refund endpoint here once confirmed.
+      //   const refundResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/refund.trans`, { ... });
+
+      await refundTx.save();
+    });
+
+    await Promise.allSettled(refundPromises).then((results) => {
+      const failed = results.filter((r) => r.status === 'rejected');
+      if (failed.length > 0) {
+        console.error(
+          `[transaction-service] ${failed.length} non-winner refund(s) failed to initiate for item ${itemId}`
+        );
+      } else {
+        console.info(
+          `[transaction-service] Initiated ${losingReservations.length} non-winner refund(s) for item ${itemId}`
+        );
+      }
+    });
+  } catch (error) {
+    console.error('[transaction-service] initiateNonWinnerReservationRefunds error:', error);
+    throw error;
+  }
+}
+
 // Export default
 export default {
   initiateItemReservation,
   pollPaidTransaction,
-  processSuccessfulPaymentFromTingg,
-  processSuccessfulPaymentFromUniPay,
   processSuccessfulPaymentFromPayGate,
   initiatePurchaseItemByWinningBidder,
   initiatePurchaseItemUsingBuyoutPrice,
   getTransactions,
   trackTransactionStatus,
-  getById
+  getById,
+  initiateDisputeRefund,
+  initiateNonWinnerReservationRefunds
 } as const;
