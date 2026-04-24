@@ -2,10 +2,15 @@ import itemService from '../services/item-service';
 import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
+<<<<<<< Updated upstream
 import { isoDateValidation, mongoIdValidation, urlValidation, validateWithJoi } from '../shared/functions';
 import { SuperAdminOnly, BidderOnly } from '../shared/middleware';
+=======
+import { isoDateValidation, mongoIdValidation, urlValidation } from '../shared/functions';
+import { requirePermission } from '../shared/middleware';
+>>>>>>> Stashed changes
 import { IAdmin, IBidder } from '../models/user-model';
-import { EItemSortType, ESortOrderType, MAX_LIST_LIMIT_NUMBER } from '../globals';
+import { EItemSortType, EPermission, ESortOrderType, MAX_LIST_LIMIT_NUMBER } from '../globals';
 
 // Constants
 const router = Router();
@@ -25,7 +30,7 @@ export const p = {
 /**
  * Get items won by the bidder.
  */
-router.get(p.getItemsWon, BidderOnly(), async (req: Request, res: Response) => {
+router.get(p.getItemsWon, requirePermission(EPermission.LOT_READ), async (req: Request, res: Response) => {
   try {
     const conditions = new Map<string, any>();
     // Query checks
@@ -65,7 +70,7 @@ router.get(p.getItemsWon, BidderOnly(), async (req: Request, res: Response) => {
 /**
  * Create an item
  */
-router.post(p.createItem, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.post(p.createItem, requirePermission(EPermission.LOT_CREATE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       formId: mongoIdValidation.required().messages({
@@ -221,7 +226,7 @@ router.put(p.setWinningBidder, async (req: Request, res: Response) => {
 /**
  * Delete an item
  */
-router.delete(p.deleteItem, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.delete(p.deleteItem, requirePermission(EPermission.LOT_MANAGE), async (req: Request, res: Response) => {
   try {
 
     // Query checks
@@ -271,7 +276,7 @@ router.delete(p.deleteItem, SuperAdminOnly(), async (req: Request, res: Response
 /**
  * Get manual bid amount
  */
-router.get(p.getManualBidAmount, SuperAdminOnly(), BidderOnly(), async (req: Request, res: Response) => {
+router.get(p.getManualBidAmount, requirePermission(EPermission.LOT_BID_READ), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       itemId: mongoIdValidation.required().messages({
