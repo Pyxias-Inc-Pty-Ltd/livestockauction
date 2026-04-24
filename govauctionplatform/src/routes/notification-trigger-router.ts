@@ -1,8 +1,8 @@
 import { Request, Response, Router } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import * as Joi from 'joi';
-import { EPushMessageReason } from '../globals';
-import { SuperAdminOnly } from '../shared/middleware';
+import { EPushMessageReason, EPermission } from '../globals';
+import { requirePermission } from '../shared/middleware';
 import notificationTriggerService from '../services/notification-trigger-service';
 
 // Constants
@@ -20,7 +20,7 @@ export const p = {
  * Add one notification trigger.
  * 
  */
-router.post(p.createNotificationTrigger, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.post(p.createNotificationTrigger, requirePermission(EPermission.NOTIFICATION_TRIGGER_MANAGE), async (req: Request, res: Response) => {
   try {
     const bSchema = Joi.object().keys({
       name: Joi.string().required().valid(EPushMessageReason.NOTIFY_USER_OF_FORUM_PARTICIPATION, EPushMessageReason.NOTIFY_USER_OF_STARTING_AUCTION, EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_PURCHASE_PAYMENT, EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_REFUND, EPushMessageReason.NOTIFY_USER_OF_SUCCESSFUL_RESERVE_PRICE_PAYMENT, EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_REFUND, EPushMessageReason.NOTIFY_USER_OF_UNSUCCESSFUL_RESERVE_PRICE_PAYMENT, EPushMessageReason.NOTIFY_USER_OF_UPCOMING_AUCTION).messages({
@@ -45,7 +45,7 @@ router.post(p.createNotificationTrigger, SuperAdminOnly(), async (req: Request, 
  * Get notification trigger by name.
  * 
  */
-router.get(p.getNotificationTriggerByName, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.get(p.getNotificationTriggerByName, requirePermission(EPermission.NOTIFICATION_TRIGGER_MANAGE), async (req: Request, res: Response) => {
   try {
 
     // Query checks
@@ -70,7 +70,7 @@ router.get(p.getNotificationTriggerByName, SuperAdminOnly(), async (req: Request
  * Delete notification trigger.
  * 
  */
-router.delete(p.deleteNotificationTriggerById, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.delete(p.deleteNotificationTriggerById, requirePermission(EPermission.NOTIFICATION_TRIGGER_MANAGE), async (req: Request, res: Response) => {
   try {
 
     // Query checks
