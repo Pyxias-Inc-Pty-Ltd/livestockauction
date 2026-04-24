@@ -1,4 +1,4 @@
-import { SuperAdminOnly, SellerOnly } from '../shared/middleware';
+import { requirePermission } from '../shared/middleware';
 import { Request, Response, Router } from 'express';
 import * as Joi from 'joi';
 import StatusCodes from 'http-status-codes';
@@ -6,7 +6,7 @@ import { mongoIdValidation } from '../shared/functions';
 import formService from '../services/form-service';
 import { IAdmin, ISeller } from '../models/user-model';
 import { EFormFieldType, EConditionOperator } from '../models/form-model';
-import { ESortOrderType } from '../globals';
+import { EPermission, ESortOrderType } from '../globals';
 
 // Constants
 const router = Router();
@@ -95,7 +95,7 @@ const formSectionSchema = Joi.object({
 /**
  * Get form by id.
  */
-router.get(p.getFormById, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.get(p.getFormById, requirePermission(EPermission.FORM_MANAGE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       id: mongoIdValidation.required().messages({
@@ -116,7 +116,7 @@ router.get(p.getFormById, SuperAdminOnly(), async (req: Request, res: Response) 
 /**
  * Create new form
  */
-router.post(p.createForm, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.post(p.createForm, requirePermission(EPermission.FORM_MANAGE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       identificationNumber: Joi.string().required().messages({
@@ -154,7 +154,7 @@ router.post(p.createForm, SuperAdminOnly(), async (req: Request, res: Response) 
 /**
  * Update form
  */
-router.put(p.updateForm, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.put(p.updateForm, requirePermission(EPermission.FORM_MANAGE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       formId: mongoIdValidation.required().messages({
@@ -186,7 +186,7 @@ router.put(p.updateForm, SuperAdminOnly(), async (req: Request, res: Response) =
 /**
  * Delete form
  */
-router.delete(p.deleteForm, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.delete(p.deleteForm, requirePermission(EPermission.FORM_MANAGE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       formId: mongoIdValidation.required().messages({
@@ -207,7 +207,7 @@ router.delete(p.deleteForm, SuperAdminOnly(), async (req: Request, res: Response
 /**
  * Get forms by seller
  */
-router.get(p.getFormsBySeller, SellerOnly(), async (req: Request, res: Response) => {
+router.get(p.getFormsBySeller, requirePermission(EPermission.FORM_READ), async (req: Request, res: Response) => {
   try {
     const forms = await formService.getFormsBySeller(req.user as ISeller);
     return res.status(OK).json({ forms });
@@ -219,7 +219,7 @@ router.get(p.getFormsBySeller, SellerOnly(), async (req: Request, res: Response)
 /**
  * Get all forms (admin only)
  */
-router.get(p.getForms, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.get(p.getForms, requirePermission(EPermission.FORM_MANAGE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       sortOrder: Joi.string().valid(ESortOrderType.ASC, ESortOrderType.DESC).messages({
