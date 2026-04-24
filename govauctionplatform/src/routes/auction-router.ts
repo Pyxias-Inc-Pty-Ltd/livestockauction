@@ -2,10 +2,10 @@ import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isoDateValidation, isStringNumberLike, mongoIdValidation } from '../shared/functions';
-import { SuperAdminOnly, SellerOnly, AuctionApproverOnly, AnyAdminMiddleware } from '../shared/middleware';
+import { requirePermission } from '../shared/middleware';
 import { IAdmin, IAuctionApprover, ISeller, IUser } from '../models/user-model';
 import auctionService from '../services/auction-service';
-import { EAuctionStatus, EAuctionSortType, EParticipationType, ESortOrderType, EPublishedStatus } from '../globals';
+import { EAuctionStatus, EAuctionSortType, EParticipationType, EPermission, ESortOrderType, EPublishedStatus } from '../globals';
 
 // Constants
 const router = Router();
@@ -28,7 +28,7 @@ export const p = {
 /**
  * Create an auction
  */
-router.post(p.createAuction, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.post(p.createAuction, requirePermission(EPermission.AUCTION_CREATE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       title: Joi.object().keys({
@@ -103,6 +103,17 @@ router.post(p.createAuction, SuperAdminOnly(), async (req: Request, res: Respons
         'array.base': '"requiredAttributes" should be an array of valid MongoDB IDs'
       }).required().default([]).messages({
         'any.required': '"requiredAttributes" is a required field'
+      }),
+      collectionWindowDays: Joi.number().integer().min(1).required().messages({
+        'any.required': '"collectionWindowDays" is a required field'
+      }),
+      collectionStartTime: Joi.string().pattern(/^\d{2}:\d{2}$/).required().messages({
+        'any.required': '"collectionStartTime" is a required field',
+        'string.pattern.base': '"collectionStartTime" must be in HH:mm format'
+      }),
+      collectionEndTime: Joi.string().pattern(/^\d{2}:\d{2}$/).required().messages({
+        'any.required': '"collectionEndTime" is a required field',
+        'string.pattern.base': '"collectionEndTime" must be in HH:mm format'
       })
     }).required();    
     
@@ -119,7 +130,7 @@ router.post(p.createAuction, SuperAdminOnly(), async (req: Request, res: Respons
 /**
  * Create a required attribute
  */
-router.post(p.createRequiredAttribute, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.post(p.createRequiredAttribute, requirePermission(EPermission.AUCTION_MANAGE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       name: Joi.string().required().messages({
@@ -140,7 +151,7 @@ router.post(p.createRequiredAttribute, SuperAdminOnly(), async (req: Request, re
 /**
  * Delete an auction
  */
-router.delete(p.deleteAuction, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.delete(p.deleteAuction, requirePermission(EPermission.AUCTION_DELETE), async (req: Request, res: Response) => {
   try {
 
     // Query checks
@@ -166,7 +177,7 @@ router.delete(p.deleteAuction, SuperAdminOnly(), async (req: Request, res: Respo
 /**
  * Get auction report
  */
-router.get(p.getAuctionReport, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.get(p.getAuctionReport, requirePermission(EPermission.AUCTION_REPORT), async (req: Request, res: Response) => {
   try {
 
     // Query checks
@@ -192,7 +203,7 @@ router.get(p.getAuctionReport, SuperAdminOnly(), async (req: Request, res: Respo
 /**
  * Get a list of required attributes
  */
-router.get(p.getRequiredAttributes, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.get(p.getRequiredAttributes, requirePermission(EPermission.AUCTION_MANAGE), async (req: Request, res: Response) => {
   try {
     const requiredAttributes = await auctionService.getRequiredAttributes();
     return res.status(OK).json({ requiredAttributes });
@@ -204,7 +215,7 @@ router.get(p.getRequiredAttributes, SuperAdminOnly(), async (req: Request, res: 
 /**
  * Publish an auction by an auction approver
  */
-router.put(p.publishAuction, AuctionApproverOnly(), async (req: Request, res: Response) => {
+router.put(p.publishAuction, requirePermission(EPermission.AUCTION_APPROVE), async (req: Request, res: Response) => {
   try {
     // Query validation
     const schema = Joi.object().keys({
@@ -231,7 +242,7 @@ router.put(p.publishAuction, AuctionApproverOnly(), async (req: Request, res: Re
 /**
  * Unpublish an auction by a seller
  */
-router.put(p.unpublishAuction, SellerOnly(), async (req: Request, res: Response) => {
+router.put(p.unpublishAuction, requirePermission(EPermission.AUCTION_UNPUBLISH), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       auctionId: mongoIdValidation.required().messages({
@@ -257,7 +268,7 @@ router.put(p.unpublishAuction, SellerOnly(), async (req: Request, res: Response)
 /**
  * Reject an auction
  */
-router.put(p.rejectAuction, AuctionApproverOnly(), async (req: Request, res: Response) => {
+router.put(p.rejectAuction, requirePermission(EPermission.AUCTION_REJECT), async (req: Request, res: Response) => {
   try {
     // Body validation
     const schema = Joi.object().keys({
@@ -288,7 +299,7 @@ router.put(p.rejectAuction, AuctionApproverOnly(), async (req: Request, res: Res
 /**
  * Get all auctions (protected route - for backend admins only).
  */
-router.get(p.getAllAuctions, AnyAdminMiddleware(), async (req: Request, res: Response) => {
+router.get(p.getAllAuctions, requirePermission(EPermission.AUCTION_READ), async (req: Request, res: Response) => {
   try {
     const conditions = new Map<string, any>();
 
@@ -353,7 +364,7 @@ router.get(p.getAllAuctions, AnyAdminMiddleware(), async (req: Request, res: Res
 /**
  * Update auction coordinates
  */
-router.put(p.updateAuctionCoordinates, SuperAdminOnly(), SellerOnly(),
+router.put(p.updateAuctionCoordinates, requirePermission(EPermission.AUCTION_UPDATE),
   async (req: Request, res: Response) => {
       try {
         const schema = Joi.object().keys({
