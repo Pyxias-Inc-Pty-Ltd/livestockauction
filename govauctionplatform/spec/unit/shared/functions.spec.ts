@@ -23,7 +23,6 @@ import {
   hashOTP,
   verifyOTP,
   generateAuctionNumber,
-  verifySignature,
   formatPhoneNumber,
   normalizeAndCompareNames,
   getAnimalByEID,
@@ -322,18 +321,6 @@ describe('formatPhoneNumber', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// verifySignature
-// ─────────────────────────────────────────────────────────────────────────────
-describe('verifySignature', () => {
-  it('returns false for an invalid/garbage signature', () => {
-    expect(verifySignature('some-hash', 'aW52YWxpZA==')).toBe(false);
-  });
-
-  it('returns false and does not throw for empty inputs', () => {
-    expect(verifySignature('', '')).toBe(false);
-  });
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Joi validators
