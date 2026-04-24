@@ -217,6 +217,8 @@ The active env file is **`src/pre-start/env/development.env`**. It is loaded at 
 | `ELASTICSEARCH_NODE` | Yes | — | Elasticsearch cluster URL |
 | `ELASTICSEARCH_USERNAME` | Yes | — | Elasticsearch username |
 | `ELASTICSEARCH_PASSWORD` | Yes | — | Elasticsearch password |
+| **Firebase** | | | |
+| `FIREBASE_SERVICE_ACCOUNT_CREDENTIALS` | Yes | — | Service account JSON as a single-line string. Download from Firebase Console → Project Settings → Service Accounts → Generate new private key, then flatten: `node -e "console.log(JSON.stringify(require('./sa.json')))"` |
 | **External APIs** | | | |
 | `BAITS_API_TOKEN` | Yes | — | BAITS3 livestock registry API token |
 | `ID_VERIFICATION_API_KEY` | Yes | — | GOV ID verification API key |
@@ -682,7 +684,7 @@ npx jest --testPathPattern=e2e     # run only E2E tests
 
 - **MongoDB URI** is hardcoded in `src/globals.ts`. For Atlas, uncomment the `mongodb+srv://` line and set `MONGO_DB_USER` / `MONGO_DB_PASS`.
 - **`src/shared/sec/public_key.pem`** must be present. This RSA public key is used to verify the HMAC signature on inbound cron webhooks.
-- **Firebase credentials** are hardcoded in `src/globals.ts`. Rotate before production.
+- **Firebase credentials** are stored in `FIREBASE_SERVICE_ACCOUNT_CREDENTIALS` (env var). The service account JSON must be provided as a single-line string. See the env vars table above.
 - **Sealed bid key**: `SEALED_BID_ENCRYPTION_KEY` must be a cryptographically random 64-character hex string. Generate with: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Changing this key in production will make all existing sealed bids unreadable.
 - **Horizontal scaling**: The bid worker emits Socket.IO events directly via the `io` reference. Before scaling to multiple instances, add `@socket.io/redis-adapter` to the Socket.IO server and replace direct `io.to().emit()` calls in `bid-worker.ts` with a `@socket.io/redis-emitter` instance.
 - **CORS**: `SERVICE_URLS.clientURI` in `src/globals.ts` is hardcoded to `https://auctiondev.xyz`. Update for your domain.
