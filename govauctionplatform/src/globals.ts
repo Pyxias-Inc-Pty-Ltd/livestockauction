@@ -56,14 +56,20 @@ export const BAITS_API_TOKEN = process.env.BAITS_API_TOKEN as string;
 export const ELASTICSEARCH_NODE = process.env.ELASTICSEARCH_NODE as string;
 export const ELASTICSEARCH_USERNAME = process.env.ELASTICSEARCH_USERNAME as string;
 export const ELASTICSEARCH_PASSWORD = process.env.ELASTICSEARCH_PASSWORD as string;
-export const MONGO_DB_USER = process.env.MONGO_DB_USER as string;
-export const MONGO_DB_PASS = process.env.MONGO_DB_PASS as string;
+export const MONGO_DB_HOST = process.env.MONGO_DB_HOST ?? 'localhost:27017';
+export const MONGO_DB_USER = process.env.MONGO_DB_USER;
+export const MONGO_DB_PASS = process.env.MONGO_DB_PASS;
 export const REDIS_HOST = process.env.REDIS_HOST ?? 'localhost';
 export const REDIS_PORT = process.env.REDIS_PORT ?? '6379';
 export const REDIS_PASS = process.env.REDIS_PASS;
+
+// Use mongodb+srv (Atlas) when credentials are provided, otherwise plain mongodb (local)
+const mongoDBURI = (MONGO_DB_USER && MONGO_DB_PASS)
+  ? `mongodb+srv://${MONGO_DB_USER}:${MONGO_DB_PASS}@${MONGO_DB_HOST}/bwgovauctionplatform?retryWrites=true&w=majority&appName=Cluster0`
+  : `mongodb://${MONGO_DB_HOST}/bwgovauctionplatform?retryWrites=true&w=majority`;
+
 export const SERVICE_URLS: {[key: string]: string} = {
-  mongoDBURI: `mongodb://localhost:27017/bwgovauctionplatform?retryWrites=true&w=majority`,
-  // mongoDBURI: `mongodb+srv://${MONGO_DB_USER}:${MONGO_DB_PASS}@cluster0.5odo36p.mongodb.net/bwgovauctionplatform?retryWrites=true&w=majority&appName=Cluster0"`,
+  mongoDBURI,
   paygateBaseURI: "https://secure.paygate.co.za/payweb3",
   clientURI: "https://auctiondev.xyz",
   baits3URICore: "http://bifrost-baits3.gov.bw:90/api/core/v1/api",
