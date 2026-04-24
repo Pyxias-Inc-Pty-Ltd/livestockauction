@@ -360,18 +360,6 @@ export function generateRandomPassword(length = 20): string {
 }
 
 /**
- * Generates a UniPay payment URL
- * 
- * @param applicationId 
- */
-export function generateUniPayAppPaymentURL(applicationId: string): string {
-  const payload = { "a": "d", "b": `${applicationId}:null` };
-  const jsonString = JSON.stringify(payload);
-  const base64Encoded = Buffer.from(jsonString).toString('base64');
-  return `https://unipay.africa/misc/${base64Encoded}`;
-}
-
-/**
  * Converts the provided payment information to the Paygate format
  * and generates a checksum for verification.
  *
