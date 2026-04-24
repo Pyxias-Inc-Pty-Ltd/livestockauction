@@ -2,10 +2,10 @@ import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isStringNumberLike, mongoIdValidation } from '../shared/functions';
-import { BidderOnly, SuperAdminOnly } from '../shared/middleware';
+import { requirePermission } from '../shared/middleware';
 import { IAdmin, IBidder } from '../models/user-model';
 import messageService from '../services/message-service';
-import {EMessageSortType, ESortOrderType} from '../globals';
+import { EMessageSortType, EPermission, ESortOrderType } from '../globals';
 
 // Constants
 const router = Router();
@@ -20,7 +20,7 @@ export const p = {
 /**
  * Create a message
  */
-router.post(p.createMessage, BidderOnly(), SuperAdminOnly(), async (req: Request, res: Response) => {
+router.post(p.createMessage, requirePermission(EPermission.MESSAGE_WRITE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       adminId: mongoIdValidation.required().messages({
@@ -48,7 +48,7 @@ router.post(p.createMessage, BidderOnly(), SuperAdminOnly(), async (req: Request
 /**
  * Get messages.
  */
-router.get(p.getMessages, BidderOnly(), SuperAdminOnly(), async (req: Request, res: Response) => {
+router.get(p.getMessages, requirePermission(EPermission.MESSAGE_READ), async (req: Request, res: Response) => {
   try {
 
     const conditions = new Map<string, any>();

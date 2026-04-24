@@ -3,8 +3,8 @@ import * as Joi from 'joi';
 import StatusCodes from 'http-status-codes';
 import forumService from '../services/forum-service';
 import { isStringNumberLike, mongoIdValidation } from '../shared/functions';
-import { SuperAdminOnly, BidderOnly } from '../shared/middleware';
-import { EAdminType, EForumCommentSortType, ESortOrderType, EUserType } from '../globals';
+import { requirePermission } from '../shared/middleware';
+import { EForumCommentSortType, EPermission, ESortOrderType } from '../globals';
 import { IAdmin, IBidder } from '../models/user-model';
 
 // Constants
@@ -22,7 +22,7 @@ export const p = {
 /**
  * Get forum by auction ID.
  */
-router.get(p.getForumByAuctionId, SuperAdminOnly(), BidderOnly(`Current user must be an admin of type ${EAdminType.SUPER} or user of type ${EUserType.BIDDER}`), async (req: Request, res: Response) => {
+router.get(p.getForumByAuctionId, requirePermission(EPermission.FORUM_READ), async (req: Request, res: Response) => {
     try {
         // Query checks
         const qSchema = Joi.object().keys({
@@ -45,7 +45,7 @@ router.get(p.getForumByAuctionId, SuperAdminOnly(), BidderOnly(`Current user mus
 /**
  * Create forum comment.
  */
-router.post(p.createForumComment, SuperAdminOnly(), BidderOnly(`Current user must be an admin of type ${EAdminType.SUPER} or user of type ${EUserType.BIDDER}`),async (req: Request, res: Response) => {
+router.post(p.createForumComment, requirePermission(EPermission.FORUM_WRITE), async (req: Request, res: Response) => {
     try {
         const schema = Joi.object({
             forumId: mongoIdValidation.required().messages({
@@ -69,7 +69,7 @@ router.post(p.createForumComment, SuperAdminOnly(), BidderOnly(`Current user mus
 /**
  * Delete forum comment by id.
  */
-router.delete(p.deleteForumCommentById, SuperAdminOnly(), BidderOnly(`Current user must be an admin of type ${EAdminType.SUPER} or user of type ${EUserType.BIDDER}`), async (req: Request, res: Response) => {
+router.delete(p.deleteForumCommentById, requirePermission(EPermission.FORUM_WRITE), async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
 
@@ -88,7 +88,7 @@ router.delete(p.deleteForumCommentById, SuperAdminOnly(), BidderOnly(`Current us
 /**
  * Get Forum comments.
  */
-router.get(p.getForumComments, BidderOnly(), SuperAdminOnly(), async (req: Request, res: Response) => {
+router.get(p.getForumComments, requirePermission(EPermission.FORUM_READ), async (req: Request, res: Response) => {
   try {
 
     const conditions = new Map<string, any>();

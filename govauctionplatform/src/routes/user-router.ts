@@ -1,4 +1,4 @@
-import { BidderOnly, SellerOnly, SuperAdminOnly } from '../shared/middleware';
+import { requirePermission } from '../shared/middleware';
 import { Request, Response, Router } from 'express';
 import * as Joi from 'joi';
 import StatusCodes from 'http-status-codes';
@@ -6,7 +6,8 @@ import { isStringNumberLike, mongoIdValidation, phoneValidation } from '../share
 import userService from '../services/user-service';
 import { IAdmin, IBidder, ISeller, IUser } from '../models/user-model';
 import { InternalServerError } from '../shared/errors';
-import { ESortOrderType, EUserSortType, EUserType } from '../globals';
+import { EPermission, ESortOrderType, EUserSortType, EUserType } from '../globals';
+import { resetKeycloakUserPassword } from '../shared/keycloak';
 
 // Constants
 const router = Router();
@@ -40,7 +41,7 @@ export const p = {
 /**
  * Get a category by id.
  */
-router.get(p.getUserById, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.get(p.getUserById, requirePermission(EPermission.USER_READ), async (req: Request, res: Response) => {
   try {
     // Query checks
     const qSchema = Joi.object().keys({
@@ -79,7 +80,7 @@ router.get(p.getOwnAccount, async (req: Request, res: Response) => {
 /**
  * Create seller
  */
-router.post(p.createSeller, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.post(p.createSeller, requirePermission(EPermission.USER_MANAGE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       email: Joi.string().required().messages({
@@ -135,7 +136,7 @@ router.post(p.verifyIdentityNumber, async (req: Request, res: Response) => {
 /**
  * Begin BAITS keeper Id verification
  */
-router.post(p.beginBAITSKeeperIDVerification, BidderOnly(), async (req: Request, res: Response) => {
+router.post(p.beginBAITSKeeperIDVerification, requirePermission(EPermission.USER_VERIFY_SELF), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       keeperId: Joi.string().required().messages({
@@ -158,7 +159,7 @@ router.post(p.beginBAITSKeeperIDVerification, BidderOnly(), async (req: Request,
 /**
  * Finish BAITS keeper Id verification
  */
-router.post(p.finishBAITSKeeperIDVerification, BidderOnly(), async (req: Request, res: Response) => {
+router.post(p.finishBAITSKeeperIDVerification, requirePermission(EPermission.USER_VERIFY_SELF), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       otp: Joi.string().required().messages({
@@ -181,7 +182,7 @@ router.post(p.finishBAITSKeeperIDVerification, BidderOnly(), async (req: Request
 /**
  * Get users.
  */
-router.get(p.getUsers, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.get(p.getUsers, requirePermission(EPermission.USER_MANAGE), async (req: Request, res: Response) => {
   try {
 
     const conditions = new Map<string, any>();
@@ -225,6 +226,33 @@ router.get(p.getUsers, SuperAdminOnly(), async (req: Request, res: Response) => 
 });
 
 /**
+ * Update own password via Keycloak Admin API.
+ * The user must supply their new password; Keycloak handles validation.
+ */
+router.put(p.updatePassword, async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      newPassword: Joi.string().min(8).required().messages({
+        'any.required': '"newPassword" is a required field',
+        'string.min': '"newPassword" must be at least 8 characters',
+      }),
+    }).required();
+
+    Joi.assert(req.body, schema);
+
+    const user = req.user as IUser;
+    if (!user.keycloakId) {
+      throw new InternalServerError('User has no Keycloak account linked');
+    }
+
+    await resetKeycloakUserPassword(user.keycloakId, req.body.newPassword, false);
+    return res.status(OK).json({ message: 'Password updated successfully' });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
  * Set Firebase Token ID for a user.
  */
 router.put(p.setFirebaseTokenId, async (req: Request, res: Response) => {
@@ -249,7 +277,7 @@ router.put(p.setFirebaseTokenId, async (req: Request, res: Response) => {
 /**
  * Get user report
  */
-router.get(p.getUserReport, SuperAdminOnly(), async (req: Request, res: Response) => {
+router.get(p.getUserReport, requirePermission(EPermission.USER_REPORT), async (req: Request, res: Response) => {
   try {
     const report = await userService.getUserReport();
     return res.status(OK).json({ report });
@@ -258,7 +286,7 @@ router.get(p.getUserReport, SuperAdminOnly(), async (req: Request, res: Response
   }
 });
 
-router.post(p.createAuctionApprover, SellerOnly(), async (req: Request, res: Response) => {
+router.post(p.createAuctionApprover, requirePermission(EPermission.USER_APPROVER_MANAGE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       email: Joi.string().required().messages({
@@ -285,7 +313,7 @@ router.post(p.createAuctionApprover, SellerOnly(), async (req: Request, res: Res
 /**
  * Get auction approvers for current seller
  */
-router.get(p.getAuctionApprovers, SellerOnly(), async (req: Request, res: Response) => {
+router.get(p.getAuctionApprovers, requirePermission(EPermission.USER_APPROVER_READ), async (req: Request, res: Response) => {
   try {
     const approvers = await userService.getAuctionApproversForSeller((req.user as ISeller).id);
     return res.status(OK).json({ approvers });
@@ -297,7 +325,7 @@ router.get(p.getAuctionApprovers, SellerOnly(), async (req: Request, res: Respon
 /**
  * Get auction approvers for current seller
  */
-router.get(p.getAuctionApprovers, SellerOnly(), async (req: Request, res: Response) => {
+router.get(p.getAuctionApprovers, requirePermission(EPermission.USER_APPROVER_READ), async (req: Request, res: Response) => {
   try {
     const approvers = await userService.getAuctionApproversForSeller((req.user as ISeller).id);
     return res.status(OK).json({ approvers });
@@ -309,7 +337,7 @@ router.get(p.getAuctionApprovers, SellerOnly(), async (req: Request, res: Respon
 /**
  * Update auction approver status
  */
-router.put(p.updateAuctionApproverStatus, SellerOnly(), async (req: Request, res: Response) => {
+router.put(p.updateAuctionApproverStatus, requirePermission(EPermission.USER_APPROVER_MANAGE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       approverId: mongoIdValidation.required().messages({
@@ -331,6 +359,44 @@ router.put(p.updateAuctionApproverStatus, SellerOnly(), async (req: Request, res
       isActive
     );
     return res.status(OK).json({ approver });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Delete an admin by ID (also removes from Keycloak).
+ */
+router.delete(p.deleteAdminById, requirePermission(EPermission.USER_DELETE), async (req: Request, res: Response) => {
+  try {
+    const qSchema = Joi.object().keys({
+      id: mongoIdValidation.required().messages({
+        'any.required': '"id" is a required field',
+      }),
+    }).required();
+    Joi.assert(req.query, qSchema);
+
+    await userService.deleteUser(req.query.id as string);
+    return res.status(OK).json({ message: 'Admin deleted' });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Delete a bidder by ID (also removes from Keycloak).
+ */
+router.delete(p.deleteBidderById, requirePermission(EPermission.USER_DELETE), async (req: Request, res: Response) => {
+  try {
+    const qSchema = Joi.object().keys({
+      id: mongoIdValidation.required().messages({
+        'any.required': '"id" is a required field',
+      }),
+    }).required();
+    Joi.assert(req.query, qSchema);
+
+    await userService.deleteUser(req.query.id as string);
+    return res.status(OK).json({ message: 'Bidder deleted' });
   } catch (error) {
     throw error;
   }

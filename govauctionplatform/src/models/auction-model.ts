@@ -59,6 +59,9 @@ export interface IAuction extends Document {
   isBeingLivestreamed: boolean;
   streamUrl: string;
   thumbnailUrl: string;
+  collectionWindowDays: number;
+  collectionStartTime: string;
+  collectionEndTime: string;
   createdDate: Date;
   updatedDate: Date;
 }
@@ -92,6 +95,9 @@ export interface IAuctionInput {
   isBeingLivestreamed: boolean;
   streamUrl?: string;
   thumbnailUrl: string;
+  collectionWindowDays: number;
+  collectionStartTime: string;
+  collectionEndTime: string;
   startTime: Date;
   endTime: Date;
 }
@@ -194,14 +200,17 @@ const auctionSchema = new Schema<IAuction>({
     msg: 'Valid URL must be supplied.',
       validator: function (v: string): boolean {
         // Be less stringent in development
-        if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) { 
+        if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) {
           return isURL(v, {protocols: ['https']});
         } else {
           return true;
         }
       }
     }
-  }
+  },
+  collectionWindowDays: { type: Number, required: true, min: 1, default: 5 },
+  collectionStartTime: { type: String, required: true, trim: true, default: '08:00' },
+  collectionEndTime: { type: String, required: true, trim: true, default: '16:00' }
 }, {
   timestamps: {
     createdAt: "createdDate",

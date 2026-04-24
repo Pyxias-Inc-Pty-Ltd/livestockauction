@@ -224,6 +224,54 @@ function isLongitudeCoordinate(v: number): boolean {
 }
 
 /**
+ * Clean Joi error message by removing ANSI color codes and other noise
+ */
+export const cleanJoiErrorMessage = (errorMessage: string): string => {
+  // Remove ANSI color codes
+  let cleanMessage = errorMessage.replace(/\u001b\[\d+m/g, '');
+  
+  // Remove the entire request body dump that Joi sometimes includes
+  // This regex removes everything before the actual error message in brackets
+  cleanMessage = cleanMessage.replace(/^[^{]*\{[^}]*\}[^{]*\[.*?\]\s*/, '');
+  
+  // Extract just the error message part (usually in brackets at the end)
+  const bracketMatch = cleanMessage.match(/\[(.*?)\]$/);
+  if (bracketMatch) {
+    cleanMessage = bracketMatch[1].trim();
+  }
+  
+  // Common error message formatting
+  if (cleanMessage.includes('Invalid MongoId')) {
+    return 'Invalid MongoId';
+  }
+  
+  // Remove any remaining request body content
+  cleanMessage = cleanMessage.split('\n')[0].trim();
+  
+  return cleanMessage;
+};
+
+/**
+ * Wrapper function for Joi validation with clean error messages
+ */
+export const validateWithJoi = (schema: Joi.ObjectSchema, data: any): void => {
+  try {
+    Joi.assert(data, schema);
+  } catch (error) {
+    if (error instanceof Joi.ValidationError) {
+      const originalMessage = error.details[0]?.message || 'Validation error';
+      const cleanMessage = cleanJoiErrorMessage(originalMessage);
+      
+      // Create a new error with the clean message
+      const validationError = new Error(cleanMessage);
+      validationError.name = 'ValidationError';
+      throw validationError;
+    }
+    throw error;
+  }
+};
+
+/**
  * Creates a slug from a string value e.g. Hello world becomes hello_world
  * @param { string } v The value to create a slug from
  */
@@ -309,18 +357,6 @@ export function generateRandomPassword(length = 20): string {
     console.error('Error generating random password:', err);
     throw err; // Re-throw the error for handling
   }
-}
-
-/**
- * Generates a UniPay payment URL
- * 
- * @param applicationId 
- */
-export function generateUniPayAppPaymentURL(applicationId: string): string {
-  const payload = { "a": "d", "b": `${applicationId}:null` };
-  const jsonString = JSON.stringify(payload);
-  const base64Encoded = Buffer.from(jsonString).toString('base64');
-  return `https://unipay.africa/misc/${base64Encoded}`;
 }
 
 /**

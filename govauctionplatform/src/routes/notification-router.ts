@@ -2,8 +2,8 @@ import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isStringNumberLike, mongoIdValidation } from '../shared/functions';
-import { BidderOnly, SellerOnly, SuperAdminOnly } from '../shared/middleware';
-import {ENotificationSortType, ESortOrderType} from '../globals';
+import { requirePermission } from '../shared/middleware';
+import { ENotificationSortType, EPermission, ESortOrderType } from '../globals';
 import notificationService from '../services/notification-service';
 import { IUser } from '../models/user-model';
 
@@ -19,7 +19,7 @@ export const p = {
 /**
  * Get own notifications.
  */
-router.get(p.getOwnNotifications, SellerOnly(), BidderOnly(), SuperAdminOnly(), async (req: Request, res: Response) => {
+router.get(p.getOwnNotifications, requirePermission(EPermission.NOTIFICATION_READ), async (req: Request, res: Response) => {
   try {
 
     const conditions = new Map<string, any>();

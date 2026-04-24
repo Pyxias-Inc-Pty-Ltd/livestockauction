@@ -1,34 +1,90 @@
 import { UnauthorizedError } from '../shared/errors';
 import { NextFunction, Request, Response } from 'express';
-import { ENVIRONMENT_PRODUCTION, EUserType, EAdminType, fauxObject, STATE_JWT_SECRET } from '../globals';
+import { EUserType, EAdminType, KEYCLOAK_CLIENT_ID } from '../globals';
 import { IAdmin, IUser } from '../models/user-model';
-import { verify } from 'jsonwebtoken';
+import { jwtVerify } from 'jose';
+import { JWKS, KEYCLOAK_ISSUER } from './keycloak';
 import userService from '../services/user-service';
 import { createHash, createVerify } from 'crypto';
 import { webhookSignaturePublicKey } from '../index';
 
+// ---------------------------------------------------------------------------
+// Core: deserializeUser
+// ---------------------------------------------------------------------------
+
 /**
- * Middleware to allow access if the user is a SUPER_ADMIN, SELLER, or AUCTION_APPROVER.
- * 
- * @param errorMessage
- * @return Middleware function
+ * Verify a Keycloak-issued JWT via JWKS, then:
+ *  - Attach the matching MongoDB user document to `req.user`
+ *  - Attach coarse realm roles to `req.roles`  (realm_access.roles)
+ *  - Attach fine-grained permissions to `req.permissions` (resource_access[clientId].roles)
  */
-export function AnyAdminMiddleware(errorMessage?: string) {
+export async function deserializeUser(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const bearerHeader = req.headers['authorization'];
+    if (!bearerHeader) {
+      throw new UnauthorizedError('No token supplied');
+    }
+
+    const bearerToken = bearerHeader.split(' ')[1];
+    if (!bearerToken) {
+      throw new UnauthorizedError('Malformed authorization header');
+    }
+
+    // Verify signature, issuer, and audience against Keycloak JWKS endpoint.
+    // Enforcing audience ensures only tokens explicitly issued for this API are accepted,
+    // rejecting tokens intended for other clients (e.g. the frontend client itself).
+    const { payload } = await jwtVerify(bearerToken, JWKS, {
+      issuer: KEYCLOAK_ISSUER,
+      audience: KEYCLOAK_CLIENT_ID,
+    });
+
+    const keycloakId = payload.sub;
+    if (!keycloakId) {
+      throw new UnauthorizedError('Invalid token: missing sub claim');
+    }
+
+    // Populate req.roles from realm_access.roles
+    const realmAccess = payload.realm_access as { roles?: string[] } | undefined;
+    req.roles = realmAccess?.roles ?? [];
+
+    // Populate req.permissions from resource_access[clientId].roles
+    const resourceAccess = payload.resource_access as Record<string, { roles?: string[] }> | undefined;
+    req.permissions = resourceAccess?.[KEYCLOAK_CLIENT_ID]?.roles ?? [];
+
+    // Look up local profile by Keycloak user ID (needed for business logic)
+    const user = await userService.getByKeycloakId(keycloakId);
+    if (!user) {
+      throw new UnauthorizedError('User not found');
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Core: permission / role guards
+// ---------------------------------------------------------------------------
+
+/**
+ * Require the request to carry ALL of the listed fine-grained permissions
+ * (from `req.permissions`, populated via Keycloak client roles).
+ *
+ * Usage:
+ *   router.post('/auction', requirePermission(EPermission.AUCTION_CREATE), handler)
+ */
+export function requirePermission(...permissions: string[]) {
   return function (req: Request, res: Response, next: NextFunction) {
     try {
-      const user = (req as any).user as IUser;
-
-      // Check if the user has any of the required roles
-      if (
-        (user.userType === 'ADMIN' && (user as IAdmin).adminType === 'SUPER') ||
-        user.userType === 'SELLER' ||
-        user.userType === EUserType.AUCTION_APPROVER
-      ) {
-        next(); // Allow access
-      } else {
-        // Deny access if the user doesn't have any of the required roles
-        throw new UnauthorizedError(errorMessage || 'You do not have permission to access this resource.');
+      const missing = permissions.filter((p) => !req.permissions.includes(p));
+      if (missing.length > 0) {
+        throw new UnauthorizedError(
+          `Missing required permission(s): ${missing.join(', ')}`
+        );
       }
+      next();
     } catch (error) {
       next(error);
     }
@@ -36,199 +92,130 @@ export function AnyAdminMiddleware(errorMessage?: string) {
 }
 
 /**
- * Check if current user is a super admin
+ * Require the request to carry AT LEAST ONE of the listed fine-grained permissions.
  *
- * @param errorMessage
- * @return Middleware function
+ * Usage:
+ *   router.get('/transactions', requireAnyPermission(EPermission.TRANSACTION_READ, EPermission.USER_MANAGE), handler)
  */
+export function requireAnyPermission(...permissions: string[]) {
+  return function (req: Request, res: Response, next: NextFunction) {
+    try {
+      const hasAny = permissions.some((p) => req.permissions.includes(p));
+      if (!hasAny) {
+        throw new UnauthorizedError(
+          `Requires at least one of: ${permissions.join(', ')}`
+        );
+      }
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+/**
+ * Require the request to carry a specific coarse realm role
+ * (from `req.roles`, populated via Keycloak realm_access.roles).
+ *
+ * Prefer `requirePermission` for new routes; use this only when a coarse
+ * role check is sufficient and no client-level permissions are configured.
+ */
+export function requireRole(role: string, errorMessage?: string) {
+  return function (req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.roles.includes(role)) {
+        throw new UnauthorizedError(
+          errorMessage ?? `Requires role: ${role}`
+        );
+      }
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+/**
+ * Require the request to carry AT LEAST ONE of the listed coarse realm roles.
+ */
+export function requireAnyRole(roles: string[], errorMessage?: string) {
+  return function (req: Request, res: Response, next: NextFunction) {
+    try {
+      const hasAny = roles.some((r) => req.roles.includes(r));
+      if (!hasAny) {
+        throw new UnauthorizedError(
+          errorMessage ?? `Requires one of roles: ${roles.join(', ')}`
+        );
+      }
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Legacy role aliases — kept for backwards compatibility.
+// These delegate to requireRole/requireAnyRole (JWT-sourced, no DB check,
+// no NODE_ENV bypass, no isSkippable hack).
+// ---------------------------------------------------------------------------
+
+/** Allow only SUPER_ADMIN realm role. */
 export function SuperAdminOnly(errorMessage?: string) {
-  return function (req: Request, res: Response, next: NextFunction) {
-    try {
-      if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) {
-        if ((((req as any).user as IUser).userType !== 'ADMIN') && (((req as any).user as IAdmin).adminType !== 'SUPER')) {
-          if (!res.locals.isSkippable) {
-            if (errorMessage) {
-              throw new UnauthorizedError(errorMessage);
-            } else {
-              throw new UnauthorizedError(`Admin must be of type ${EAdminType.SUPER}`);
-            }
-          }
-        } else {
-          res.locals.isSkippable = true;
-        }
-      }
-      next();
-    } catch (error) {
-      next(error);
-    }
-  }
+  return requireRole(EAdminType.SUPER, errorMessage ?? `Admin must be of type ${EAdminType.SUPER}`);
 }
 
-/**
- * Check if current user is a bidder
- * 
- * @return Middleware function
- */
-export function BidderOnly(errorMessage?: string) {
-  return function (req: Request, res: Response, next: NextFunction) {
-    try {
-      if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) {
-        if (((req as any).user as IUser).userType !== 'BIDDER') {
-          if (!res.locals.isSkippable) {
-            if (errorMessage) {
-              throw new UnauthorizedError(errorMessage);
-            } else {
-              throw new UnauthorizedError(`User must be of type ${EUserType.BIDDER}`);
-            }
-          }
-        } else {
-          res.locals.isSkippable = true;
-        }
-      }
-      next();
-    } catch (error) {
-      next(error);
-    }
-  }
-}
-
-/**
- * Check if current user is a seller
- * 
- * @return Middleware function
- */
+/** Allow only SELLER realm role. */
 export function SellerOnly(errorMessage?: string) {
-  return function (req: Request, res: Response, next: NextFunction) {
-    try {
-      if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) {
-        if (((req as any).user as IUser).userType !== 'SELLER') {
-          if (!res.locals.isSkippable) {
-            if (errorMessage) {
-              throw new UnauthorizedError(errorMessage);
-            } else {
-              throw new UnauthorizedError(`User must be of type ${EUserType.SELLER}`);
-            }
-          }
-        } else {
-          res.locals.isSkippable = true;
-        }
-      }
-      next();
-    } catch (error) {
-      next(error);
-    }
-  }
+  return requireRole(EUserType.SELLER, errorMessage ?? `User must be of type ${EUserType.SELLER}`);
 }
 
-/**
- * Check if current user is an auction approver
- * 
- * @param errorMessage Optional custom error message
- * @return Middleware function
- */
+/** Allow only BIDDER realm role. */
+export function BidderOnly(errorMessage?: string) {
+  return requireRole(EUserType.BIDDER, errorMessage ?? `User must be of type ${EUserType.BIDDER}`);
+}
+
+/** Allow only AUCTION_APPROVER realm role. */
 export function AuctionApproverOnly(errorMessage?: string) {
-  return function (req: Request, res: Response, next: NextFunction) {
-    try {
-      if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) {
-        if (((req as any).user as IUser).userType !== EUserType.AUCTION_APPROVER) {
-          if (!res.locals.isSkippable) {
-            if (errorMessage) {
-              throw new UnauthorizedError(errorMessage);
-            } else {
-              throw new UnauthorizedError(`User must be of type ${EUserType.AUCTION_APPROVER}`);
-            }
-          }
-        } else {
-          res.locals.isSkippable = true;
-        }
-      }
-      next();
-    } catch (error) {
-      next(error);
-    }
-  }
+  return requireRole(EUserType.AUCTION_APPROVER, errorMessage ?? `User must be of type ${EUserType.AUCTION_APPROVER}`);
 }
 
 /**
- * Verify jwt and return user.
- * 
- * @return
+ * Allow SUPER_ADMIN, SELLER, or AUCTION_APPROVER realm roles.
+ * @deprecated Prefer requireAnyRole or requireAnyPermission with explicit permissions.
  */
-export async function deserializeUser(req: Request, res: Response, next: NextFunction): Promise<void> {
-  try {
-    
-    const bearerHeader = req.headers['authorization'];
-
-    if (bearerHeader) {
-
-      // Split
-      const bearer = bearerHeader.split(' ');
-
-      // Get token
-      const bearerToken = bearer[1];
-
-      // Verify and decode token
-      const verifiedToken = verify(bearerToken, STATE_JWT_SECRET);
-      let _decodedToken: fauxObject = {};
-
-      if (typeof verifiedToken === 'string') {
-        _decodedToken = JSON.parse(verifiedToken);
-      } else {
-        _decodedToken = verifiedToken;
-      }
-
-      // Check if exists
-      if (!_decodedToken.subject) {
-        throw new UnauthorizedError('Invalid token');
-      }
-
-      // Find user
-      const user = await userService.getById(_decodedToken.subject);
-
-      if (user) {
-        // Set user on request object
-        req.user = user;
-      } else {
-        throw new UnauthorizedError('Invalid token');
-      }
-
-      next();
-
-    } else {
-      throw new UnauthorizedError('No token supplied');
-    }
-
-  } catch (error) {
-    next(error);
-  }
+export function AnyAdminMiddleware(errorMessage?: string) {
+  return requireAnyRole(
+    [EAdminType.SUPER, EUserType.SELLER, EUserType.AUCTION_APPROVER],
+    errorMessage ?? 'You do not have permission to access this resource.',
+  );
 }
 
+// ---------------------------------------------------------------------------
+// Webhook signature verification
+// ---------------------------------------------------------------------------
+
 /**
- * Middleware to verify the request payload signature
- * 
- * @return
+ * Verify the request payload signature for internal webhook calls.
  */
 export function verifyWebhookSignature(req: Request, res: Response, next: NextFunction) {
   try {
-    // Extract the x-signature header
-    const signature = req.headers["x-signature"];
-    if (!signature || typeof signature !== "string") {
-      throw new UnauthorizedError("Missing or invalid x-signature header");
+    const signature = req.headers['x-signature'];
+    if (!signature || typeof signature !== 'string') {
+      throw new UnauthorizedError('Missing or invalid x-signature header');
     }
 
-    // Get the raw request body
     const rawBody = JSON.stringify(req.body);
+    const payloadHash = createHash('sha256').update(rawBody).digest('hex');
 
-    const payloadHash = createHash("sha256").update(rawBody).digest("hex");
-
-    const verifier = createVerify("SHA256");
+    const verifier = createVerify('SHA256');
     verifier.update(payloadHash);
     verifier.end();
-    
-    const isValid = verifier.verify(webhookSignaturePublicKey, Buffer.from(signature, "base64"));
-    
+
+    const isValid = verifier.verify(webhookSignaturePublicKey, Buffer.from(signature, 'base64'));
+
     if (!isValid) {
-      throw new UnauthorizedError("Invalid signature");
+      throw new UnauthorizedError('Invalid signature');
     }
 
     next();

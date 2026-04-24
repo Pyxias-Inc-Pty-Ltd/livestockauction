@@ -1,11 +1,11 @@
 import { IAdmin, IBidder } from '../models/user-model';
 import transactionService from '../services/transaction-service';
-import { BidderOnly, SuperAdminOnly } from '../shared/middleware';
+import { requirePermission } from '../shared/middleware';
 import * as Joi from 'joi';
 import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import { isStringNumberLike, mongoIdValidation } from '../shared/functions';
-import { EPaymentProvider, EPaymentStatus, ESortOrderType, ETransactionSortType, ETransactionType } from '../globals';
+import { EPaymentStatus, EPermission, ESortOrderType, ETransactionSortType, ETransactionType } from '../globals';
 
 // Constants
 const router = Router();
@@ -22,14 +22,11 @@ export const p = {
 /**
  * Initiate item reservation
  */
-router.post(p.initiateItemReservation, BidderOnly(), async (req: Request, res: Response) => {
+router.post(p.initiateItemReservation, requirePermission(EPermission.TRANSACTION_RESERVE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       itemId: mongoIdValidation.required().messages({
         'any.required': '"itemId" is a required field'
-      }),
-      paymentProvider: Joi.string().valid(...Object.values(EPaymentProvider)).required().messages({
-        'any.required': '"paymentProvider" is a required field'
       })
     }).required();
     
@@ -46,14 +43,11 @@ router.post(p.initiateItemReservation, BidderOnly(), async (req: Request, res: R
 /**
  * Purchase item by winning bidder
  */
-router.post(p.initiatePurchaseItemByWinningBidder, BidderOnly(), async (req: Request, res: Response) => {
+router.post(p.initiatePurchaseItemByWinningBidder, requirePermission(EPermission.TRANSACTION_PURCHASE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       itemId: mongoIdValidation.required().messages({
         'any.required': '"itemId" is a required field'
-      }),
-      paymentProvider: Joi.string().valid(...Object.values(EPaymentProvider)).required().messages({
-        'any.required': '"paymentProvider" is a required field'
       })
     }).required();
     
@@ -70,14 +64,11 @@ router.post(p.initiatePurchaseItemByWinningBidder, BidderOnly(), async (req: Req
 /**
  * Purchase item using buyout price
  */
-router.post(p.initiatePurchaseItemUsingBuyoutPrice, BidderOnly(), async (req: Request, res: Response) => {
+router.post(p.initiatePurchaseItemUsingBuyoutPrice, requirePermission(EPermission.TRANSACTION_PURCHASE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       itemId: mongoIdValidation.required().messages({
         'any.required': '"itemId" is a required field'
-      }),
-      paymentProvider: Joi.string().valid(...Object.values(EPaymentProvider)).required().messages({
-        'any.required': '"paymentProvider" is a required field'
       })
     }).required();
     
@@ -94,7 +85,7 @@ router.post(p.initiatePurchaseItemUsingBuyoutPrice, BidderOnly(), async (req: Re
 /**
  * Get transactions.
  */
-router.get(p.getTransactions, SuperAdminOnly(), BidderOnly(), async (req: Request, res: Response) => {
+router.get(p.getTransactions, requirePermission(EPermission.TRANSACTION_READ), async (req: Request, res: Response) => {
   try {
 
     const conditions = new Map<string, any>();

@@ -2,9 +2,10 @@ import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isStringNumberLike, mongoIdValidation } from '../shared/functions';
-import { BidderOnly } from '../shared/middleware';
+import { requirePermission } from '../shared/middleware';
 import bidService from '../services/bid-service';
-import { EBidSortType, ESortOrderType } from '../globals';
+import { EBidSortType, EPermission, ESortOrderType } from '../globals';
+import { IBidder } from '../models/user-model';
 
 // Constants
 const router = Router();
@@ -43,7 +44,7 @@ export const p = {
 /**
  * Get bids.
  */
-router.get(p.getBids, BidderOnly(), async (req: Request, res: Response) => {
+router.get(p.getBids, requirePermission(EPermission.LOT_BID_READ), async (req: Request, res: Response) => {
   try {
 
     const conditions = new Map<string, any>();
@@ -76,6 +77,9 @@ router.get(p.getBids, BidderOnly(), async (req: Request, res: Response) => {
     if (lastDocumentId) {
       conditions.set('lastDocumentId', lastDocumentId);
     }
+
+    // Pass the caller's user ID so getBids() can filter sealed bids correctly
+    conditions.set('callerId', (req.user as IBidder).id.toString());
 
     const bids = await bidService.getBids(itemId as string, conditions);
     return res.status(OK).json({bids});

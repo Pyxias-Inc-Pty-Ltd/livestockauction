@@ -1,31 +1,63 @@
 import { IBidder } from '../models/user-model';
 import bidService from '../services/bid-service';
 import { IBidInput, IBid } from '../models/bid-model';
+import { Item } from '../models/item-model';
+import { NotFoundError } from '../shared/errors';
+
+export type BidMode = 'open' | 'livestream' | 'sealed';
+
+export interface BidWithMode {
+  bid: IBid;
+  mode: BidMode;
+}
 
 export default {
-  createBid: async function (socket: any, data: IBidInput): Promise<IBid> {
-    try {
-      const bidder = socket.user as IBidder;
+  /**
+   * Detect the auction mode from the item, then delegate to the correct
+   * mode-specific service function.
+   *
+   * The mode detection here is advisory — the service functions re-fetch
+   * the item inside their own transactions for authoritative state.  A
+   * mode mismatch between this read and the transaction read is extremely
+   * unlikely (item modes are set at creation and never change), but the
+   * inner transaction will still enforce the correct rules.
+   *
+   * Mode routing:
+   *   isClosedBidding               → Mode 3 (sealed)
+   *   isBidIncrementedManually      → Mode 2 (livestream)
+   *   otherwise                     → Mode 1 (open)
+   */
+  createBid: async function (socket: any, data: IBidInput): Promise<BidWithMode> {
+    const bidder = socket.user as IBidder;
 
-      const bid = await bidService.createBid(bidder, data);
+    const item = await Item.findById(data.itemId, {
+      isBidIncrementedManually: 1,
+      isClosedBidding: 1,
+    });
+    if (!item) throw new NotFoundError('Item not found');
 
-      // TODO: Remove
-      console.log("createBid: ", bid);
-      return bid;
-    } catch (error) {
-      throw error;
+    let bid: IBid;
+    let mode: BidMode;
+
+    if (item.isClosedBidding) {
+      bid = await bidService.createSealedBid(bidder, data);
+      mode = 'sealed';
+    } else if (item.isBidIncrementedManually) {
+      bid = await bidService.createLivestreamBid(bidder, data);
+      mode = 'livestream';
+    } else {
+      bid = await bidService.createOpenBid(bidder, data);
+      mode = 'open';
     }
+
+    return { bid, mode };
   },
+
   retractBid: async function (socket: any, data: string): Promise<IBid> {
-    try {
-      const bidder = socket.user as IBidder;
-      console.log("retractBid: ", data);
-
-      return await bidService.retractBid(bidder, data);
-    } catch (error) {
-      throw error;
-    }
+    const bidder = socket.user as IBidder;
+    return await bidService.retractBid(bidder, data);
   },
+
   joinBiddingRoom: function (socket: any, data: string): undefined {
     try {
       socket.join(`${data}-bid`);
@@ -34,6 +66,7 @@ export default {
       throw error;
     }
   },
+
   joinBiddingRoomChat: function (socket: any, data: string): undefined {
     try {
       socket.join(`${data}-chat`);
@@ -41,5 +74,5 @@ export default {
     } catch (error) {
       throw error;
     }
-  }
+  },
 } as const;

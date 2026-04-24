@@ -1,10 +1,10 @@
 import { ConflictError, ForbiddenError, NotFoundError } from "../shared/errors";
 import { IAdmin, IUser, User, IAdminInput, Admin, IBidder, IBidderInput, Bidder, ISeller, ISellerInput, Seller, AuctionApprover, IAuctionApprover, IAuctionApproverInput } from "../models/user-model";
-import { companyRegistrationVerificationIssuesTemplate, companyRegistrationVerificationSuccessTemplate, EAdminType, ESortOrderType, EUserSortType, EUserType, ID_VERIFICATION_API_KEY, invalidCompanyRegistrationTemplate, invalidNationalIDSMSTemplate, keeperIDVerificationTemplate, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, nameMismatchWithNationalIDSMSTemplate, nationalIDVerificationIssuesSMSTemplate, nationalIDVerificationSuccessSMSTemplate, SALT_ROUNDS, SERVICE_URLS } from "../globals";
-import { genSalt, hash } from 'bcrypt';
+import { companyRegistrationVerificationIssuesTemplate, companyRegistrationVerificationSuccessTemplate, EAdminType, ESortOrderType, EUserSortType, EUserType, ID_VERIFICATION_API_KEY, invalidCompanyRegistrationTemplate, invalidNationalIDSMSTemplate, keeperIDVerificationTemplate, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, nameMismatchWithNationalIDSMSTemplate, nationalIDVerificationIssuesSMSTemplate, nationalIDVerificationSuccessSMSTemplate, SERVICE_URLS } from "../globals";
 import { generateOTP, generateRandomPassword, getFarmerByKeeperId, getKeeperByRegNumber, hashOTP, normalizeAndCompareNames, verifyOTP, verifySignature } from "../shared/functions";
 import { Schema } from "mongoose";
 import * as axios from "axios";
+import { assignRealmRole, createKeycloakUser, deleteKeycloakUser, resetKeycloakUserPassword, sendWelcomeEmail } from "../shared/keycloak";
 
 /**
  * Get a user by id.
@@ -38,9 +38,9 @@ async function getByEmail(email: string): Promise<IUser | null> {
 
 /**
  * Get a user by phone.
- * 
- * @param phone 
- * @returns 
+ *
+ * @param phone
+ * @returns
  */
 async function getByPhone(phone: string): Promise<IUser | null> {
   try {
@@ -52,28 +52,51 @@ async function getByPhone(phone: string): Promise<IUser | null> {
 }
 
 /**
+ * Get a user by their Keycloak subject ID (sub claim).
+ * Used by the auth middleware after Keycloak JWT verification.
+ *
+ * @param keycloakId - The `sub` claim from the Keycloak access token
+ * @returns
+ */
+async function getByKeycloakId(keycloakId: string): Promise<IUser | null> {
+  try {
+    return await User.findOne({ keycloakId });
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
  * Add the initial admin.
- * 
+ * Creates the user in Keycloak first (assigns ADMIN realm role),
+ * then stores the profile in MongoDB keyed by keycloakId.
+ *
  * @param input
- * @returns 
+ * @returns
  */
 async function createInitAdmin(input: IAdminInput): Promise<IAdmin> {
   try {
-    const user = await Admin.findOne({ adminType: EAdminType.SUPER });
-
-    // Check if exists
-    if (user) {
+    const existing = await Admin.findOne({ adminType: EAdminType.SUPER });
+    if (existing) {
       throw new ConflictError('Root admin already exists');
     }
 
-    const salt = await genSalt(SALT_ROUNDS);
-    const hashedSecretInput = await hash(input.password, salt);
+    // 1. Create in Keycloak
+    const keycloakId = await createKeycloakUser({
+      username: input.email,
+      email: input.email,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      password: input.password,
+      temporary: false,
+    });
 
-    // Set password
-    input.password = hashedSecretInput;
-    input.adminType = "SUPER";
+    // 2. Assign ADMIN realm role in Keycloak
+    await assignRealmRole(keycloakId, 'ADMIN');
 
-    const newAdmin = new Admin(input);
+    // 3. Persist profile in MongoDB (no password stored locally)
+    input.adminType = 'SUPER';
+    const newAdmin = new Admin({ ...input, keycloakId, password: undefined });
     await newAdmin.save();
 
     return newAdmin;
@@ -84,19 +107,33 @@ async function createInitAdmin(input: IAdminInput): Promise<IAdmin> {
 
 /**
  * Add a bidder.
- * 
+ * Creates the user in Keycloak first (assigns BIDDER realm role),
+ * then stores the profile in MongoDB keyed by keycloakId.
+ *
  * @param input
- * @returns 
+ * @returns
  */
 async function createBidder(input: IBidderInput): Promise<IBidder> {
   try {
-    const salt = await genSalt(SALT_ROUNDS);
-    const hashedSecretInput = await hash(input.password, salt);
+    // Username: prefer email, fall back to phone
+    const username = input.email ?? input.phone;
 
-    // Set password
-    input.password = hashedSecretInput;
+    // 1. Create in Keycloak
+    const keycloakId = await createKeycloakUser({
+      username,
+      email: input.email,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      phone: input.phone,
+      password: input.password,
+      temporary: false,
+    });
 
-    const newBidder = new Bidder(input);
+    // 2. Assign BIDDER realm role in Keycloak
+    await assignRealmRole(keycloakId, 'BIDDER');
+
+    // 3. Persist profile in MongoDB (no password stored locally)
+    const newBidder = new Bidder({ ...input, keycloakId, password: undefined });
     await newBidder.save();
 
     return newBidder;
@@ -323,27 +360,37 @@ async function verifyIdentityNumber(input: { payload: { userId: string }, hash: 
 
 /**
  * Add a seller.
- * 
+ * Creates the user in Keycloak (assigns SELLER realm role) with a
+ * temporary password — Keycloak will prompt the user to change it on
+ * first login.  The profile is stored in MongoDB keyed by keycloakId.
+ *
+ * @param currentUser - The admin creating the seller
  * @param input
- * @returns 
+ * @returns
  */
 async function createSeller(currentUser: IAdmin, input: ISellerInput): Promise<ISeller> {
   try {
-    const salt = await genSalt(SALT_ROUNDS);
-    const randPass = generateRandomPassword(10);
+    // 1. Create in Keycloak without a password — seller sets their own via welcome email
+    const keycloakId = await createKeycloakUser({
+      username: input.email,
+      email: input.email,
+      phone: input.phone,
+    });
 
-    // Set password
-    input.password = await hash(randPass, salt);
+    // 2. Assign SELLER realm role in Keycloak
+    await assignRealmRole(keycloakId, 'SELLER');
 
-    // TODO: Remove and send password via email, and ask user to change upon inital login
-    console.log("seller password: ", randPass);
+    // 3. Email seller a one-time link to set their own password (most secure: admin never sees password)
+    await sendWelcomeEmail(keycloakId);
 
-    const newSeller = new Seller(input);
-
-    newSeller.tz = currentUser.tz;
-    newSeller.locale = currentUser.locale;
-    newSeller.tz = currentUser.tz;
-
+    // 3. Persist profile in MongoDB (no password stored locally)
+    const newSeller = new Seller({
+      ...input,
+      keycloakId,
+      password: undefined,
+      tz: currentUser.tz,
+      locale: currentUser.locale,
+    });
     await newSeller.save();
 
     return newSeller;
@@ -555,30 +602,38 @@ async function finishBAITSKeeperIDVerification(currentUser: IBidder, otp: string
 
 /**
  * Add an auction approver.
- * 
+ * Creates the user in Keycloak (assigns AUCTION_APPROVER realm role) with
+ * a temporary password, then stores the profile in MongoDB.
+ *
  * @param currentUser - The seller creating the auction approver
  * @param input - Auction approver input data
  * @returns Promise<IAuctionApprover>
  */
 async function createAuctionApprover(currentUser: ISeller, input: IAuctionApproverInput): Promise<IAuctionApprover> {
   try {
-    const salt = await genSalt(SALT_ROUNDS);
-    const randPass = generateRandomPassword(10);
-
-    // Set password
-    input.password = await hash(randPass, salt);
-
-    // TODO: Remove and send password via email, and ask user to change upon inital login
-    console.log("auction approver password: ", randPass);
-
-    input.tz = currentUser.tz;
-    input.locale = currentUser.locale;
-
-    const newApprover = new AuctionApprover({
-      ...input,
-      createdBySeller: currentUser.id
+    // 1. Create in Keycloak without a password — approver sets their own via welcome email
+    const keycloakId = await createKeycloakUser({
+      username: input.email,
+      email: input.email,
+      firstName: input.firstName,
+      lastName: input.lastName,
     });
 
+    // 2. Assign AUCTION_APPROVER realm role in Keycloak
+    await assignRealmRole(keycloakId, 'AUCTION_APPROVER');
+
+    // 3. Email approver a one-time link to set their own password
+    await sendWelcomeEmail(keycloakId);
+
+    // 3. Persist profile in MongoDB (no password stored locally)
+    const newApprover = new AuctionApprover({
+      ...input,
+      keycloakId,
+      password: undefined,
+      tz: currentUser.tz,
+      locale: currentUser.locale,
+      createdBySeller: currentUser.id,
+    });
     await newApprover.save();
 
     return newApprover;
@@ -652,6 +707,46 @@ async function getAuctionApproverById(id: string | Schema.Types.ObjectId, projec
   }
 }
 
+/**
+ * Update a user's password in Keycloak via the Admin API.
+ * Used by the PUT /app/users/updatePassword endpoint.
+ *
+ * @param keycloakId - Keycloak subject ID of the user
+ * @param newPassword - The new plain-text password
+ * @param temporary   - If true the user must change on next login
+ */
+async function updatePasswordInKeycloak(
+  keycloakId: string,
+  newPassword: string,
+  temporary = false,
+): Promise<void> {
+  try {
+    await resetKeycloakUserPassword(keycloakId, newPassword, temporary);
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Delete a user from both Keycloak and MongoDB.
+ *
+ * @param userId - MongoDB document ID
+ */
+async function deleteUser(userId: string): Promise<void> {
+  try {
+    const user = await User.findById(userId);
+    if (!user) throw new NotFoundError('User not found');
+
+    if (user.keycloakId) {
+      await deleteKeycloakUser(user.keycloakId);
+    }
+
+    await User.deleteOne({ _id: userId });
+  } catch (error) {
+    throw error;
+  }
+}
+
 // Export default
 export default {
   getUserReport,
@@ -666,9 +761,12 @@ export default {
   createAuctionApprover,
   getByEmail,
   getByPhone,
+  getByKeycloakId,
   getUsers,
   getById,
   getAuctionApproversForSeller,
   getAuctionApproverById,
-  updateAuctionApproverStatus
+  updateAuctionApproverStatus,
+  updatePasswordInKeycloak,
+  deleteUser,
 } as const;

@@ -2,18 +2,18 @@ import userService from '../services/user-service';
 import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
-import { isoAlpha2CountryValidation, isoAlpha3CurrencyValidation, isStringNumberLike, mongoIdValidation, phoneValidation } from '../shared/functions';
+import { isoAlpha2CountryValidation, isStringNumberLike, mongoIdValidation, phoneValidation } from '../shared/functions';
 import transactionService from '../services/transaction-service';
 import auctionService from '../services/auction-service';
 import categoryService from '../services/category-service';
 import itemService from '../services/item-service';
+import collectionService from '../services/collection-service';
 import { esService } from '../services/elasticsearch-service';
 import {
   ESortOrderType,
   EAuctionSortType,
   EItemStatus,
   EItemSortType,
-  EUniPayPaymentStatus,
   EGenderType,
   EAuctionStatus,
   EPublishedStatus,
@@ -33,8 +33,6 @@ const { OK, CREATED } = StatusCodes;
 // Paths
 export const p = {
   createInitAdmin: '/createInitAdmin',
-  processSuccessfulPaymentFromTingg: '/processSuccessfulPaymentFromTingg',
-  processSuccessfulPaymentFromUniPay: '/processSuccessfulPaymentFromUniPay',
   processSuccessfulPaymentFromPayGate: '/processSuccessfulPaymentFromPayGate',
   getItems: '/getItems',
   getAuctions: '/getAuctions',
@@ -50,6 +48,7 @@ export const p = {
   trackTransactionStatus: '/trackTransactionStatus',
   trackAuctionStatus: '/trackAuctionStatus',
   trackItemStatus: '/trackItemStatus',
+  trackCollectionStatus: '/trackCollectionStatus',
 } as const;
 
 /**
@@ -120,7 +119,8 @@ router.post(p.trackAuctionStatus, verifyWebhookSignature, async (req: Request, r
 });
 
 /**
- * Track item status
+ * Track item status.
+ * Also triggers non-winner reservation refunds for items that just ended with a winner.
  */
 router.post(p.trackItemStatus, verifyWebhookSignature, async (req: Request, res: Response) => {
   try {
@@ -130,11 +130,50 @@ router.post(p.trackItemStatus, verifyWebhookSignature, async (req: Request, res:
         'any.required': '"nonce" is a required field'
       })
     }).required();
-    
+
     // Validate schema against input
     Joi.assert(req.body, schema);
 
     await itemService.trackItemStatus();
+
+    // After winners are assigned, initiate refunds for non-winning bidders.
+    // This runs fire-and-forget — a failure here does not affect the HTTP response.
+    itemService.getItemsWithWinnerForRefund()
+      .then((items) => {
+        return Promise.allSettled(
+          items.map((item) =>
+            transactionService.initiateNonWinnerReservationRefunds(
+              item._id.toString(),
+              item.winningBidder!.toString()
+            )
+          )
+        );
+      })
+      .catch((err: Error) => {
+        console.error(`[open-router] Non-winner refund scan failed: ${err.message}`);
+      });
+
+    return res.status(OK).json({ message: "ok" });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Track collection status — forfeit collections past their deadline.
+ */
+router.post(p.trackCollectionStatus, verifyWebhookSignature, async (req: Request, res: Response) => {
+  try {
+
+    const schema = Joi.object().keys({
+      nonce: Joi.boolean().valid(true).required().messages({
+        'any.required': '"nonce" is a required field'
+      })
+    }).required();
+
+    Joi.assert(req.body, schema);
+
+    await collectionService.trackCollectionStatus();
     return res.status(OK).json({ message: "ok" });
   } catch (error) {
     throw error;
@@ -364,101 +403,6 @@ router.post(p.createBidder, async (req: Request, res: Response) => {
 
     const user = await userService.createBidder(req.body);
     return res.status(CREATED).json({user});
-  } catch (error) {
-    throw error;
-  }
-});
-
-/**
- * Process successful payment from tingg
- */
-router.post(p.processSuccessfulPaymentFromTingg, async (req: Request, res: Response) => {
-  try {
-    const schema = Joi.object().keys({
-      amount: Joi.number().required().messages({
-        'any.required': '"amount" is a required field'
-      }),
-      serviceCode: Joi.string().required().messages({
-        'any.required': '"serviceCode" is a required field'
-      }),
-      checkoutRequestID: Joi.number().required().messages({
-        'any.required': '"checkoutRequestID" is a required field'
-      }),
-      accountNumber: Joi.string().required().messages({
-        'any.required': '"accountNumber" is a required field'
-      }),
-      customerName: Joi.string().required().messages({
-        'any.required': '"customerName" is a required field'
-      }),
-      billingServiceID: Joi.number().required().messages({
-        'any.required': '"billingServiceID" is a required field'
-      }),
-      payerTransactionIDs: Joi.array().items(Joi.string()).required().messages({
-        'any.required': '"payerTransactionIDs" is a required field'
-      }),
-      paybylinkTransactionID: Joi.string().required().messages({
-        'any.required': '"paybylinkTransactionID" is a required field'
-      }),
-      billID: Joi.number().required().messages({
-        'any.required': '"billID" is a required field'
-      }),
-      paymentMethod: Joi.string().required().messages({
-        'any.required': '"paymentMethod" is a required field'
-      }),
-      currency: Joi.string().required().messages({
-        'any.required': '"currency" is a required field'
-      }),
-      msisdn: Joi.string().required().messages({
-        'any.required': '"msisdn" is a required field'
-      }),
-      paymentDate: Joi.number().required().messages({
-        'any.required': '"paymentDate" is a required field'
-      }),
-      paymentStatus: Joi.number().required().messages({
-        'any.required': '"paymentStatus" is a required field'
-      })
-    }).required();
-    
-    // Validate schema against input
-    Joi.assert(req.body, schema);
-
-    const transaction = await transactionService.processSuccessfulPaymentFromTingg(req.body as any);
-    return res.status(CREATED).json({transaction});
-  } catch (error) {
-    throw error;
-  }
-});
-
-/**
- * Process successful payment from UniPay
- */
-router.post(p.processSuccessfulPaymentFromUniPay, async (req: Request, res: Response) => {
-  try {
-    const schema = Joi.object().keys({
-      status: Joi.string().valid(EUniPayPaymentStatus.ACCEPTED).required().messages({
-        'any.required': '"status" is a required field'
-      }),
-      payload: Joi.string().required().messages({
-        'any.required': '"payload" is a required field'
-      }),
-      transaction: Joi.object().keys({
-        id: mongoIdValidation.required().messages({
-          'any.required': '"id" is a required field'
-        }),
-        currency: isoAlpha3CurrencyValidation.required().messages({
-          'any.required': '"currency" is a required field'
-        }),
-        amount: Joi.number().required().messages({
-          'any.required': '"amount" is a required field'
-        })
-      }).required()
-    }).required();
-    
-    // Validate schema against input
-    Joi.assert(req.body, schema);
-
-    const transaction = await transactionService.processSuccessfulPaymentFromUniPay(req.body as any);
-    return res.status(CREATED).json({transaction});
   } catch (error) {
     throw error;
   }

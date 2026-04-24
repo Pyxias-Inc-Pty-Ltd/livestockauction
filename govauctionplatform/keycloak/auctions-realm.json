@@ -1,0 +1,289 @@
+{
+  "realm": "auctions",
+  "displayName": "Auctions Platform",
+  "enabled": true,
+
+  "sslRequired": "external",
+
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+
+  "bruteForceProtected": false,
+
+  "accessTokenLifespan": 1800,
+  "accessTokenLifespanForImplicitFlow": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+
+  "offlineSessionIdleTimeout": 2592000,
+  "offlineSessionMaxLifespanEnabled": false,
+  "offlineSessionMaxLifespan": 5184000,
+
+  "eventsEnabled": false,
+  "adminEventsEnabled": false,
+  "adminEventsDetailsEnabled": false,
+
+  "requiredCredentials": ["password"],
+
+  "defaultDefaultClientScopes": [
+    "profile",
+    "email",
+    "roles",
+    "web-origins",
+    "acr"
+  ],
+  "defaultOptionalClientScopes": [
+    "offline_access",
+    "address",
+    "phone",
+    "microprofile-jwt"
+  ],
+
+  "clientScopes": [
+    {
+      "name": "auction-api-access",
+      "description": "Grants access to the Auction Platform API. Adds auction-platform-api to the token audience and injects its client roles into resource_access.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "auction-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "auction-platform-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "auction-api-client-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "usermodel.clientRoleMapping.clientId": "auction-platform-api",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "claim.name": "resource_access.auction-platform-api.roles",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ],
+
+  "roles": {
+    "client": {
+      "auction-platform-api": [
+        { "name": "auction:create",              "clientRole": true },
+        { "name": "auction:read",                "clientRole": true },
+        { "name": "auction:update",              "clientRole": true },
+        { "name": "auction:delete",              "clientRole": true },
+        { "name": "auction:approve",             "clientRole": true },
+        { "name": "auction:reject",              "clientRole": true },
+        { "name": "auction:unpublish",           "clientRole": true },
+        { "name": "auction:manage",              "clientRole": true },
+        { "name": "auction:report",              "clientRole": true },
+
+        { "name": "lot:create",                  "clientRole": true },
+        { "name": "lot:read",                    "clientRole": true },
+        { "name": "lot:manage",                  "clientRole": true },
+        { "name": "lot:bid",                     "clientRole": true },
+        { "name": "lot:bid:read",                "clientRole": true },
+
+        { "name": "collection:validate",         "clientRole": true },
+        { "name": "collection:dispute",          "clientRole": true },
+        { "name": "collection:resolve",          "clientRole": true },
+        { "name": "collection:refund",           "clientRole": true },
+        { "name": "collection:read",             "clientRole": true },
+        { "name": "collection:read:own",         "clientRole": true },
+        { "name": "collection:otp:resend",       "clientRole": true },
+
+        { "name": "user:read",                   "clientRole": true },
+        { "name": "user:manage",                 "clientRole": true },
+        { "name": "user:delete",                 "clientRole": true },
+        { "name": "user:report",                 "clientRole": true },
+        { "name": "user:verify:self",            "clientRole": true },
+        { "name": "user:approver:manage",        "clientRole": true },
+        { "name": "user:approver:read",          "clientRole": true },
+
+        { "name": "transaction:read",            "clientRole": true },
+        { "name": "transaction:reserve",         "clientRole": true },
+        { "name": "transaction:purchase",        "clientRole": true },
+
+        { "name": "notification:read",           "clientRole": true },
+        { "name": "notification:trigger:manage", "clientRole": true },
+
+        { "name": "forum:read",                  "clientRole": true },
+        { "name": "forum:write",                 "clientRole": true },
+
+        { "name": "message:read",                "clientRole": true },
+        { "name": "message:write",               "clientRole": true },
+
+        { "name": "form:read",                   "clientRole": true },
+        { "name": "form:manage",                 "clientRole": true }
+      ]
+    },
+
+    "realm": [
+      {
+        "name": "SUPER",
+        "composite": true,
+        "clientRole": false,
+        "composites": {
+          "client": {
+            "auction-platform-api": [
+              "auction:create", "auction:read", "auction:update", "auction:delete",
+              "auction:approve", "auction:reject", "auction:unpublish",
+              "auction:manage", "auction:report",
+              "lot:create", "lot:read", "lot:manage", "lot:bid", "lot:bid:read",
+              "collection:validate", "collection:dispute", "collection:resolve",
+              "collection:refund", "collection:read", "collection:read:own",
+              "collection:otp:resend",
+              "user:read", "user:manage", "user:delete", "user:report",
+              "user:verify:self", "user:approver:manage", "user:approver:read",
+              "transaction:read", "transaction:reserve", "transaction:purchase",
+              "notification:read", "notification:trigger:manage",
+              "forum:read", "forum:write",
+              "message:read", "message:write",
+              "form:read", "form:manage"
+            ]
+          }
+        }
+      },
+      {
+        "name": "SELLER",
+        "composite": true,
+        "clientRole": false,
+        "composites": {
+          "client": {
+            "auction-platform-api": [
+              "auction:read", "auction:update", "auction:unpublish",
+              "lot:create", "lot:read", "lot:manage",
+              "collection:validate", "collection:dispute", "collection:read",
+              "user:approver:manage", "user:approver:read",
+              "transaction:read",
+              "notification:read",
+              "form:read"
+            ]
+          }
+        }
+      },
+      {
+        "name": "AUCTION_APPROVER",
+        "composite": true,
+        "clientRole": false,
+        "composites": {
+          "client": {
+            "auction-platform-api": [
+              "auction:approve", "auction:reject", "auction:read",
+              "lot:read",
+              "notification:read"
+            ]
+          }
+        }
+      },
+      {
+        "name": "BIDDER",
+        "composite": true,
+        "clientRole": false,
+        "composites": {
+          "client": {
+            "auction-platform-api": [
+              "lot:read", "lot:bid", "lot:bid:read",
+              "collection:read:own", "collection:otp:resend",
+              "transaction:reserve", "transaction:purchase", "transaction:read",
+              "user:verify:self",
+              "notification:read",
+              "message:read", "message:write",
+              "forum:read", "forum:write"
+            ]
+          }
+        }
+      }
+    ]
+  },
+
+  "clientScopeMappings": {
+    "realm-management": [
+      {
+        "client": "auction-platform-admin",
+        "roles": ["manage-users", "query-users", "view-users"]
+      }
+    ]
+  },
+
+  "clients": [
+    {
+      "clientId": "auction-platform-api",
+      "name": "Auction Platform API",
+      "description": "Passive resource server. Defines client roles (permissions) and serves as the token audience target. No auth flows, no service account, no secret needed.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": false,
+      "defaultClientScopes": [],
+      "optionalClientScopes": []
+    },
+    {
+      "clientId": "auction-platform-admin",
+      "name": "Auction Platform Admin",
+      "description": "M2M service account used by the backend for Keycloak Admin API calls only (create users, assign roles, reset passwords). Least-privilege: manage-users + query-users + view-users from realm-management.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "change-me-after-import",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "fullScopeAllowed": false,
+      "defaultClientScopes": [],
+      "optionalClientScopes": []
+    },
+    {
+      "clientId": "auction-platform-frontend",
+      "name": "Auction Platform Frontend",
+      "description": "Public PKCE client used by the web app to authenticate users. Carries the auction-api-access scope so tokens include auction-platform-api audience and permissions.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": false,
+      "redirectUris": [
+        "http://localhost:5173/*",
+        "https://your-production-domain.com/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "https://your-production-domain.com"
+      ],
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "roles",
+        "auction-api-access"
+      ],
+      "optionalClientScopes": ["offline_access", "phone", "address"]
+    }
+  ]
+}

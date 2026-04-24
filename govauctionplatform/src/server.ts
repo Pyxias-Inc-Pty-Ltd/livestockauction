@@ -1,5 +1,6 @@
 import morgan from 'morgan';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 
 import express, { NextFunction, Request, Response } from 'express';
 import StatusCodes from 'http-status-codes';
@@ -10,7 +11,6 @@ import appRouter from './routes/main/app';
 import authRouter from './routes/main/auth';
 import openRouter from './routes/main/open';
 import logger from 'jet-logger';
-import passport from 'passport';
 import { CustomError } from './shared/errors';
 import { ENVIRONMENT_PRODUCTION, SERVICE_URLS } from './globals';
 import { deserializeUser } from './shared/middleware';
@@ -23,10 +23,9 @@ const app = express();
  *                                  Middlewares
  **********************************************************************************/
 
-// Common middlewares
-
 // TODO: Configure PRE-FLIGHT CORS (Set allowed origins)
 app.use(cors({origin: ['http://localhost:5173', SERVICE_URLS.clientURI], credentials: true}));
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -44,16 +43,12 @@ if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) {
  *                         Routers and error handling
  **********************************************************************************/
 
-// TODO: Check auth token scope if APP, OPEN or API
-
-// Add auth router
+// Auth discovery endpoint (no JWT required)
 app.use('/auth', authRouter);
-// Add open router
+// Public endpoints (no JWT required)
 app.use('/open', openRouter);
 
-app.use(passport.initialize());
-
-// Add app router
+// Protected endpoints — Keycloak JWT verified by deserializeUser
 app.use('/app', deserializeUser, appRouter);
 
 // Error handling

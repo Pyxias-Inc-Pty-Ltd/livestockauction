@@ -16,7 +16,8 @@ export interface IUser extends Document {
   tz: string;
   locale: string;
   firebaseTokenId: string;
-  password: string;
+  password?: string;
+  keycloakId: string;
   createdDate: any;
   updatedDate: any;
 }
@@ -146,6 +147,7 @@ export interface IAuctionApproverInput {
 
 const userSchema = new Schema<IUser>({
   userType: {type: String, required: true, enum: [EUserType.ADMIN, EUserType.BIDDER, EUserType.SELLER, EUserType.AUCTION_APPROVER]},
+  keycloakId: {type: String, trim: true, unique: true, sparse: true},
   email: {type: String, unique: true, sparse: true, validate: {
     msg: 'Valid email must be supplied.',
       validator: function (v: string): boolean {
@@ -155,7 +157,7 @@ const userSchema = new Schema<IUser>({
   },
   firstName: {type: String, trim: true},
   lastName: {type: String, trim: true},
-  phone: {type: String, trim: true, required: true},
+  phone: {type: String, trim: true},
   password: {type: String, trim: true},
   tz: {type: String, trim: true, required: true},
   locale: {type: String, trim: true, required: true},
@@ -163,7 +165,7 @@ const userSchema = new Schema<IUser>({
     msg: 'Valid URL must be supplied.',
       validator: function (v: string): boolean {
         // Be less stringent in development
-        if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) { 
+        if (process.env.NODE_ENV === ENVIRONMENT_PRODUCTION) {
           return isURL(v, {protocols: ['https']});
         } else {
           return true;
@@ -201,6 +203,7 @@ userSchema.pre('save', async function(next) {
 
 const bidderSchema = new Schema<IBidder>({
   userType: {type: String, required: true, default: EUserType.BIDDER, enum: [EUserType.BIDDER]},
+  keycloakId: {type: String, trim: true, unique: true, sparse: true},
   email: {type: String, unique: true, sparse: true, validate: {
     msg: 'Valid email must be supplied.',
       validator: function (v: string): boolean {
@@ -221,7 +224,7 @@ const bidderSchema = new Schema<IBidder>({
   name: { type: String, required: function(): boolean {
     return (this as IBidder).isOrganization;
   }, trim: true },
-  phone: {type: String, trim: true, required: true},
+  phone: {type: String, trim: true},
   password: {type: String, trim: true},
   isKeeperIdVerified: {type: Boolean, required: true, default: false},
   tz: {type: String, trim: true, required: true},
@@ -492,6 +495,7 @@ bidderSchema.post('save', async function (doc, next) {
 
 const sellerSchema = new Schema<ISeller>({
   userType: {type: String, required: true, default: EUserType.SELLER, enum: [EUserType.SELLER]},
+  keycloakId: {type: String, trim: true, unique: true, sparse: true},
   sectorType: { type: String, default: ESectorType.GOVERNMENT, enum: [ESectorType.PRIVATE, ESectorType.GOVERNMENT], required: true },
   email: {type: String, unique: true, required: true, validate: {
     msg: 'Valid email must be supplied.',
@@ -501,7 +505,7 @@ const sellerSchema = new Schema<ISeller>({
     }
   },
   name: {type: String, required: true, trim: true},
-  phone: {type: String, trim: true, required: true},
+  phone: {type: String, trim: true},
   password: {type: String, trim: true},
   tz: {type: String, trim: true, required: true},
   locale: {type: String, trim: true, required: true},
@@ -562,6 +566,7 @@ sellerSchema.post('save', async function (doc, next) {
 
 const adminSchema = new Schema<IAdmin>({
   userType: {type: String, required: true, default: EUserType.ADMIN, enum: [EUserType.ADMIN]},
+  keycloakId: {type: String, trim: true, unique: true, sparse: true},
   email: {type: String, unique: true, required: true, validate: {
     msg: 'Valid email must be supplied.',
       validator: function (v: string): boolean {
@@ -571,7 +576,7 @@ const adminSchema = new Schema<IAdmin>({
   },
   firstName: {type: String, required: true, trim: true},
   lastName: {type: String, required: true, trim: true},
-  phone: {type: String, trim: true, required: true},
+  phone: {type: String, trim: true},
   password: {type: String, trim: true},
   tz: {type: String, trim: true, required: true},
   locale: {type: String, trim: true, required: true},
@@ -606,15 +611,16 @@ adminSchema.set('toJSON', {
 
 const auctionApproverSchema = new Schema<IAuctionApprover>({
   userType: {
-    type: String, 
-    required: true, 
-    default: EUserType.AUCTION_APPROVER, 
+    type: String,
+    required: true,
+    default: EUserType.AUCTION_APPROVER,
     enum: [EUserType.AUCTION_APPROVER]
   },
+  keycloakId: {type: String, trim: true, unique: true, sparse: true},
   email: {
-    type: String, 
-    unique: true, 
-    required: true, 
+    type: String,
+    unique: true,
+    required: true,
     validate: {
       msg: 'Valid email must be supplied.',
       validator: function (v: string): boolean {
@@ -623,7 +629,7 @@ const auctionApproverSchema = new Schema<IAuctionApprover>({
     }
   },
   phone: {type: String, trim: true},
-  password: {type: String, trim: true, required: true},
+  password: {type: String, trim: true},
   firstName: {
     type: String, 
     required: true, 
