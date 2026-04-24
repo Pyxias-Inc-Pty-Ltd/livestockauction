@@ -69,7 +69,7 @@ Node.js + TypeScript REST API and real-time bidding server for the Botswana Gove
 │  Express Server (port 8891)                                           │
 │                                                                      │
 │  /auth  ──→  Auth Router (BFF: exchange, refresh, logout)            │
-│  /open  ──→  Open Router (public + webhook endpoints)                │
+│  /open  ──→  Open Router (public endpoints)                          │
 │  /app   ──→  App Router  (all protected routes, requirePermission)   │
 │                                                                      │
 │  Socket.IO  ──→  on('e:2' CREATE_BID) ──→  BullMQ bid queue         │
@@ -118,7 +118,7 @@ src/
 │   │   ├── auth.ts           # Mounts auth-router under /auth
 │   │   └── open.ts           # Mounts open-router under /open
 │   ├── auth-router.ts        # /auth/config|exchange|refresh|logout
-│   ├── open-router.ts        # Public + webhook endpoints
+│   ├── open-router.ts        # Public endpoints
 │   ├── auction-router.ts     # /app/auctions/*
 │   ├── bid-router.ts         # /app/bids/*
 │   ├── collection-router.ts  # /app/collections/*
@@ -134,15 +134,16 @@ src/
 │   └── bid-worker.ts         # BullMQ worker: processes bid jobs
 ├── queues/
 │   └── bid-queue.ts          # BullMQ queue definition + job types
+├── cron.ts                   # Distributed cron jobs (node-cron + Redis lock)
 └── shared/
-    ├── middleware.ts          # deserializeUser, requirePermission, verifyWebhookSignature
+    ├── middleware.ts          # deserializeUser, requirePermission
     ├── keycloak.ts            # Keycloak admin API helpers, JWKS, token exchange
-    ├── redis.ts               # Shared IORedis connection for BullMQ
+    ├── redis.ts               # Shared IORedis connection for BullMQ + cron locks
     ├── bid-lock.ts            # Distributed bid locking via Redis SET NX + Lua
     ├── errors.ts              # Custom error classes (NotFoundError, ForbiddenError…)
     ├── functions.ts           # Shared utilities (slugs, OTP, PayGate, BAITS helpers…)
     └── sec/
-        └── public_key.pem    # RSA public key for webhook signature verification
+        └── public_key.pem    # RSA public key for user identity signature verification
 
 spec/
 ├── unit/
@@ -357,9 +358,7 @@ No authentication required.
 
 ### Open Routes — `/open`
 
-Public endpoints (no auth) and webhook endpoints (HMAC signature required).
-
-**Public:**
+Public endpoints (no auth required).
 
 | Method | Path | Description |
 |---|---|---|
@@ -374,16 +373,7 @@ Public endpoints (no auth) and webhook endpoints (HMAC signature required).
 | `GET` | `/open/getCategoryById` | Single category by `?id=` |
 | `GET` | `/open/getCategories` | All categories |
 | `GET` | `/open/search` | Elasticsearch full-text search |
-| `POST` | `/open/processSuccessfulPaymentFromPayGate` | PayGate payment webhook (no signature check — PayGate uses a CHECKSUM field instead) |
-
-**Webhooks** (require `x-signature` HMAC header — signed with `src/shared/sec/public_key.pem`):
-
-| Method | Path | Triggered by | Description |
-|---|---|---|---|
-| `POST` | `/open/trackTransactionStatus` | Cron | Marks stale pending transactions as FAILED |
-| `POST` | `/open/trackAuctionStatus` | Cron | Closes auctions past their end time |
-| `POST` | `/open/trackItemStatus` | Cron | Closes items, triggers winner selection, initiates non-winner refunds |
-| `POST` | `/open/trackCollectionStatus` | Cron | Marks uncollected items as FORFEITED past collection deadline |
+| `POST` | `/open/processSuccessfulPaymentFromPayGate` | PayGate payment webhook (verified via CHECKSUM field) |
 
 ### App Routes — `/app`
 
@@ -559,6 +549,21 @@ Client receives  e:20 BID_RESULT  { status: 'accepted'|'rejected', bidId?, error
 
 ---
 
+## Cron Jobs
+
+Status-tracking jobs run in-process via `node-cron` (`src/cron.ts`), started immediately after the server connects to MongoDB.
+
+A **Redis distributed lock** (`SET key 1 EX 55 NX`) ensures that in a multi-instance deployment only one instance executes each job per tick — others skip silently.
+
+| Job | Schedule | What it does |
+|---|---|---|
+| `trackTransactionStatus` | Every minute | Marks stale pending transactions as FAILED |
+| `trackAuctionStatus` | Every minute | Transitions auctions to ACTIVE / CLOSED based on start/end time |
+| `trackItemStatus` | Every minute | Closes items, triggers winner selection, initiates non-winner RESERVATION refunds |
+| `trackCollectionStatus` | Every hour | Marks uncollected items as FORFEITED past their collection deadline |
+
+---
+
 ## Socket.IO Events
 
 Authentication is required on the Socket.IO handshake:
@@ -610,7 +615,7 @@ PayGate is the sole payment provider. All UniPay / Tingg integrations have been 
 2. Bidder completes payment on PayGate's hosted page
 3. PayGate POSTs to `POST /open/processSuccessfulPaymentFromPayGate` with CHECKSUM verification
 4. On `TRANSACTION_STATUS=1` (approved): transaction marked COMPLETED, bidder added to eligible bidders list; if PURCHASE, `createCollection` is called fire-and-forget
-5. Non-winner RESERVATION refunds are triggered automatically by `trackItemStatus` cron
+5. Non-winner RESERVATION refunds are triggered automatically by the `trackItemStatus` cron job (runs every minute in `src/cron.ts`)
 
 `PAY_REQUEST_ID` is stored in `transaction.metadata` for all transactions to enable future refund API calls.
 
@@ -626,7 +631,7 @@ AWAITING_COLLECTION
      │
      ├──→ COLLECTED         (seller validates OTP via /app/collections/validateCollectionCode)
      │
-     ├──→ FORFEITED         (trackCollectionStatus cron: deadline passed, no collection)
+     ├──→ FORFEITED         (trackCollectionStatus cron job: deadline passed, no collection)
      │
      └──→ DISPUTED          (buyer raises dispute via /app/collections/raiseDispute)
               │
@@ -683,8 +688,10 @@ npx jest --testPathPattern=e2e     # run only E2E tests
 ## Deployment Notes
 
 - **MongoDB URI** is hardcoded in `src/globals.ts`. For Atlas, uncomment the `mongodb+srv://` line and set `MONGO_DB_USER` / `MONGO_DB_PASS`.
-- **`src/shared/sec/public_key.pem`** must be present. This RSA public key is used to verify the HMAC signature on inbound cron webhooks.
+- **`src/shared/sec/public_key.pem`** must be present. This RSA public key is used by `verifySignature` in `shared/functions.ts` for user identity verification (not webhook verification — cron jobs now run in-process).
 - **Firebase credentials** are stored in `FIREBASE_SERVICE_ACCOUNT_CREDENTIALS` (env var). The service account JSON must be provided as a single-line string. See the env vars table above.
+- **Cron jobs** run in-process via `node-cron` (`src/cron.ts`). A Redis distributed lock (`SET NX`, 55 s TTL) prevents double-execution across multiple instances. No external cron service or signed webhooks required.
+- **Docker / Railway**: A `Dockerfile` (two-stage build) is included. `build.ts` compiles TypeScript and copies `public_key.pem` into `dist/`. `src/pre-start/index.ts` skips the dotenv file load when `--env=production` (Railway injects env vars at runtime via the dashboard). Deploy with `npm start` (already passes `--env=production`).
 - **Sealed bid key**: `SEALED_BID_ENCRYPTION_KEY` must be a cryptographically random 64-character hex string. Generate with: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Changing this key in production will make all existing sealed bids unreadable.
 - **Horizontal scaling**: The bid worker emits Socket.IO events directly via the `io` reference. Before scaling to multiple instances, add `@socket.io/redis-adapter` to the Socket.IO server and replace direct `io.to().emit()` calls in `bid-worker.ts` with a `@socket.io/redis-emitter` instance.
 - **CORS**: `SERVICE_URLS.clientURI` in `src/globals.ts` is hardcoded to `https://auctiondev.xyz`. Update for your domain.
