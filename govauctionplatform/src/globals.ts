@@ -16,8 +16,23 @@ export type languageType = `${ELanguageType}`;
 export type identityNumberVerificationStatus = "PENDING" | "VERIFIED" | "VERIFICATION_REJECTED";
 export type fauxObject = {[key: string]: any};
 
-export const STATE_JWT_SECRET = process.env.STATE_JWT_SECRET as string;
 export const ENVIRONMENT_PRODUCTION: string = "production";
+
+// Keycloak configuration
+export const KEYCLOAK_URL = process.env.KEYCLOAK_URL as string;
+export const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM ?? 'auctions';
+/** Resource-server client (auction-platform-api) — used for audience validation and resource_access lookup. No secret required. */
+export const KEYCLOAK_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID as string;
+/** M2M admin client (auction-platform-admin) — used exclusively for Keycloak Admin API calls via client_credentials grant. */
+export const KEYCLOAK_ADMIN_CLIENT_ID = process.env.KEYCLOAK_ADMIN_CLIENT_ID as string;
+export const KEYCLOAK_ADMIN_CLIENT_SECRET = process.env.KEYCLOAK_ADMIN_CLIENT_SECRET as string;
+/** Public PKCE client (auction-platform-frontend) — used by the BFF for PKCE code exchange and token refresh. */
+export const KEYCLOAK_FRONTEND_CLIENT_ID = process.env.KEYCLOAK_FRONTEND_CLIENT_ID as string;
+
+// Sealed bid encryption key — must be a 64-char hex string (32 bytes / 256 bits).
+// Generate with:  node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+// NEVER commit the real value; set via environment variable in production.
+export const SEALED_BID_ENCRYPTION_KEY = process.env.SEALED_BID_ENCRYPTION_KEY as string;
 
 export const LIST_LIMIT_NUMBER = 20;
 export const SALT_ROUNDS = 12;
@@ -56,13 +71,12 @@ export const ELASTICSEARCH_USERNAME = process.env.ELASTICSEARCH_USERNAME as stri
 export const ELASTICSEARCH_PASSWORD = process.env.ELASTICSEARCH_PASSWORD as string;
 export const MONGO_DB_USER = process.env.MONGO_DB_USER as string;
 export const MONGO_DB_PASS = process.env.MONGO_DB_PASS as string;
-// export const UNIPAY_APP_AUTH_TOKEN = process.env.UNIPAY_APP_AUTH_TOKEN as string;
-export const UNIPAY_APP_AUTH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWJqZWN0IjoiNjY3YzVmOTMwM2YzZjEyODRhMWI0OGVhIiwic2NvcGUiOiJBUEkiLCJpYXQiOjE3MTk0MjY5NjN9.xi1tGljRdbpFzamQlD1G4TVYK1gWt6xyEAXrT4MVpko";
+export const REDIS_HOST = process.env.REDIS_HOST ?? 'localhost';
+export const REDIS_PORT = process.env.REDIS_PORT ?? '6379';
+export const REDIS_PASS = process.env.REDIS_PASS;
 export const SERVICE_URLS: {[key: string]: string} = {
   mongoDBURI: `mongodb://localhost:27017/bwgovauctionplatform?retryWrites=true&w=majority`,
   // mongoDBURI: `mongodb+srv://${MONGO_DB_USER}:${MONGO_DB_PASS}@cluster0.5odo36p.mongodb.net/bwgovauctionplatform?retryWrites=true&w=majority&appName=Cluster0"`,
-  tinggCreatePaymentLinkURI: "https://paybylink-apis.pay.tingg.africa/paybylink-apis/public/bill/create",
-  unipayInitiatePaymentApplication: "http://164.92.135.170:8888/api/applications/initiatePaymentApplicationByApp",
   paygateBaseURI: "https://secure.paygate.co.za/payweb3",
   clientURI: "https://auctiondev.xyz",
   baits3URICore: "http://bifrost-baits3.gov.bw:90/api/core/v1/api",
@@ -350,6 +364,70 @@ export enum EAdminType {
   SUPER = "SUPER"
 }
 
+/**
+ * Fine-grained permission strings used as Keycloak client roles.
+ * Each role bundle (SELLER, BIDDER, SUPER_ADMIN, AUCTION_APPROVER) in Keycloak
+ * is assigned the relevant subset of these permissions.
+ */
+export enum EPermission {
+  // Auction
+  AUCTION_CREATE      = 'auction:create',
+  AUCTION_READ        = 'auction:read',
+  AUCTION_UPDATE      = 'auction:update',
+  AUCTION_DELETE      = 'auction:delete',
+  AUCTION_APPROVE     = 'auction:approve',
+  AUCTION_REJECT      = 'auction:reject',
+  AUCTION_UNPUBLISH   = 'auction:unpublish',
+  AUCTION_MANAGE      = 'auction:manage',
+  AUCTION_REPORT      = 'auction:report',
+
+  // Lot (item)
+  LOT_CREATE          = 'lot:create',
+  LOT_READ            = 'lot:read',
+  LOT_MANAGE          = 'lot:manage',
+  LOT_BID             = 'lot:bid',
+  LOT_BID_READ        = 'lot:bid:read',
+
+  // Collection
+  COLLECTION_VALIDATE  = 'collection:validate',
+  COLLECTION_DISPUTE   = 'collection:dispute',
+  COLLECTION_RESOLVE   = 'collection:resolve',
+  COLLECTION_REFUND    = 'collection:refund',
+  COLLECTION_READ      = 'collection:read',
+  COLLECTION_READ_OWN  = 'collection:read:own',
+  COLLECTION_OTP_RESEND = 'collection:otp:resend',
+
+  // User management
+  USER_READ             = 'user:read',
+  USER_MANAGE           = 'user:manage',
+  USER_DELETE           = 'user:delete',
+  USER_REPORT           = 'user:report',
+  USER_VERIFY_SELF      = 'user:verify:self',
+  USER_APPROVER_MANAGE  = 'user:approver:manage',
+  USER_APPROVER_READ    = 'user:approver:read',
+
+  // Transaction
+  TRANSACTION_READ      = 'transaction:read',
+  TRANSACTION_RESERVE   = 'transaction:reserve',
+  TRANSACTION_PURCHASE  = 'transaction:purchase',
+
+  // Notification
+  NOTIFICATION_READ            = 'notification:read',
+  NOTIFICATION_TRIGGER_MANAGE  = 'notification:trigger:manage',
+
+  // Forum
+  FORUM_READ   = 'forum:read',
+  FORUM_WRITE  = 'forum:write',
+
+  // Message
+  MESSAGE_READ   = 'message:read',
+  MESSAGE_WRITE  = 'message:write',
+
+  // Form
+  FORM_READ    = 'form:read',
+  FORM_MANAGE  = 'form:manage',
+}
+
 export enum EPublishedStatus {
   PUBLISHED = "PUBLISHED",
   UNPUBLISHED = "UNPUBLISHED",
@@ -387,6 +465,7 @@ export enum EModels {
   BID = "Bid",
   BIDDER_COUNTER = "BidderCounter",
   TRANSACTION = "Transaction",
+  COLLECTION = "Collection",
   CATEGORY = "Category",
   MESSAGE = "Message",
   CHAT = "Chat",
@@ -397,7 +476,8 @@ export enum EModels {
   NOTIFICATION_OBJECT = "NotificationObject",
   NOTIFICATION_CHANGE = "NotificationChange",
   NOTIFICATION_TRIGGER= "NotificationTrigger",
-  REQUIRED_ATTRIBUTE = "RequiredAttribute"
+  REQUIRED_ATTRIBUTE = "RequiredAttribute",
+  BID_EVENT = "BidEvent"
 }
 
 export enum ESortOrderType {
@@ -410,12 +490,6 @@ export enum ESortOrderType {
 export enum EItemSortType {
   RESERVE_PRICE = "RESERVE_PRICE",
   DATE = "DATE"
-}
-
-export enum EUniPayPaymentStatus {
-  REJECTED = "REJECTED",
-  CANCELLED = "CANCELLED",
-  ACCEPTED = "ACCEPTED"
 }
 
 export enum EAuctionSortType {
@@ -473,7 +547,14 @@ export enum ESocketEventCode {
   REFRESH_AFTER_WINNING = "e:15",
   BROADCAST_REFRESH_AFTER_WINNING = "e:16",
   MOVE_AUDIENCE_TO_ITEM = "e:17",
-  BROADCAST_MOVE_AUDIENCE_TO_ITEM = "e:18"
+  BROADCAST_MOVE_AUDIENCE_TO_ITEM = "e:18",
+  // Emitted to a sealed-auction room when a new sealed bid is received.
+  // Intentionally carries no bid amount or bidder identity — only signals
+  // that the field now has N bids so the UI can show a count.
+  SEALED_BID_ACCEPTED = "e:19",
+  // Emitted to the bidder's private socket room with the final outcome of
+  // their queued bid: { status: 'accepted' | 'rejected', bidId?, error? }.
+  BID_RESULT = "e:20"
 }
 
 export enum EProductStatus {
@@ -501,7 +582,6 @@ export enum EIdentityNumberVerificationStatus {
 }
 
 export enum EPaymentProvider {
-  UNIPAY = "UNIPAY",
   PAY_GATE = "PAY_GATE"
 }
 
@@ -533,8 +613,27 @@ export enum EPushMessageReason {
   NOTIFY_USER_OF_UNSUCCESSFUL_RESERVE_PRICE_PAYMENT = "NOTIFY_USER_OF_UNSUCCESSFUL_RESERVE_PRICE_PAYMENT",
   NOTIFY_USER_OF_UNSUCCESSFUL_PURCHASE_PAYMENT = "NOTIFY_USER_OF_UNSUCCESSFUL_PURCHASE_PAYMENT",
   NOTIFY_USER_OF_UNSUCCESSFUL_REFUND = "NOTIFY_USER_OF_UNSUCCESSFUL_REFUND",
-  NOTIFY_USER_OF_FORUM_PARTICIPATION = "NOTIFY_USER_OF_FORUM_PARTICIPATION"
+  NOTIFY_USER_OF_FORUM_PARTICIPATION = "NOTIFY_USER_OF_FORUM_PARTICIPATION",
+  NOTIFY_BUYER_OF_COLLECTION_OTP = "NOTIFY_BUYER_OF_COLLECTION_OTP",
+  NOTIFY_BUYER_OF_COLLECTION_FORFEITED = "NOTIFY_BUYER_OF_COLLECTION_FORFEITED",
+  NOTIFY_SELLER_OF_ITEM_COLLECTED = "NOTIFY_SELLER_OF_ITEM_COLLECTED"
 }
+
+export enum ECollectionStatus {
+  AWAITING_COLLECTION = "AWAITING_COLLECTION",
+  COLLECTED = "COLLECTED",
+  DISPUTED = "DISPUTED",
+  FORFEITED = "FORFEITED",
+  RESOLVED = "RESOLVED"
+}
+
+export enum ERefundReason {
+  NON_WINNER = "NON_WINNER",
+  DISPUTE_RESOLVED = "DISPUTE_RESOLVED"
+}
+
+export type collectionStatus = `${ECollectionStatus}`;
+export type refundReason = `${ERefundReason}`;
 
 export interface SearchFilters {
   searchTerm?: string;
@@ -1467,7 +1566,51 @@ export const allotmentSuccessEmailTemplate = `
         <p>Best regards,</p>
         <p>The Botswana Government Auction Platform Team</p>
       </div>
-      
+
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
+  </body>
+  </html>
+`;
+
+export const collectionOtpEmailTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Your Collection Code</title>
+  </head>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>Item Collection Instructions</h2>
+      </header>
+
+      <div style="${contentStyle}">
+        <p>Dear [UserName],</p>
+        <p>Your purchase of <strong>"[ItemName]"</strong> has been confirmed. Please use the collection code below when you arrive to collect your item.</p>
+
+        <div style="background-color: #f6ffed; border: 2px solid #52c41a; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
+          <p style="margin: 0 0 8px 0; font-size: 14px; color: #666;">Your Collection Code</p>
+          <p style="margin: 0; font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #1a1a1a;">[OtpCode]</p>
+        </div>
+
+        <p><strong>Collection Window:</strong></p>
+        <ul style="margin-left: 20px;">
+          <li>You may collect on any working day (Monday–Friday) up to and including <strong>[Deadline]</strong></li>
+          <li>Collection hours: <strong>[StartTime] – [EndTime]</strong></li>
+        </ul>
+
+        <p style="color: #cf1322;"><strong>Important:</strong> If you do not collect your item by the deadline, you will forfeit the item and no refund will be issued.</p>
+
+        <p>Please present this code to the seller at the time of collection. Keep it private — do not share it with anyone.</p>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+
       <footer style="${footerStyle}">
         <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
         <p>This is an official communication from the Government of Botswana.</p>
