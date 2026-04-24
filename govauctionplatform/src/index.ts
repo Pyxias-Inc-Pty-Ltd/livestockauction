@@ -1,4 +1,4 @@
-import './pre-start'; // Must be the first import 
+import './pre-start'; // Must be the first import
 import logger from 'jet-logger';
 import app from './server';
 import { connect } from 'mongoose';
@@ -15,8 +15,11 @@ import authHandler from './handlers/auth-handler';
 import { CustomError } from './shared/errors';
 import { join } from 'path';
 import { readFileSync } from 'fs-extra';
+import { bidQueue } from './queues/bid-queue';
+import { startBidWorker } from './workers/bid-worker';
+import { IBidder } from './models/user-model';
 
-const { OK, INTERNAL_SERVER_ERROR, CREATED } = StatusCodes;
+const { OK, INTERNAL_SERVER_ERROR, CREATED, ACCEPTED } = StatusCodes;
 
 // Constants
 const serverStartMsg = 'Express server started on port: ',
@@ -147,11 +150,21 @@ const onConnection = (socket: Socket) => {
   });
   socket.on(ESocketEventCode.CREATE_BID, async function (data: any, cb: any) {
     try {
-      const bid = await bidHandler.createBid(socket, data);
-      console.log("ESocketEventCode.CREATE_BID: ", data);
-      console.log("ESocketEventCode.CREATED_BID: ", `${bid.itemId.toString()}-bid`, bid);
-      socket.to(`${bid.itemId.toString()}-bid`).emit(ESocketEventCode.UPDATE_BID_AMOUNT, bid.bidAmount);
-      cb({ status: CREATED });
+      const bidder = (socket as any).user as IBidder;
+
+      // Enqueue the bid for async processing.
+      // The worker processes it and delivers the outcome via the BID_RESULT
+      // event to the bidder's private socket room (socket.id).
+      const job = await bidQueue.add('bid', {
+        socketId: socket.id,
+        bidderId: bidder.id.toString(),
+        input: data,
+      });
+
+      // 202 Accepted: the bid has been queued.
+      // The bidder's client should listen for ESocketEventCode.BID_RESULT
+      // to learn whether the bid was accepted or rejected.
+      cb({ status: ACCEPTED, jobId: job.id });
     } catch (error) {
       if (error instanceof CustomError) {
         cb({ status: error.HttpStatus, msg: error.message });
@@ -210,6 +223,12 @@ httpServer.listen(port, async () => {
     logger.info(SERVICE_URLS.mongoDBURI);
     await connect(SERVICE_URLS.mongoDBURI);
     logger.info('Connection to mongodb established');
+
+    // Start the bid worker.
+    // Injecting `io` here avoids a circular import and ensures the worker
+    // can broadcast directly to connected sockets.
+    startBidWorker(io);
+    logger.info('Bid worker started');
 
   } catch (error) {
     logger.err(error);
