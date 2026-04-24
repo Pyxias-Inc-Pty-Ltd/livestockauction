@@ -142,8 +142,6 @@ src/
     ├── bid-lock.ts            # Distributed bid locking via Redis SET NX + Lua
     ├── errors.ts              # Custom error classes (NotFoundError, ForbiddenError…)
     ├── functions.ts           # Shared utilities (slugs, OTP, PayGate, BAITS helpers…)
-    └── sec/
-        └── public_key.pem    # RSA public key for user identity signature verification
 
 spec/
 ├── unit/
@@ -688,10 +686,9 @@ npx jest --testPathPattern=e2e     # run only E2E tests
 ## Deployment Notes
 
 - **MongoDB URI** is hardcoded in `src/globals.ts`. For Atlas, uncomment the `mongodb+srv://` line and set `MONGO_DB_USER` / `MONGO_DB_PASS`.
-- **`src/shared/sec/public_key.pem`** must be present. This RSA public key is used by `verifySignature` in `shared/functions.ts` for user identity verification (not webhook verification — cron jobs now run in-process).
 - **Firebase credentials** are stored in `FIREBASE_SERVICE_ACCOUNT_CREDENTIALS` (env var). The service account JSON must be provided as a single-line string. See the env vars table above.
 - **Cron jobs** run in-process via `node-cron` (`src/cron.ts`). A Redis distributed lock (`SET NX`, 55 s TTL) prevents double-execution across multiple instances. No external cron service or signed webhooks required.
-- **Docker / Railway**: A `Dockerfile` (two-stage build) is included. `build.ts` compiles TypeScript and copies `public_key.pem` into `dist/`. `src/pre-start/index.ts` skips the dotenv file load when `--env=production` (Railway injects env vars at runtime via the dashboard). Deploy with `npm start` (already passes `--env=production`).
+- **Docker / Railway**: A `Dockerfile` (two-stage build) is included. `src/pre-start/index.ts` skips the dotenv file load when `--env=production` (Railway injects env vars at runtime via the dashboard). Deploy with `npm start` (already passes `--env=production`).
 - **Sealed bid key**: `SEALED_BID_ENCRYPTION_KEY` must be a cryptographically random 64-character hex string. Generate with: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Changing this key in production will make all existing sealed bids unreadable.
 - **Horizontal scaling**: The bid worker emits Socket.IO events directly via the `io` reference. Before scaling to multiple instances, add `@socket.io/redis-adapter` to the Socket.IO server and replace direct `io.to().emit()` calls in `bid-worker.ts` with a `@socket.io/redis-emitter` instance.
 - **CORS**: `SERVICE_URLS.clientURI` in `src/globals.ts` is hardcoded to `https://auctiondev.xyz`. Update for your domain.
