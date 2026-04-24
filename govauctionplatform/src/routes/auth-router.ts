@@ -1,178 +1,104 @@
 import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
-import passport from 'passport';
-import { compare, hash } from 'bcrypt';
-import userService from '../services/user-service';
-import { BadRequestError, NotFoundError } from '../shared/errors';
-const LocalStrategy = require('passport-local').Strategy;
-import { sign, verify } from 'jsonwebtoken';
-import { SERVICE_URLS, STATE_JWT_SECRET } from '../globals';
-import Joi from 'joi';
-import { emailValidation } from '../shared/functions';
-import { isMongoId } from 'validator';
+import * as Joi from 'joi';
+import { KEYCLOAK_URL, KEYCLOAK_REALM, KEYCLOAK_CLIENT_ID } from '../globals';
+import { exchangeCodeForTokens, refreshAccessToken, revokeToken } from '../shared/keycloak';
 
-// Constants
 const router = Router();
-const { OK, INTERNAL_SERVER_ERROR, BAD_REQUEST } = StatusCodes;
+const { OK, UNAUTHORIZED } = StatusCodes;
 
+// ---------------------------------------------------------------------------
+// Refresh-token cookie
+// ---------------------------------------------------------------------------
+const COOKIE_NAME = 'rt';
+const cookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'strict' as const,
+  path: '/auth',
+  maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+};
+
+// ---------------------------------------------------------------------------
 // Paths
+// ---------------------------------------------------------------------------
 export const p = {
-  login: '/login',
-  get: '/access',
-  forgotPassword: '/forgot-password',
-  resetPassword: '/reset-password'
+  config:   '/config',
+  exchange: '/exchange',
+  refresh:  '/refresh',
+  logout:   '/logout',
 } as const;
 
-passport.use(new LocalStrategy({
-  usernameField: 'email',
-  passwordField: 'password'
-}, async function (username: string, password: string, cb: any) {
-  try {
-
-    // Find account by email or phone
-    const [emailUser, phoneUser] = await Promise.all([userService.getByEmail(username), userService.getByPhone(username)]);
-
-    // Check if exists
-    if (emailUser && emailUser.password) {
-      // Verify password
-      const isValid = await compare(password, emailUser.password);
-
-      if (isValid) {
-        return cb(null, emailUser.toJSON());
-      } else {
-        return cb(null, false);
-      }
-    } else if (phoneUser && phoneUser.password) {
-      // Verify password
-      const isValid = await compare(password, phoneUser.password);
-
-      if (isValid) {
-        return cb(null, phoneUser.toJSON());
-      } else {
-        return cb(null, false);
-      }
-    } else {
-      return cb(null, false);
-    }
-  } catch (error) {
-    return cb(error);
-  }
-}));
-
-passport.serializeUser(function(user: any, cb: any) {
-  process.nextTick(function() {
-    cb(null, user);
+// ---------------------------------------------------------------------------
+// GET /auth/config
+// Returns Keycloak endpoint information for API clients.
+// ---------------------------------------------------------------------------
+router.get(p.config, (_req: Request, res: Response) => {
+  const realm = KEYCLOAK_REALM ?? 'auctions';
+  const base = `${KEYCLOAK_URL}/realms/${realm}`;
+  return res.status(OK).json({
+    realm,
+    clientId: KEYCLOAK_CLIENT_ID,
+    tokenEndpoint:         `${base}/protocol/openid-connect/token`,
+    authorizationEndpoint: `${base}/protocol/openid-connect/auth`,
+    logoutEndpoint:        `${base}/protocol/openid-connect/logout`,
+    discoveryDocument:     `${base}/.well-known/openid-configuration`,
   });
 });
 
-passport.deserializeUser(function(user: any, cb: any) {
-  process.nextTick(function() {
-    return cb(null, user);
-  });
+// ---------------------------------------------------------------------------
+// POST /auth/exchange
+// PKCE code exchange (BFF pattern).
+// Frontend sends { code, codeVerifier, redirectUri }.
+// Backend exchanges with Keycloak, stores refresh token in httpOnly cookie,
+// and returns the short-lived access token in the response body.
+// ---------------------------------------------------------------------------
+router.post(p.exchange, async (req: Request, res: Response) => {
+  const schema = Joi.object({
+    code:        Joi.string().required(),
+    codeVerifier: Joi.string().required(),
+    redirectUri: Joi.string().uri().required(),
+  }).required();
+  Joi.assert(req.body, schema);
+
+  const { code, codeVerifier, redirectUri } = req.body;
+  const { accessToken, refreshToken } = await exchangeCodeForTokens(code, codeVerifier, redirectUri);
+
+  res.cookie(COOKIE_NAME, refreshToken, cookieOptions);
+  return res.status(OK).json({ accessToken });
 });
 
-/**
- * Sign in with password
- */
-router.post(p.login,
-  passport.authenticate('local', { failWithError: true, session: false }),
-    async (req: Request, res: Response) => {
-      try {
-        if (req.user) {
-          const jwt = sign({subject: (req.user as any).id}, STATE_JWT_SECRET);
-          res.status(OK)
-          .send({token: jwt});
-        } else {
-          throw new NotFoundError('User not found');
-        }
-      } catch (error) {
-        return res.status(500).send({ message: error.message });
-      }
-    }, (error: any, req: Request, res: Response) => {
-      return res.status(401).send({ message: error.message });
-    });
-    
-/**
- * Forgot Password
- */
-router.post(p.forgotPassword, async (req: Request, res: Response) => {
-  try {
-    const schema = Joi.object().keys({
-      email: emailValidation.required().messages({
-        'any.required': '"email" is a required field'
-      })
-    }).required();
-
-    // Validate schema against input
-    Joi.assert(req.body, schema);
-
-    const { email } = req.body;
-    const user = await userService.getByEmail(email);
-    if (!user) {
-      throw new NotFoundError('User not found');
-    }
-
-    const token = sign({ id: user.id }, STATE_JWT_SECRET, { expiresIn: '1h' });
-    const resetLink = `${SERVICE_URLS.clientURI}${p.resetPassword}?token=${token}`;
-
-    // await transporter.sendMail({
-    //   to: email,
-    //   subject: 'Password Reset',
-    //   text: `Click here to reset your password: ${resetLink}`
-    // });
-
-    console.log("forgotPassword: ", resetLink);
-
-    res.status(OK).send({ message: 'Password reset link has been sent to your email' });
-  } catch (error) {
-    res.status(INTERNAL_SERVER_ERROR).send({ message: error.message });
+// ---------------------------------------------------------------------------
+// POST /auth/refresh
+// Silent token refresh using the httpOnly cookie.
+// Returns a new access token; rotates the refresh token cookie.
+// ---------------------------------------------------------------------------
+router.post(p.refresh, async (req: Request, res: Response) => {
+  const refreshToken = (req as any).cookies?.[COOKIE_NAME];
+  if (!refreshToken) {
+    return res.status(UNAUTHORIZED).json({ error: 'No refresh token' });
   }
+
+  const { accessToken, refreshToken: newRefreshToken } = await refreshAccessToken(refreshToken);
+  res.cookie(COOKIE_NAME, newRefreshToken, cookieOptions);
+  return res.status(OK).json({ accessToken });
 });
 
-/**
- * Reset Password
- */
-router.post(p.resetPassword, async (req: Request, res: Response) => {
-  try {
-    const schema = Joi.object().keys({
-      token: Joi.string().required().messages({
-        'any.required': '"token" is a required field'
-      }),
-      newPassword: Joi.string().required().messages({
-        'any.required': '"newPassword" is a required field'
-      })
-    }).required();
-
-    // Validate schema against input
-    Joi.assert(req.body, schema);
-
-    const { token, newPassword } = req.body;
-    const decoded: any = verify(token, STATE_JWT_SECRET);
-
-    // Check if is mongoId
-    if (!isMongoId(decoded.id)) {
-      throw new BadRequestError('Invalid token');
-    }
-
-    const user = await userService.getById(decoded.id);
-    if (!user) {
-      throw new NotFoundError('User not found');
-    }
-
-    const hashedPassword = await hash(newPassword, 10);
-    user.password = hashedPassword;
-    await user.save();
-
-    res.status(OK).send({ message: 'Password has been reset successfully' });
-  } catch (error) {
-    if (error.name === 'TokenExpiredError' || error.name === 'JsonWebTokenError') {
-      res.status(BAD_REQUEST).send({ message: 'Invalid or expired token' });
-    } else {
-      res.status(INTERNAL_SERVER_ERROR).send({ message: error.message });
+// ---------------------------------------------------------------------------
+// POST /auth/logout
+// Revokes the refresh token at Keycloak and clears the httpOnly cookie.
+// ---------------------------------------------------------------------------
+router.post(p.logout, async (req: Request, res: Response) => {
+  const refreshToken = (req as any).cookies?.[COOKIE_NAME];
+  if (refreshToken) {
+    try {
+      await revokeToken(refreshToken);
+    } catch {
+      // Best-effort revocation — always clear the cookie
     }
   }
+  res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: undefined });
+  return res.status(OK).json({ message: 'Logged out' });
 });
 
-
-// Export default
 export default router;
