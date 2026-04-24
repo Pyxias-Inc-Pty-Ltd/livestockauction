@@ -192,7 +192,6 @@ The active env file is **`src/pre-start/env/development.env`**. It is loaded at 
 |---|---|---|---|
 | `NODE_ENV` | Yes | `development` | Node environment |
 | `PORT` | No | `3000` | HTTP server port |
-| `EXPRESS_SESSION_SECRET` | Yes | — | Session signing secret |
 | **Keycloak** | | | |
 | `KEYCLOAK_URL` | Yes | — | Keycloak base URL e.g. `http://localhost:8080` |
 | `KEYCLOAK_REALM` | No | `auctions` | Keycloak realm name |
@@ -224,7 +223,7 @@ The active env file is **`src/pre-start/env/development.env`**. It is loaded at 
 
 ### Current state of `src/pre-start/env/development.env`
 
-The file already contains values for `PAYGATE_*`, `ELASTICSEARCH_*`, `SEALED_BID_ENCRYPTION_KEY`, `REDIS_*`, and `EXPRESS_SESSION_SECRET`. The following need to be **updated after the RBAC upgrade**:
+The file already contains values for `PAYGATE_*`, `ELASTICSEARCH_*`, `SEALED_BID_ENCRYPTION_KEY`, and `REDIS_*`. The following need to be **updated after the RBAC upgrade**:
 
 ```diff
 -KEYCLOAK_CLIENT_ID=auction-backend
