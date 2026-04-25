@@ -71,7 +71,7 @@ const mongoDBURI = (MONGO_DB_USER && MONGO_DB_PASS)
 export const SERVICE_URLS: {[key: string]: string} = {
   mongoDBURI,
   paygateBaseURI: "https://secure.paygate.co.za/payweb3",
-  clientURI: "https://auctiondev.xyz",
+  clientURI: "https://onlineauction-uat.gov.bw",
   baits3URICore: "http://bifrost-baits3.gov.bw:90/api/core/v1/api",
   animalhealthURI: "https://lmsserv.auctiondev.xyz",
   idVerificationURI: "http://idverification-acc.gov.bw:8081/api/v1",
