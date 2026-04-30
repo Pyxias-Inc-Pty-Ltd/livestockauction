@@ -348,6 +348,32 @@ router.put(p.updateAuctionApproverStatus, requirePermission(EPermission.USER_APP
 });
 
 /**
+ * Get an auction approver by ID.
+ */
+router.get(p.getAuctionApproverById, requirePermission(EPermission.USER_APPROVER_READ), async (req: Request, res: Response) => {
+  try {
+    const qSchema = Joi.object().keys({
+      id: Joi.string().required().messages({
+        'any.required': '"id" is a required field'
+      })
+    }).required();
+
+    Joi.assert(req.query, qSchema);
+
+    const { id } = req.query;
+    const approver = await userService.getAuctionApproverById(id as string);
+
+    if (!approver) {
+      return res.status(StatusCodes.NOT_FOUND).json({ message: 'Auction approver not found' });
+    }
+
+    return res.status(OK).json({ approver });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
  * Delete an admin by ID (also removes from Keycloak).
  */
 router.delete(p.deleteAdminById, requirePermission(EPermission.USER_DELETE), async (req: Request, res: Response) => {
