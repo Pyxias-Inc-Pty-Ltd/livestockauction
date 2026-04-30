@@ -29,7 +29,6 @@ export interface IAuction extends Document {
     tn: string;
   };
   isInviteOnly: boolean;
-  inviteList: string[];
   auctionNumber: string;
   auctionLocation: string;
   sectorType: sectorType;
@@ -72,7 +71,6 @@ export interface IAuctionInput {
     tn: string;
   };
   isInviteOnly: boolean;
-  inviteList: string[];
   auctionNumber: string;
   hasRegistrationFee: boolean;
   registrationFee?: number;
@@ -175,7 +173,6 @@ const auctionSchema = new Schema<IAuction>({
   },
   startTime: { type: Date, required: true },
   participantsWithBiddingNumbers: { type: [String] },
-  inviteList: { type: [String] },
   globallyEligibleBidders: { type: [String] },
   requiredAttributes: { type: [String] },
   endTime: { type: Date, required: true },
@@ -241,10 +238,10 @@ auctionSchema.pre('save', async function () {
     doc.titleSlug.tn = generateSlug(doc.title.tn);
   }
 
-  // TODO: Remove?
-  // if (this.isModified('globallyEligibleBidders')) {
-  //   await doc.$model(EModels.ITEM).updateMany({auctionId: doc._id}, {$set: { eligibleBidders: doc.globallyEligibleBidders }});
-  // }
+  // Sync eligible bidders to all items when the auction's list changes
+  if (this.isModified('globallyEligibleBidders')) {
+    await doc.$model(EModels.ITEM).updateMany({auctionId: doc._id}, {$set: { eligibleBidders: doc.globallyEligibleBidders }});
+  }
 
   // PUBLISHED requires `publishedBy`
   if (
