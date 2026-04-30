@@ -16,7 +16,6 @@ export function buildAuction(overrides: Partial<IAuction> = {}): Partial<IAuctio
     title: { en: `Test Auction ${n}`, tn: `Test Auction ${n}` },
     titleSlug: { en: `test-auction-${n}`, tn: `test-auction-${n}` },
     isInviteOnly: false,
-    inviteList: [],
     auctionNumber: `A2026042${String(n).padStart(3, '0')}`,
     auctionLocation: 'Test Location',
     sectorType: ESectorType.GOVERNMENT,

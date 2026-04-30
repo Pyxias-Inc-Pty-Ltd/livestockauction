@@ -62,8 +62,20 @@ async function _runBidTransaction(
       const item = await Item.findById(input.itemId).session(sess!);
       if (!item) throw new NotFoundError('Item not found');
 
-      // ── Eligibility ───────────────────────────────────────────────────────────
-      if (!item.eligibleBidders.includes(currentUser.id.toString())) {
+      // ── Auction-level constraints ─────────────────────────────────────────────
+      // Fetch only the fields needed for these checks to keep the read cheap.
+      const auction = await auctionService.getById(item.auctionId, {
+        isInviteOnly: 1,
+        participationType: 1,
+        sectorType: 1,
+      });
+      if (!auction) throw new NotFoundError('Auction not found');
+
+      // ── Eligibility (only enforced for invite-only auctions) ──────────────────
+      if (
+        auction.isInviteOnly &&
+        !item.eligibleBidders.includes(currentUser.id.toString())
+      ) {
         throw new ForbiddenError('You are not eligible to bid on this lot');
       }
 
@@ -77,14 +89,6 @@ async function _runBidTransaction(
       if (item.status === EItemStatus.CANCELLED) {
         throw new ForbiddenError('Bidding for this lot has been cancelled');
       }
-
-      // ── Auction-level participation and sector constraints ────────────────────
-      // Fetch only the fields needed for these checks to keep the read cheap.
-      const auction = await auctionService.getById(item.auctionId, {
-        participationType: 1,
-        sectorType: 1,
-      });
-      if (!auction) throw new NotFoundError('Auction not found');
 
       // participationType: CITIZEN_ONLY auctions reject organisational bidders.
       if (

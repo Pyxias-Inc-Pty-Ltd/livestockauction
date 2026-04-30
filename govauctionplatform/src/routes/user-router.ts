@@ -201,8 +201,11 @@ router.get(p.getUsers, requirePermission(EPermission.USER_MANAGE), async (req: R
       conditions.set('userType', userType);
     }
     
-    const users = await userService.getUsers(conditions);
-    return res.status(OK).json({users});
+    const [users, totalCount] = await Promise.all([
+      userService.getUsers(conditions),
+      userService.countUsers(conditions),
+    ]);
+    return res.status(OK).json({users, totalCount});
   } catch (error) {
     throw error;
   }

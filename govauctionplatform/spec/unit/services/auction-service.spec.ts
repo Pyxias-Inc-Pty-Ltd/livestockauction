@@ -86,7 +86,6 @@ function makeAuctionInput(overrides: Partial<IAuctionInput> = {}): IAuctionInput
   return {
     title: { en: 'Test Auction', tn: 'Khansele ya Tlhatlhano' },
     isInviteOnly: false,
-    inviteList: [],
     auctionNumber: '',
     hasRegistrationFee: false,
     sectorType: ESectorType.GOVERNMENT,

@@ -456,6 +456,35 @@ async function getUsers(conditions: Map<string, any>, projection?: any): Promise
 }
 
 /**
+ * Count users matching the given filter conditions.
+ * Applies the same filters as getUsers (userType, date range) but no pagination/limit.
+ */
+async function countUsers(conditions: Map<string, any>): Promise<number> {
+  try {
+    const filter: any = {};
+
+    if (conditions.get('userType')) {
+      filter.userType = conditions.get('userType');
+    }
+
+    if (conditions.get('startDate') && conditions.get('endDate')) {
+      filter.createdDate = {
+        $gte: new Date(conditions.get('startDate')),
+        $lte: new Date(conditions.get('endDate')),
+      };
+    } else if (conditions.get('startDate')) {
+      filter.createdDate = { $gte: new Date(conditions.get('startDate')) };
+    } else if (conditions.get('endDate')) {
+      filter.createdDate = { $lte: new Date(conditions.get('endDate')) };
+    }
+
+    return await User.countDocuments(filter);
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
  * Get admins.
  * 
  * @param conditions
@@ -754,6 +783,7 @@ export default {
   getByPhone,
   getByKeycloakId,
   getUsers,
+  countUsers,
   getById,
   getAuctionApproversForSeller,
   getAuctionApproverById,

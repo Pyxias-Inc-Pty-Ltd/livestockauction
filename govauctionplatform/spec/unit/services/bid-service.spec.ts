@@ -190,7 +190,9 @@ describe('bid-service', () => {
       expect(await Bid.countDocuments({ idempotencyKey })).toBe(1);
     });
 
-    it('rejects a bidder not in eligibleBidders', async () => {
+    it('rejects a bidder not in eligibleBidders when auction is invite-only', async () => {
+      mockAuction({ isInviteOnly: true });
+
       const bidder = await seedBidder();
       const item = await seedItem(new Types.ObjectId()); // different bidder
 
@@ -202,6 +204,20 @@ describe('bid-service', () => {
           bidTime: new Date(),
         }),
       ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('allows a bidder not in eligibleBidders when auction is not invite-only', async () => {
+      const bidder = await seedBidder();
+      const item = await seedItem(new Types.ObjectId()); // different bidder
+
+      const bid = await bidService.createOpenBid(bidder as any, {
+        itemId: item._id,
+        userId: bidder._id,
+        bidAmount: 600,
+        bidTime: new Date(),
+      });
+
+      expect(bid.bidAmount).toBe(600);
     });
 
     it('rejects when item status is NOT_BEGUN', async () => {
