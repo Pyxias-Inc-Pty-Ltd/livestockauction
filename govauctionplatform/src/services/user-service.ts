@@ -692,7 +692,7 @@ async function updateAuctionApproverStatus(
  */
 async function getAuctionApproverById(id: string | Schema.Types.ObjectId, projection?: any): Promise<IAuctionApprover | null> {
   try {
-    return await AuctionApprover.findById(id, projection);
+    return await User.findOne({ _id: id, userType: EUserType.AUCTION_APPROVER }, projection);
   } catch (error) {
     throw error;
   }
