@@ -42,6 +42,7 @@ export interface IAuction extends Document {
   registrationFee?: number;
   participantsWithBiddingNumbers: Array<string>;
   globallyEligibleBidders: Array<string>;
+  invitedBidders: Array<string>;
   creatorId: Schema.Types.ObjectId;
   categoryId: Schema.Types.ObjectId;
   participationType: participationType;
@@ -71,6 +72,7 @@ export interface IAuctionInput {
     tn: string;
   };
   isInviteOnly: boolean;
+  invitedBidders?: Array<string>;
   auctionNumber: string;
   hasRegistrationFee: boolean;
   registrationFee?: number;
@@ -174,6 +176,7 @@ const auctionSchema = new Schema<IAuction>({
   startTime: { type: Date, required: true },
   participantsWithBiddingNumbers: { type: [String] },
   globallyEligibleBidders: { type: [String] },
+  invitedBidders: { type: [String] },
   requiredAttributes: { type: [String] },
   endTime: { type: Date, required: true },
   status: { type: String, enum: [EAuctionStatus.NOT_BEGUN, EAuctionStatus.ACTIVE, EAuctionStatus.CANCELLED, EAuctionStatus.ENDED]},
@@ -222,6 +225,7 @@ auctionSchema.set('toJSON', {
   versionKey: false,
   transform: function (doc, ret) {
     delete ret.globallyEligibleBidders;
+    delete ret.invitedBidders;
     delete ret._id;
     delete ret.__t;
   }
