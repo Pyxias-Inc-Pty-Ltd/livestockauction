@@ -2,7 +2,7 @@ import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { mongoIdValidation, isStringNumberLike } from '../shared/functions';
-import { requirePermission } from '../shared/middleware';
+import { requirePermission, requireAnyPermission } from '../shared/middleware';
 import { IAdmin, IBidder, IUser } from '../models/user-model';
 import collectionService from '../services/collection-service';
 import transactionService from '../services/transaction-service';
@@ -165,9 +165,9 @@ router.get(p.getByItemId, requirePermission(EPermission.COLLECTION_READ), async 
 
 /**
  * List collections with filters.
- * Accessible by sellers and admins.
+ * Accessible by sellers, admins, and bidders (own collections only).
  */
-router.get(p.getCollections, requirePermission(EPermission.COLLECTION_READ), async (req: Request, res: Response) => {
+router.get(p.getCollections, requireAnyPermission(EPermission.COLLECTION_READ, EPermission.COLLECTION_READ_OWN), async (req: Request, res: Response) => {
   try {
     const qSchema = Joi.object().keys({
       sortOrder: Joi.string().required().valid(
@@ -196,13 +196,24 @@ router.get(p.getCollections, requirePermission(EPermission.COLLECTION_READ), asy
 
     const { limit, sortOrder, lastDocumentId, itemId, buyerId, sellerId, auctionId, status } = req.query;
 
+    // Bidders with only COLLECTION_READ_OWN are restricted to their own collections
+    const isScopedToOwn = !req.permissions.includes(EPermission.COLLECTION_READ)
+      && req.permissions.includes(EPermission.COLLECTION_READ_OWN);
+
     const conditions = new Map<string, any>();
     conditions.set('limit', parseInt(limit as string));
     conditions.set('sortOrder', sortOrder);
 
     if (lastDocumentId) conditions.set('lastDocumentId', lastDocumentId);
     if (itemId) conditions.set('itemId', itemId);
-    if (buyerId) conditions.set('buyerId', buyerId);
+
+    if (isScopedToOwn) {
+      // Force buyerId to the authenticated user's own ID
+      conditions.set('buyerId', (req.user as IUser)._id);
+    } else if (buyerId) {
+      conditions.set('buyerId', buyerId);
+    }
+
     if (sellerId) conditions.set('sellerId', sellerId);
     if (auctionId) conditions.set('auctionId', auctionId);
     if (status) conditions.set('status', status);
