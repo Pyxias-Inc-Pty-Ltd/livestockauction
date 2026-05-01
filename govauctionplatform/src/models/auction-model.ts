@@ -43,6 +43,7 @@ export interface IAuction extends Document {
   participantsWithBiddingNumbers: Array<string>;
   globallyEligibleBidders: Array<string>;
   invitedBidders: Array<string>;
+  pendingInviteEmails: Array<string>;
   creatorId: Schema.Types.ObjectId;
   categoryId: Schema.Types.ObjectId;
   participationType: participationType;
@@ -177,6 +178,7 @@ const auctionSchema = new Schema<IAuction>({
   participantsWithBiddingNumbers: { type: [String] },
   globallyEligibleBidders: { type: [String] },
   invitedBidders: { type: [String] },
+  pendingInviteEmails: { type: [String], default: [] },
   requiredAttributes: { type: [String] },
   endTime: { type: Date, required: true },
   status: { type: String, enum: [EAuctionStatus.NOT_BEGUN, EAuctionStatus.ACTIVE, EAuctionStatus.CANCELLED, EAuctionStatus.ENDED]},
