@@ -26,6 +26,7 @@ export const p = {
   addInvitedBidders: '/addInvitedBidders',
   removeInvitedBidder: '/removeInvitedBidder',
   getInvitedBidders: '/getInvitedBidders',
+  inviteByEmail: '/inviteByEmail',
 } as const;
 
 /**
@@ -473,6 +474,32 @@ router.get(p.getInvitedBidders, async (req: Request, res: Response) => {
     const { auctionId } = req.query;
     const bidders = await auctionService.getInvitedBidders(auctionId as string);
     return res.status(OK).json({ bidders });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Invite a bidder by email. If no account exists for that email, stores a pending
+ * invite and sends an invitation email. Resolves automatically on registration.
+ */
+router.post(p.inviteByEmail, requirePermission(EPermission.AUCTION_CREATE), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      auctionId: mongoIdValidation.required().messages({
+        'any.required': '"auctionId" is a required field',
+      }),
+      email: Joi.string().email().required().messages({
+        'any.required': '"email" is a required field',
+        'string.email': '"email" must be a valid email address',
+      }),
+    }).required();
+
+    Joi.assert(req.body, schema);
+
+    const { auctionId, email } = req.body;
+    const result = await auctionService.inviteByEmail(auctionId, email);
+    return res.status(OK).json(result);
   } catch (error) {
     throw error;
   }
