@@ -1,4 +1,5 @@
 import { ConflictError, ForbiddenError, NotFoundError } from "../shared/errors";
+import { Auction } from "../models/auction-model";
 import { IAdmin, IUser, User, IAdminInput, Admin, IBidder, IBidderInput, Bidder, ISeller, ISellerInput, Seller, AuctionApprover, IAuctionApprover, IAuctionApproverInput } from "../models/user-model";
 import { companyRegistrationVerificationIssuesTemplate, companyRegistrationVerificationSuccessTemplate, EAdminType, ESortOrderType, EUserSortType, EUserType, ID_VERIFICATION_API_KEY, invalidCompanyRegistrationTemplate, invalidNationalIDSMSTemplate, keeperIDVerificationTemplate, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, nameMismatchWithNationalIDSMSTemplate, nationalIDVerificationIssuesSMSTemplate, nationalIDVerificationSuccessSMSTemplate, SERVICE_URLS } from "../globals";
 import { generateOTP, generateRandomPassword, getFarmerByKeeperId, getKeeperByRegNumber, hashOTP, normalizeAndCompareNames, verifyOTP } from "../shared/functions";
@@ -135,6 +136,18 @@ async function createBidder(input: IBidderInput): Promise<IBidder> {
     // 3. Persist profile in MongoDB (no password stored locally)
     const newBidder = new Bidder({ ...input, keycloakId, password: undefined });
     await newBidder.save();
+
+    // 4. Resolve any pending email invites for this email address
+    if (input.email) {
+      const normalizedEmail = input.email.toLowerCase().trim();
+      await Auction.updateMany(
+        { pendingInviteEmails: normalizedEmail },
+        {
+          $pull: { pendingInviteEmails: normalizedEmail },
+          $addToSet: { invitedBidders: newBidder._id },
+        }
+      );
+    }
 
     return newBidder;
   } catch (error) {
