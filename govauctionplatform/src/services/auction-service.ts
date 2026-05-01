@@ -3,8 +3,9 @@ import { generateAuctionNumber, isBeforeStartDate, isStartDateBeforeEndDate } fr
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession, Types } from 'mongoose';
-import { MAX_GEO_DISTANCE_AUCTION, EAuctionSortType, EAuctionStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, languageType } from "../globals";
+import { MAX_GEO_DISTANCE_AUCTION, EAuctionSortType, EAuctionStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, languageType, SERVICE_URLS, ID_VERIFICATION_API_KEY, auctionInviteEmailTemplate } from "../globals";
 import { Auction, IAuction, IAuctionInput, IRequiredAttribute, IRequiredAttributeInput, RequiredAttribute } from "../models/auction-model";
+import * as axios from "axios";
 import categoryService from "./category-service";
 import forumService from "./forum-service";
 import { Item } from "../models/item-model";
@@ -753,6 +754,7 @@ export default {
   addInvitedBidders,
   removeInvitedBidder,
   getInvitedBidders,
+  inviteByEmail,
 } as const;
 
 // ── Invited bidder helpers ─────────────────────────────────────────────────
@@ -796,4 +798,48 @@ async function getInvitedBidders(auctionId: string): Promise<IBidder[]> {
   if (!auction.invitedBidders || auction.invitedBidders.length === 0) return [];
 
   return await Bidder.find({ _id: { $in: auction.invitedBidders } }).select('-__v');
+}
+
+/**
+ * Invite a bidder by email address.
+ * If an account already exists for that email, adds them to invitedBidders directly.
+ * Otherwise stores the email in pendingInviteEmails and sends an invitation email.
+ * The pending invite is resolved automatically when the user registers (see user-service.ts).
+ */
+async function inviteByEmail(auctionId: string, email: string): Promise<{ resolved: boolean }> {
+  const normalizedEmail = email.toLowerCase().trim();
+
+  const auction = await getById(auctionId);
+  if (!auction) throw new NotFoundError('Auction not found');
+
+  // If a bidder account already exists for this email, add them directly
+  const existingBidder = await Bidder.findOne({ email: normalizedEmail });
+  if (existingBidder) {
+    await addInvitedBidders(auctionId, [existingBidder.id.toString()]);
+    return { resolved: true };
+  }
+
+  // No account yet — store pending invite if not already present
+  if (!auction.pendingInviteEmails.includes(normalizedEmail)) {
+    auction.pendingInviteEmails.push(normalizedEmail);
+    await auction.save();
+  }
+
+  // Queue invitation email
+  await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/emailQueue/add-job`, {
+    data: {
+      subject: `You've been invited to bid: ${auction.title.en}`,
+      email: normalizedEmail,
+      message: auctionInviteEmailTemplate
+        .replace('[AuctionTitle]', auction.title.en)
+        .replace('[RegisterLink]', `${SERVICE_URLS.clientURI}/register`),
+    },
+  }, {
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': ID_VERIFICATION_API_KEY,
+    },
+  });
+
+  return { resolved: false };
 }
