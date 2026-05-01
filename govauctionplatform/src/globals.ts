@@ -1613,3 +1613,38 @@ export const collectionOtpEmailTemplate = `
   </body>
   </html>
 `;
+
+export const auctionInviteEmailTemplate = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>Invitation to Bid</title>
+  </head>
+  <body style="${bodyStyle}">
+    <div>
+      <header style="${headerStyle}">
+        <h1>Botswana Government Auction Platform</h1>
+        <h2>You've Been Invited to Bid</h2>
+      </header>
+      <div style="${contentStyle}">
+        <p>Dear Bidder,</p>
+        <p>You have been personally invited to participate in the following auction:</p>
+        <div style="background-color: #f0f7ff; border: 1px solid #bcd5f5; border-radius: 4px; padding: 15px; margin: 20px 0;">
+          <p style="margin: 0; font-weight: bold; font-size: 16px;">[AuctionTitle]</p>
+        </div>
+        <p>To participate, create an account using this email address. You will be automatically added to the invited bidders list once registered.</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="[RegisterLink]" style="${buttonStyle}">Create Your Account</a>
+        </div>
+        <p>If you already have an account, please log in — this auction will appear in your invited auctions.</p>
+        <p>Best regards,</p>
+        <p>The Botswana Government Auction Platform Team</p>
+      </div>
+      <footer style="${footerStyle}">
+        <p>&copy; 2025 Botswana Government Auction Platform. All rights reserved.</p>
+        <p>This is an official communication from the Government of Botswana.</p>
+      </footer>
+    </div>
+  </body>
+  </html>
+`;
