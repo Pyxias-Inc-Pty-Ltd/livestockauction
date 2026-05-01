@@ -392,6 +392,7 @@ export enum EPermission {
 
   // User management
   USER_READ             = 'user:read',
+  USER_BIDDER_READ      = 'user:bidder:read',
   USER_MANAGE           = 'user:manage',
   USER_DELETE           = 'user:delete',
   USER_REPORT           = 'user:report',

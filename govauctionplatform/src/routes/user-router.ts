@@ -417,7 +417,7 @@ router.delete(p.deleteBidderById, requirePermission(EPermission.USER_DELETE), as
 /**
  * Search bidders by name, email, phone, or keeperId.
  */
-router.get(p.getBidders, requirePermission(EPermission.USER_READ), async (req: Request, res: Response) => {
+router.get(p.getBidders, requirePermission(EPermission.USER_BIDDER_READ), async (req: Request, res: Response) => {
   try {
     const qSchema = Joi.object().keys({
       search: Joi.string().min(1).required().messages({
@@ -439,7 +439,7 @@ router.get(p.getBidders, requirePermission(EPermission.USER_READ), async (req: R
 /**
  * Get a bidder by ID.
  */
-router.get(p.getBidderById, requirePermission(EPermission.USER_READ), async (req: Request, res: Response) => {
+router.get(p.getBidderById, requirePermission(EPermission.USER_BIDDER_READ), async (req: Request, res: Response) => {
   try {
     const qSchema = Joi.object().keys({
       id: mongoIdValidation.required().messages({
