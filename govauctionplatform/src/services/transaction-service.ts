@@ -24,7 +24,7 @@ import collectionService from "./collection-service";
 async function initiateItemReservation(currentUser: IBidder, input: { itemId: string }): Promise<ITransaction> {
   try {
 
-    const [item, token] = await Promise.all([itemService.getById(input.itemId, { reservePrice: 1, sellerId: 1, auctionId: 1 }), tokenService.getActiveToken()]);
+    const [item, token] = await Promise.all([itemService.getById(input.itemId, { reservePrice: 1, sellerId: 1, auctionId: 1, invitedBidders: 1 }), tokenService.getActiveToken()]);
 
     // Check if exists
     if (!item) {
@@ -37,7 +37,7 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
     }
 
     // Find auction
-    const auction = await auctionService.getById(item.auctionId, { participationType: 1 });
+    const auction = await auctionService.getById(item.auctionId, { participationType: 1, isInviteOnly: 1, invitedBidders: 1 });
 
     // Check if exists
     if (!auction) {
@@ -49,6 +49,22 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
       // Check current bidder nationality
       if (currentUser.nationality !== LOCAL_NATIONALITY) {
         throw new ForbiddenError('This auction is reserved for citizens only');
+      }
+    }
+
+    // Pre-invite gate for invite-only auctions
+    if (auction.isInviteOnly) {
+      const bidderId = currentUser.id.toString();
+      const isAuctionInvited = auction.invitedBidders?.some(
+        (id: any) => id.toString() === bidderId
+      );
+      const isLotInvited = item.invitedBidders?.some(
+        (id: any) => id.toString() === bidderId
+      );
+      if (!isAuctionInvited && !isLotInvited) {
+        throw new ForbiddenError(
+          'You must be invited to this auction before paying the reservation fee'
+        );
       }
     }
 
