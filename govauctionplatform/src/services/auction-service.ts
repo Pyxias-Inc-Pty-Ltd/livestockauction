@@ -1,4 +1,4 @@
-import { IAdmin, IAuctionApprover, ISeller } from "../models/user-model";
+import { Bidder, IBidder, IAdmin, IAuctionApprover, ISeller } from "../models/user-model";
 import { generateAuctionNumber, isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
@@ -749,5 +749,51 @@ export default {
   unpublishAuction,
   rejectAuction,
   trackAuctionStatus,
-  updateAuctionCoordinates
+  updateAuctionCoordinates,
+  addInvitedBidders,
+  removeInvitedBidder,
+  getInvitedBidders,
 } as const;
+
+// ── Invited bidder helpers ─────────────────────────────────────────────────
+
+/**
+ * Add bidders to the auction's invitedBidders list.
+ */
+async function addInvitedBidders(auctionId: string, bidderIds: string[]): Promise<IAuction> {
+  const auction = await getById(auctionId);
+  if (!auction) throw new NotFoundError('Auction not found');
+
+  const existing = new Set(auction.invitedBidders.map(String));
+  for (const id of bidderIds) {
+    if (!existing.has(String(id))) {
+      auction.invitedBidders.push(id as any);
+    }
+  }
+  return await auction.save();
+}
+
+/**
+ * Remove a bidder from the auction's invitedBidders list.
+ */
+async function removeInvitedBidder(auctionId: string, bidderId: string): Promise<IAuction> {
+  const auction = await getById(auctionId);
+  if (!auction) throw new NotFoundError('Auction not found');
+
+  auction.invitedBidders = auction.invitedBidders.filter(
+    (id: any) => id.toString() !== bidderId
+  );
+  return await auction.save();
+}
+
+/**
+ * Get invited bidders with full details (name, email, keeperId).
+ */
+async function getInvitedBidders(auctionId: string): Promise<IBidder[]> {
+  const auction = await getById(auctionId, { invitedBidders: 1 });
+  if (!auction) throw new NotFoundError('Auction not found');
+
+  if (!auction.invitedBidders || auction.invitedBidders.length === 0) return [];
+
+  return await Bidder.find({ _id: { $in: auction.invitedBidders } }).select('-__v');
+}
