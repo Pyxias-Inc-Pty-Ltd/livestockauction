@@ -414,5 +414,53 @@ router.delete(p.deleteBidderById, requirePermission(EPermission.USER_DELETE), as
   }
 });
 
+/**
+ * Search bidders by name, email, phone, or keeperId.
+ */
+router.get(p.getBidders, requirePermission(EPermission.USER_READ), async (req: Request, res: Response) => {
+  try {
+    const qSchema = Joi.object().keys({
+      search: Joi.string().min(1).required().messages({
+        'any.required': '"search" is a required field',
+      }),
+      limit: Joi.number().integer().min(1).max(100).default(20),
+    }).required();
+
+    Joi.assert(req.query, qSchema);
+
+    const { search, limit } = req.query;
+    const bidders = await userService.searchBidders(search as string, Number(limit));
+    return res.status(OK).json({ bidders });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Get a bidder by ID.
+ */
+router.get(p.getBidderById, requirePermission(EPermission.USER_READ), async (req: Request, res: Response) => {
+  try {
+    const qSchema = Joi.object().keys({
+      id: mongoIdValidation.required().messages({
+        'any.required': '"id" is a required field',
+      }),
+    }).required();
+
+    Joi.assert(req.query, qSchema);
+
+    const { id } = req.query;
+    const bidder = await userService.getById(id as string);
+
+    if (!bidder) {
+      return res.status(StatusCodes.NOT_FOUND).json({ message: 'Bidder not found' });
+    }
+
+    return res.status(OK).json({ bidder });
+  } catch (error) {
+    throw error;
+  }
+});
+
 // Export default
 export default router;

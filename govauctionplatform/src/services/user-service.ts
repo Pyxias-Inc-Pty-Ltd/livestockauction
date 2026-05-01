@@ -748,6 +748,33 @@ async function updatePasswordInKeycloak(
 }
 
 /**
+ * Search bidders by name, email, phone, or keeperId.
+ *
+ * @param searchTerm
+ * @param limit
+ * @returns
+ */
+async function searchBidders(searchTerm: string, limit = 20): Promise<IBidder[]> {
+  try {
+    const escaped = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escaped, 'i');
+    return await Bidder.find({
+      $or: [
+        { firstName: regex },
+        { lastName: regex },
+        { email: regex },
+        { phone: regex },
+        { keeperId: regex },
+      ],
+    })
+      .limit(Math.min(limit, MAX_LIST_LIMIT_NUMBER))
+      .select('-__v');
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
  * Delete a user from both Keycloak and MongoDB.
  *
  * @param userId - MongoDB document ID
@@ -790,4 +817,5 @@ export default {
   updateAuctionApproverStatus,
   updatePasswordInKeycloak,
   deleteUser,
+  searchBidders,
 } as const;

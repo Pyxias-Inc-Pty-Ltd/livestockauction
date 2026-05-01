@@ -68,6 +68,7 @@ export interface IItem extends Document {
   bidIncrement?: number;
   reservePrice: number;
   eligibleBidders: Array<string>;
+  invitedBidders: Array<string>;
   winningBidder?: Schema.Types.ObjectId;
   currentBid?: number; // Used in non closed bid scenarios, to show other users the current bid amount to compete against
   titleSlug: {
@@ -94,6 +95,7 @@ export interface IItemInput {
   isBidIncrementedManually?: boolean;
   isClosedBidding?: boolean;
   manualBidAmount?: number;
+  invitedBidders?: Array<string>;
   metadata: IItemMetadata,
   title: {
     en: string,
@@ -155,6 +157,7 @@ const schema = new Schema<IItem>({
   endTime: { type: Date, required: true },
   status: { type: String, enum: [EItemStatus.NOT_BEGUN, EItemStatus.ACTIVE, EItemStatus.CANCELLED, EItemStatus.ENDED]},
   eligibleBidders: [String],
+  invitedBidders: [String],
   version: { type: Number, default: 0 },
   metadata: {
     categoryId: { 
@@ -281,6 +284,7 @@ schema.set('toJSON', {
   virtuals: true,
   versionKey: false,
   transform: function (doc, ret) {
+    delete ret.invitedBidders;
     delete ret._id;
     delete ret.__t;
   }

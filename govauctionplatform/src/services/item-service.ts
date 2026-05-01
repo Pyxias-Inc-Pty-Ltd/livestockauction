@@ -646,5 +646,51 @@ export default {
   getById,
   getItems,
   getItemsWon,
-  getItemsWithWinnerForRefund
+  getItemsWithWinnerForRefund,
+  addInvitedBidders,
+  removeInvitedBidder,
+  getInvitedBidders,
 } as const;
+
+// ── Invited bidder helpers ─────────────────────────────────────────────────
+
+/**
+ * Add bidders to the item's invitedBidders list.
+ */
+async function addInvitedBidders(itemId: string, bidderIds: string[]): Promise<IItem> {
+  const item = await getById(itemId);
+  if (!item) throw new NotFoundError('Item not found');
+
+  const existing = new Set((item.invitedBidders || []).map(String));
+  for (const id of bidderIds) {
+    if (!existing.has(String(id))) {
+      item.invitedBidders.push(id as any);
+    }
+  }
+  return await item.save();
+}
+
+/**
+ * Remove a bidder from the item's invitedBidders list.
+ */
+async function removeInvitedBidder(itemId: string, bidderId: string): Promise<IItem> {
+  const item = await getById(itemId);
+  if (!item) throw new NotFoundError('Item not found');
+
+  item.invitedBidders = (item.invitedBidders || []).filter(
+    (id: any) => id.toString() !== bidderId
+  );
+  return await item.save();
+}
+
+/**
+ * Get invited bidders for an item with full details.
+ */
+async function getInvitedBidders(itemId: string): Promise<IBidder[]> {
+  const item = await getById(itemId, { invitedBidders: 1 });
+  if (!item) throw new NotFoundError('Item not found');
+
+  if (!item.invitedBidders || item.invitedBidders.length === 0) return [];
+
+  return await Bidder.find({ _id: { $in: item.invitedBidders } }).select('-__v');
+}
