@@ -22,7 +22,10 @@ export const p = {
   unpublishAuction: '/unpublishAuction',
   rejectAuction: '/rejectAuction',
   getAllAuctions: '/getAllAuctions',
-  updateAuctionCoordinates: '/updateAuctionCoordinates'
+  updateAuctionCoordinates: '/updateAuctionCoordinates',
+  addInvitedBidders: '/addInvitedBidders',
+  removeInvitedBidder: '/removeInvitedBidder',
+  getInvitedBidders: '/getInvitedBidders',
 } as const;
 
 /**
@@ -114,7 +117,9 @@ router.post(p.createAuction, requirePermission(EPermission.AUCTION_CREATE), asyn
       collectionEndTime: Joi.string().pattern(/^\d{2}:\d{2}$/).required().messages({
         'any.required': '"collectionEndTime" is a required field',
         'string.pattern.base': '"collectionEndTime" must be in HH:mm format'
-      })
+      }),
+      isInviteOnly: Joi.boolean().default(false),
+      invitedBidders: Joi.array().items(mongoIdValidation).default([]),
     }).required();    
     
     // Validate schema against input
@@ -403,6 +408,75 @@ router.put(p.updateAuctionCoordinates, requirePermission(EPermission.AUCTION_UPD
       }
     }
   );
+
+/**
+ * Add invited bidders to an auction.
+ */
+router.post(p.addInvitedBidders, requirePermission(EPermission.AUCTION_CREATE), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      auctionId: mongoIdValidation.required().messages({
+        'any.required': '"auctionId" is a required field',
+      }),
+      bidderIds: Joi.array().items(mongoIdValidation).min(1).required().messages({
+        'any.required': '"bidderIds" is a required field',
+      }),
+    }).required();
+
+    Joi.assert(req.body, schema);
+
+    const { auctionId, bidderIds } = req.body;
+    const auction = await auctionService.addInvitedBidders(auctionId, bidderIds);
+    return res.status(OK).json({ auction });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Remove an invited bidder from an auction.
+ */
+router.post(p.removeInvitedBidder, requirePermission(EPermission.AUCTION_CREATE), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      auctionId: mongoIdValidation.required().messages({
+        'any.required': '"auctionId" is a required field',
+      }),
+      bidderId: mongoIdValidation.required().messages({
+        'any.required': '"bidderId" is a required field',
+      }),
+    }).required();
+
+    Joi.assert(req.body, schema);
+
+    const { auctionId, bidderId } = req.body;
+    const auction = await auctionService.removeInvitedBidder(auctionId, bidderId);
+    return res.status(OK).json({ auction });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Get invited bidders for an auction with full details.
+ */
+router.get(p.getInvitedBidders, async (req: Request, res: Response) => {
+  try {
+    const qSchema = Joi.object().keys({
+      auctionId: mongoIdValidation.required().messages({
+        'any.required': '"auctionId" is a required field',
+      }),
+    }).required();
+
+    Joi.assert(req.query, qSchema);
+
+    const { auctionId } = req.query;
+    const bidders = await auctionService.getInvitedBidders(auctionId as string);
+    return res.status(OK).json({ bidders });
+  } catch (error) {
+    throw error;
+  }
+});
 
 // Export default
 export default router;
