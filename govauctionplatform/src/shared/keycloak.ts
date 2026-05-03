@@ -54,34 +54,41 @@ export async function createKeycloakUser(opts: {
   const token = await getAdminToken();
   const usersUrl = `${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/users`;
 
-  await axios.default.post(
-    usersUrl,
-    {
-      username: opts.username,
-      email: opts.email,
-      firstName: opts.firstName,
-      lastName: opts.lastName,
-      enabled: true,
-      emailVerified: false,
-      attributes: {
-        ...(opts.phone ? { phone: opts.phone } : {}),
+  let createError: unknown;
+  try {
+    await axios.default.post(
+      usersUrl,
+      {
+        username: opts.username,
+        email: opts.email,
+        firstName: opts.firstName,
+        lastName: opts.lastName,
+        enabled: true,
+        emailVerified: false,
+        attributes: {
+          ...(opts.phone ? { phone: opts.phone } : {}),
+        },
+        ...(opts.password ? {
+          credentials: [
+            {
+              type: 'password',
+              value: opts.password,
+              temporary: opts.temporary ?? false,
+            },
+          ],
+        } : {}),
       },
-      ...(opts.password ? {
-        credentials: [
-          {
-            type: 'password',
-            value: opts.password,
-            temporary: opts.temporary ?? false,
-          },
-        ],
-      } : {}),
-    },
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  } catch (e) {
+    // Keycloak may have created the user but failed to send a verification
+    // email (e.g. SMTP not configured). Fall through to the lookup — if the
+    // user exists we can proceed; if not, we rethrow the original error.
+    createError = e;
+  }
 
-  // Keycloak returns the new user URL in the Location header, e.g.
-  // https://keycloak/admin/realms/auctions/users/<uuid>
-  // Re-fetch by username to get the ID.
+  // Re-fetch by username to get the ID (Keycloak puts it in the Location header
+  // but axios doesn't expose it easily, so we query instead).
   const searchResp = await axios.default.get<Array<{ id: string }>>(
     `${usersUrl}?username=${encodeURIComponent(opts.username)}&exact=true`,
     { headers: { Authorization: `Bearer ${token}` } },
@@ -89,7 +96,8 @@ export async function createKeycloakUser(opts: {
 
   const keycloakId = searchResp.data[0]?.id;
   if (!keycloakId) {
-    throw new Error('Keycloak user creation succeeded but ID could not be retrieved');
+    // User was not created — surface the original error
+    throw createError ?? new Error('Keycloak user creation failed and user could not be found');
   }
 
   return keycloakId;
