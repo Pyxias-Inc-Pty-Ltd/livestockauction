@@ -113,7 +113,7 @@ export const phoneValidation
         if (!phoneNumber.isValid()) {
           throw new Error('Invalid phone');
         } else {
-          return v;
+          return phoneNumber.formatInternational();
         }
       }
 
