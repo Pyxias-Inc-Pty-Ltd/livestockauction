@@ -115,21 +115,19 @@ async function createInitAdmin(input: IAdminInput): Promise<IAdmin> {
  * @returns
  */
 async function createBidder(input: IBidderInput): Promise<IBidder> {
+  const username = input.email ?? input.phone;
+
+  const keycloakId = await createKeycloakUser({
+    username,
+    email: input.email,
+    firstName: input.firstName,
+    lastName: input.lastName,
+    phone: input.phone,
+    password: input.password,
+    temporary: false,
+  });
+
   try {
-    // Username: prefer email, fall back to phone
-    const username = input.email ?? input.phone;
-
-    // 1. Create in Keycloak
-    const keycloakId = await createKeycloakUser({
-      username,
-      email: input.email,
-      firstName: input.firstName,
-      lastName: input.lastName,
-      phone: input.phone,
-      password: input.password,
-      temporary: false,
-    });
-
     // 2. Assign BIDDER realm role in Keycloak
     await assignRealmRole(keycloakId, 'BIDDER');
 
@@ -151,6 +149,10 @@ async function createBidder(input: IBidderInput): Promise<IBidder> {
 
     return newBidder;
   } catch (error) {
+    // Roll back the Keycloak user so the two stores stay in sync
+    try { await deleteKeycloakUser(keycloakId); } catch (e) {
+      console.error(`createBidder: failed to roll back Keycloak user ${keycloakId}`, e);
+    }
     throw error;
   }
 }
@@ -373,19 +375,16 @@ async function verifyIdentityNumber(userId: string): Promise<void> {
  * @returns
  */
 async function createSeller(currentUser: IAdmin, input: ISellerInput): Promise<ISeller> {
-  try {
-    // 1. Create in Keycloak without a password — seller sets their own via welcome email
-    const keycloakId = await createKeycloakUser({
-      username: input.email,
-      email: input.email,
-      phone: input.phone,
-    });
+  // 1. Create in Keycloak without a password — seller sets their own via welcome email
+  const keycloakId = await createKeycloakUser({
+    username: input.email,
+    email: input.email,
+    phone: input.phone,
+  });
 
+  try {
     // 2. Assign SELLER realm role in Keycloak
     await assignRealmRole(keycloakId, 'SELLER');
-
-    // 3. Email seller a one-time link to set their own password (most secure: admin never sees password)
-    await sendWelcomeEmail(keycloakId);
 
     // 3. Persist profile in MongoDB (no password stored locally)
     const newSeller = new Seller({
@@ -397,8 +396,19 @@ async function createSeller(currentUser: IAdmin, input: ISellerInput): Promise<I
     });
     await newSeller.save();
 
+    // 4. Email seller a one-time link to set their own password — non-fatal if it fails
+    try {
+      await sendWelcomeEmail(keycloakId);
+    } catch (emailError) {
+      console.error(`createSeller: welcome email failed for ${keycloakId}`, emailError);
+    }
+
     return newSeller;
   } catch (error) {
+    // Roll back the Keycloak user so the two stores stay in sync
+    try { await deleteKeycloakUser(keycloakId); } catch (e) {
+      console.error(`createSeller: failed to roll back Keycloak user ${keycloakId}`, e);
+    }
     throw error;
   }
 }
@@ -643,20 +653,17 @@ async function finishBAITSKeeperIDVerification(currentUser: IBidder, otp: string
  * @returns Promise<IAuctionApprover>
  */
 async function createAuctionApprover(currentUser: ISeller, input: IAuctionApproverInput): Promise<IAuctionApprover> {
-  try {
-    // 1. Create in Keycloak without a password — approver sets their own via welcome email
-    const keycloakId = await createKeycloakUser({
-      username: input.email,
-      email: input.email,
-      firstName: input.firstName,
-      lastName: input.lastName,
-    });
+  // 1. Create in Keycloak without a password — approver sets their own via welcome email
+  const keycloakId = await createKeycloakUser({
+    username: input.email,
+    email: input.email,
+    firstName: input.firstName,
+    lastName: input.lastName,
+  });
 
+  try {
     // 2. Assign AUCTION_APPROVER realm role in Keycloak
     await assignRealmRole(keycloakId, 'AUCTION_APPROVER');
-
-    // 3. Email approver a one-time link to set their own password
-    await sendWelcomeEmail(keycloakId);
 
     // 3. Persist profile in MongoDB (no password stored locally)
     const newApprover = new AuctionApprover({
@@ -669,8 +676,19 @@ async function createAuctionApprover(currentUser: ISeller, input: IAuctionApprov
     });
     await newApprover.save();
 
+    // 4. Email approver a one-time link to set their own password — non-fatal if it fails
+    try {
+      await sendWelcomeEmail(keycloakId);
+    } catch (emailError) {
+      console.error(`createAuctionApprover: welcome email failed for ${keycloakId}`, emailError);
+    }
+
     return newApprover;
   } catch (error) {
+    // Roll back the Keycloak user so the two stores stay in sync
+    try { await deleteKeycloakUser(keycloakId); } catch (e) {
+      console.error(`createAuctionApprover: failed to roll back Keycloak user ${keycloakId}`, e);
+    }
     throw error;
   }
 }
