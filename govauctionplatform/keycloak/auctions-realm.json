@@ -22,9 +22,23 @@
   "offlineSessionMaxLifespanEnabled": false,
   "offlineSessionMaxLifespan": 5184000,
 
-  "eventsEnabled": false,
+  "smtpServer": {
+    "host": "smtp.sendgrid.net",
+    "port": "587",
+    "from": "admin@ivdms.website",
+    "fromDisplayName": "Gov Auction Platform",
+    "auth": "true",
+    "user": "apikey",
+    "password": "${SENDGRID_API_KEY}",
+    "starttls": "true",
+    "ssl": "false"
+  },
+
+  "eventsEnabled": true,
   "adminEventsEnabled": false,
   "adminEventsDetailsEnabled": false,
+  "eventsListeners": ["jboss-logging"],
+  "enabledEventTypes": [],
 
   "requiredCredentials": ["password"],
 
