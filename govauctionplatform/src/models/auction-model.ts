@@ -263,20 +263,20 @@ auctionSchema.pre('save', async function () {
 
   // REJECTED requires `reasonForRejection`
   if (
-    doc.isModified('publishedStatus') && 
-    doc.publishedStatus === EPublishedStatus.REJECTED && 
+    doc.isModified('publishedStatus') &&
+    doc.publishedStatus === EPublishedStatus.REJECTED &&
     !doc.reasonForRejection?.trim()
   ) {
-    new ForbiddenError('REJECTED auctions require a reasonForRejection.');
+    throw new ForbiddenError('REJECTED auctions require a reasonForRejection.');
   }
 
   // Prevent activating an unpublished auction
   if (
-    doc.isModified('status') && 
-    doc.status === EAuctionStatus.ACTIVE && 
+    doc.isModified('status') &&
+    doc.status === EAuctionStatus.ACTIVE &&
     doc.publishedStatus !== EPublishedStatus.PUBLISHED
   ) {
-    new ForbiddenError('Auction must be PUBLISHED before activation.');
+    throw new ForbiddenError('Auction must be PUBLISHED before activation.');
   }
 
   // Ensure auctionCoordinates exist if auctionLocation is set
