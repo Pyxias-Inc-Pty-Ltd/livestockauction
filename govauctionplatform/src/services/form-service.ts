@@ -1,7 +1,7 @@
 import { ConflictError, ForbiddenError, NotFoundError } from "../shared/errors";
 import { Form, IForm } from "../models/form-model";
 import { IAdmin, ISeller } from "../models/user-model";
-import { LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, EModels } from "../globals";
 import { Schema } from "mongoose";
 
 /**
@@ -155,7 +155,7 @@ async function getForms(conditions: Map<string, any>, projection?: any): Promise
     }
 
     // Query builder
-    const q = Form.find({}, projection);
+    const q = Form.find({}, projection).populate({ path: 'sellerId', select: 'name email', model: EModels.USER });
 
     // Filters
     if (conditions.get('sellerId')) {
