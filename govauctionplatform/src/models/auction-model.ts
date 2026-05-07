@@ -58,6 +58,7 @@ export interface IAuction extends Document {
   reasonForRejection?: string;
   publishedBy?: Schema.Types.ObjectId;
   isBeingLivestreamed: boolean;
+  isClosedBidding: boolean;
   streamUrl: string;
   thumbnailUrl: string;
   collectionWindowDays: number;
@@ -94,6 +95,7 @@ export interface IAuctionInput {
     tn: string;
   };
   isBeingLivestreamed: boolean;
+  isClosedBidding: boolean;
   streamUrl?: string;
   thumbnailUrl: string;
   collectionWindowDays: number;
@@ -184,6 +186,7 @@ const auctionSchema = new Schema<IAuction>({
   status: { type: String, enum: [EAuctionStatus.NOT_BEGUN, EAuctionStatus.ACTIVE, EAuctionStatus.CANCELLED, EAuctionStatus.ENDED]},
   participationType: { type: String, default: EParticipationType.EVERYONE, enum: [EParticipationType.CITIZEN_ONLY, EParticipationType.EVERYONE]},
   isBeingLivestreamed: { type: Boolean, required: true , default: false},
+  isClosedBidding: { type: Boolean, required: true, default: false },
   streamUrl: {type: String, required: function (): boolean {
     return (this as IAuction).isBeingLivestreamed;
   }, validate: {
