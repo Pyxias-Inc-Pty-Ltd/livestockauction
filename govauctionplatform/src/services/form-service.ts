@@ -12,7 +12,7 @@ import { Schema } from "mongoose";
  */
 async function getById(id: string | Schema.Types.ObjectId, projection?: any): Promise<IForm | null> {
   try {
-    return await Form.findById(id, projection);
+    return await Form.findById(id, projection).populate({ path: 'sellerId', select: 'name email', model: EModels.USER });
   } catch (error) {
     throw error;
   }
