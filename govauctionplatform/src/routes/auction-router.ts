@@ -68,6 +68,7 @@ router.post(p.createAuction, requirePermission(EPermission.AUCTION_CREATE), asyn
       isBeingLivestreamed: Joi.boolean().required().messages({
         'any.required': '"isBeingLivestreamed" is a required field'
       }),
+      isClosedBidding: Joi.boolean().default(false),
       streamUrl: Joi.string().uri().when('isBeingLivestreamed', {
         is: true,
         then: Joi.required().messages({
