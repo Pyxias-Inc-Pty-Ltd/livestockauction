@@ -55,6 +55,7 @@ const formFieldSchema = Joi.object({
       disabled: Joi.boolean()
     })
   ),
+  validation: Joi.array(),
   showCondition: Joi.object({
     logicalOperator: Joi.string().valid('AND', 'OR').required(),
     conditions: Joi.array().items(
