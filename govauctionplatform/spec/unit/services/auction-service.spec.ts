@@ -96,6 +96,7 @@ function makeAuctionInput(overrides: Partial<IAuctionInput> = {}): IAuctionInput
     categoryId: new Types.ObjectId() as any,
     terms: { en: 'Standard terms apply.', tn: 'Standard terms apply.' },
     isBeingLivestreamed: false,
+    isClosedBidding: false,
     thumbnailUrl: 'https://example.com/thumb.jpg',
     collectionWindowDays: 5,
     collectionStartTime: '08:00',
