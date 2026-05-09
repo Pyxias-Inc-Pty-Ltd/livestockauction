@@ -25,6 +25,7 @@ export interface IUser extends Document {
 export interface ISeller extends IUser {
   sectorType: sectorType;
   name: string;
+  allowedRequiredAttributes: Schema.Types.ObjectId[];
 }
 
 export interface ISellerInput {
@@ -497,6 +498,7 @@ const sellerSchema = new Schema<ISeller>({
   userType: {type: String, required: true, default: EUserType.SELLER, enum: [EUserType.SELLER]},
   keycloakId: {type: String, trim: true, unique: true, sparse: true},
   sectorType: { type: String, default: ESectorType.GOVERNMENT, enum: [ESectorType.PRIVATE, ESectorType.GOVERNMENT], required: true },
+  allowedRequiredAttributes: { type: [{ type: Schema.Types.ObjectId, ref: EModels.REQUIRED_ATTRIBUTE }], default: [] },
   email: {type: String, unique: true, required: true, validate: {
     msg: 'Valid email must be supplied.',
       validator: function (v: string): boolean {
