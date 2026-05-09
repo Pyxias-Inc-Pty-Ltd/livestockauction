@@ -665,9 +665,15 @@ async function updateAuction(currentUser: ISeller, auctionId: string, input: Par
       ? { publishedStatus: EPublishedStatus.UNPUBLISHED, reasonForRejection: undefined }
       : {};
 
+    // Reset execution status to NOT_BEGUN when dates are updated — the scheduler
+    // will re-evaluate once the auction is published
+    const statusReset = (input.startTime || input.endTime)
+      ? { status: EAuctionStatus.NOT_BEGUN }
+      : {};
+
     const updatedAuction = await Auction.findByIdAndUpdate(
       auctionId,
-      { ...input, ...publishedStatusReset },
+      { ...input, ...publishedStatusReset, ...statusReset },
       { new: true }
     ).select('-__v -globallyEligibleBidders');
 
