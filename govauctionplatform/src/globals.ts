@@ -76,7 +76,7 @@ export const SERVICE_URLS: {[key: string]: string} = {
   animalhealthURI: "https://lmsserv.auctiondev.xyz",
   idVerificationURI: "http://idverification-acc.gov.bw:8081/api/v1",
   onlineAuctionQueueURI: "http://localhost:8822",
-  auctionsGovServerBaseURI: "https://onlineauction-uat.gov.bw",
+  auctionsGovServerBaseURI: process.env.SERVER_BASE_URI || "https://onlineauction-uat.gov.bw",
 }
 
 export const COUNTRY_PHONE_CODES = [{"country":"Afghanistan","code":"93","iso":"AF"},
