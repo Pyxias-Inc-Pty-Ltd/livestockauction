@@ -16,7 +16,8 @@ export const p = {
   initiateItemReservation: '/initiateItemReservation',
   initiatePurchaseItemByWinningBidder: '/initiatePurchaseItemByWinningBidder',
   initiatePurchaseItemUsingBuyoutPrice: '/initiatePurchaseItemUsingBuyoutPrice',
-  getTransactions: '/getTransactions'
+  getTransactions: '/getTransactions',
+  hasCompletedReservation: '/hasCompletedReservation',
 } as const;
 
 /**
@@ -149,4 +150,25 @@ router.get(p.getTransactions, requirePermission(EPermission.TRANSACTION_READ), a
 });
 
 // Export default
+/**
+ * Check if the current bidder has a completed reservation for a given lot.
+ */
+router.get(p.hasCompletedReservation, requirePermission(EPermission.TRANSACTION_READ), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      itemId: mongoIdValidation.required().messages({
+        'any.required': '"itemId" is a required field'
+      })
+    }).required();
+    Joi.assert(req.query, schema);
+    const hasReservation = await transactionService.pollPaidTransaction(req.user as IBidder, {
+      itemId: req.query.itemId as string,
+      transactionType: ETransactionType.RESERVATION,
+    });
+    return res.status(OK).json({ hasReservation });
+  } catch (error) {
+    throw error;
+  }
+});
+
 export default router;
