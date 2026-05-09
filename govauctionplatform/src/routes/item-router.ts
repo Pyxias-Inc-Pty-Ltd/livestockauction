@@ -3,8 +3,8 @@ import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isoDateValidation, mongoIdValidation, urlValidation } from '../shared/functions';
-import { requirePermission } from '../shared/middleware';
-import { IAdmin, IBidder } from '../models/user-model';
+import { requirePermission, SellerOnly } from '../shared/middleware';
+import { IAdmin, IBidder, ISeller } from '../models/user-model';
 import { EItemSortType, EPermission, ESortOrderType, MAX_LIST_LIMIT_NUMBER } from '../globals';
 
 // Constants
@@ -23,6 +23,7 @@ export const p = {
   addInvitedBidders: '/addInvitedBidders',
   removeInvitedBidder: '/removeInvitedBidder',
   getInvitedBidders: '/getInvitedBidders',
+  updateItem: '/updateItem',
 } as const;
 
 /**
@@ -190,6 +191,46 @@ router.post(p.createItem, requirePermission(EPermission.LOT_CREATE), async (req:
 
     const item = await itemService.createItem(req.user as IAdmin, req.body as any);
     return res.status(CREATED).json({item});
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Update an item (seller only, NOT_BEGUN status only)
+ */
+router.put(p.updateItem, SellerOnly(), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      itemId: mongoIdValidation.required().messages({
+        'any.required': '"itemId" is a required field'
+      }),
+      gallery: Joi.array().items(urlValidation).optional(),
+      title: Joi.object().keys({
+        en: Joi.string().required(),
+        tn: Joi.string().required(),
+      }).optional(),
+      description: Joi.object().keys({
+        en: Joi.string().required(),
+        tn: Joi.string().required(),
+      }).optional(),
+      terms: Joi.object().keys({
+        en: Joi.string().allow('').optional(),
+        tn: Joi.string().allow('').optional(),
+      }).optional(),
+      startingBid: Joi.number().optional(),
+      reservePrice: Joi.number().optional(),
+      buyoutPrice: Joi.number().allow(null).optional(),
+      startTime: isoDateValidation.optional(),
+      endTime: isoDateValidation.optional(),
+      metadata: Joi.object().optional(),
+    }).required();
+
+    Joi.assert(req.body, schema);
+
+    const { itemId, ...updateData } = req.body;
+    const item = await itemService.updateItem(req.user as ISeller, itemId, updateData);
+    return res.status(OK).json({ item });
   } catch (error) {
     throw error;
   }
