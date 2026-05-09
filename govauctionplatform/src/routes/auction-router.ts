@@ -248,22 +248,22 @@ router.put(p.publishAuction, requirePermission(EPermission.AUCTION_APPROVE), asy
 });
 
 /**
- * Unpublish an auction by a seller
+ * Unpublish an auction (approver or seller)
  */
-router.put(p.unpublishAuction, requirePermission(EPermission.AUCTION_UNPUBLISH), async (req: Request, res: Response) => {
+router.put(p.unpublishAuction, requirePermission(EPermission.AUCTION_APPROVE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       auctionId: mongoIdValidation.required().messages({
         'any.required': '"auctionId" is a required field'
       })
     }).required();
-    
+
     Joi.assert(req.body, schema);
 
     const { auctionId } = req.body;
 
     const auction = await auctionService.unpublishAuction(
-      req.user as ISeller,
+      req.user as IAuctionApprover,
       auctionId as string
     );
 

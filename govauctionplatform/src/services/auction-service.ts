@@ -584,7 +584,7 @@ async function publishAuction(currentUser: IAuctionApprover, auctionId: string):
 /**
  * Unpublish an auction
  */
-async function unpublishAuction(currentUser: ISeller, auctionId: string): Promise<IAuction> {
+async function unpublishAuction(currentUser: ISeller | IAuctionApprover, auctionId: string): Promise<IAuction> {
   try {
     const auction = await getById(auctionId);
     
