@@ -104,8 +104,8 @@ router.post(p.createItem, requirePermission(EPermission.LOT_CREATE), async (req:
         'any.required': '"description" is a required field'
       }),
       terms: Joi.object().keys({
-        en: Joi.string().optional(),
-        tn: Joi.string().optional(),
+        en: Joi.string().allow('').optional(),
+        tn: Joi.string().allow('').optional(),
       }).optional(),
       startingBid: Joi.number().required().messages({
         'any.required': '"startingBid" is a required field'
@@ -173,6 +173,7 @@ router.post(p.createItem, requirePermission(EPermission.LOT_CREATE), async (req:
         mileage: Joi.number().min(0),
         age: Joi.number().min(0),
         engineNumber: Joi.string(),
+        transmission: Joi.string(),
         chassisNumber: Joi.string(),
         registrationNumber: Joi.string(),
         colour: Joi.string(),
