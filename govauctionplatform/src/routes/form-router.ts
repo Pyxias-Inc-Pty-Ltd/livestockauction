@@ -36,9 +36,7 @@ const formFieldSchema = Joi.object({
   name: Joi.string().required().messages({
     'any.required': '"name" is a required field'
   }),
-  renderInUI: Joi.boolean().required().messages({
-    'any.required': '"renderInUI" is a required field'
-  }),
+  renderInUI: Joi.boolean().default(true),
   required: Joi.boolean(),
   placeholder: Joi.string(),
   defaultValue: Joi.any(),
