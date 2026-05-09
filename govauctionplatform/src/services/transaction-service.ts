@@ -89,7 +89,7 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
     const savedReservation = await newReservation.save();
 
     // Generate payment link using PayGate
-    const formattedString = convertToPaygateFormat(PAYGATE_ID, savedReservation.id.toString(), item.reservePrice, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/auction/${item.auctionId.toString()}/lot/${item._id.toString()}`, savedReservation.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
+    const formattedString = convertToPaygateFormat(PAYGATE_ID, savedReservation.id.toString(), item.reservePrice, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/paygateReturn`, savedReservation.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
 
     const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
       method: "POST",
@@ -208,7 +208,7 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
     const savedPurchase = await newPurchase.save();
 
     // Generate payment link using PayGate
-    const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), savedPurchase.amount, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/auction/${item.auctionId.toString()}/lot/${item._id.toString()}`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
+    const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), savedPurchase.amount, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/paygateReturn`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
 
     const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
       method: "POST",
@@ -307,7 +307,7 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
     const savedPurchase = await newPurchase.save();
 
     // Generate payment link using PayGate
-    const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), item.buyoutPrice, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/auction/${item.auctionId.toString()}/lot/${item._id.toString()}`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
+    const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), item.buyoutPrice, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/paygateReturn`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/api/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
 
     const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
       method: "POST",
@@ -363,12 +363,13 @@ async function pollPaidTransaction (currentUser: IBidder, input: { itemId: strin
  * 
  * @param input 
  */
-async function processSuccessfulPaymentFromPayGate(input: { 
-  REFERENCE: string, 
-  PAY_METHOD: string, 
-  PAY_METHOD_DETAIL: string, 
-  TRANSACTION_STATUS: string, 
-  RESULT_CODE: string 
+async function processSuccessfulPaymentFromPayGate(input: {
+  REFERENCE: string,
+  PAY_METHOD?: string,
+  PAY_METHOD_DETAIL?: string,
+  TRANSACTION_STATUS: string,
+  RESULT_CODE: string,
+  RESULT_DESC?: string,
 }) {
 
   let sess: ClientSession | null = null;
@@ -384,44 +385,58 @@ async function processSuccessfulPaymentFromPayGate(input: {
       throw new NotFoundError('Transaction not found');
     }
 
-    (transaction.metadata as Map<string, string>).set('resultCode', input.RESULT_CODE);
+    const meta = transaction.metadata as Map<string, string>;
+    meta.set('resultCode', input.RESULT_CODE);
+    if (input.RESULT_DESC) meta.set('resultDesc', input.RESULT_DESC);
 
     // Handle transaction status codes
     switch (input.TRANSACTION_STATUS) {
-      case "0": // Not Done
-        transaction.status = 'PENDING';
-        await transaction.save();
-        throw new InternalServerError('Error processing transaction.');
-
       case "1": // Approved
-        // Continue processing, as this indicates success
-        transaction.status = 'COMPLETED';
-        transaction.paymentMethod = `${input.PAY_METHOD} - ${input.PAY_METHOD_DETAIL}`;
+        transaction.status = EPaymentStatus.COMPLETED;
+        transaction.paymentMethod = input.PAY_METHOD && input.PAY_METHOD_DETAIL
+          ? `${input.PAY_METHOD} - ${input.PAY_METHOD_DETAIL}`
+          : input.PAY_METHOD || 'Unknown';
         break;
 
-      case "2": // Declined
-        transaction.status = 'FAILED';
+      case "2": // Declined or Insufficient Funds — differentiate by RESULT_CODE
+        transaction.status = EPaymentStatus.FAILED;
+        if (input.RESULT_CODE === '900003') {
+          meta.set('failReason', 'INSUFFICIENT_FUNDS');
+        } else if (input.RESULT_CODE === '900007') {
+          meta.set('failReason', 'DECLINED');
+        } else {
+          meta.set('failReason', 'DECLINED');
+        }
         await transaction.save();
-        throw new InternalServerError('Error processing transaction.');
+        return transaction;
 
-      case "3": // Cancelled
-      case "4": // User Cancelled
-        transaction.status = 'CANCELLED';
+      case "0": // Not Done
+        transaction.status = EPaymentStatus.PENDING;
         await transaction.save();
-        throw new InternalServerError('Error processing transaction.');
+        return transaction;
 
-      case "5": // Received by PayGate
-        transaction.status = 'PENDING';
+      case "3": // Cancelled by PayGate
+      case "4": // Cancelled by user
+        transaction.status = EPaymentStatus.CANCELLED;
         await transaction.save();
-        throw new InternalServerError('Error processing transaction.');
+        return transaction;
+
+      case "5": // Received by PayGate (awaiting settlement)
+        transaction.status = EPaymentStatus.PENDING;
+        await transaction.save();
+        return transaction;
 
       case "7": // Settlement Voided
-        transaction.status = 'FAILED';
+        transaction.status = EPaymentStatus.FAILED;
+        meta.set('failReason', 'VOIDED');
         await transaction.save();
-        throw new InternalServerError('Error processing transaction.');
+        return transaction;
 
       default:
-        throw new InternalServerError('Unknown transaction status.');
+        transaction.status = EPaymentStatus.FAILED;
+        meta.set('failReason', `UNKNOWN_STATUS_${input.TRANSACTION_STATUS}`);
+        await transaction.save();
+        return transaction;
     }
 
     // Start session and mongo ACID transaction
