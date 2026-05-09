@@ -41,7 +41,7 @@ router.post(p.createCategory, requirePermission(EPermission.AUCTION_MANAGE), asy
 /**
  * Get all categories
  */
-router.get(p.getCategories, requirePermission(EPermission.AUCTION_MANAGE), async (req: Request, res: Response) => {
+router.get(p.getCategories, requirePermission(EPermission.AUCTION_READ), async (req: Request, res: Response) => {
   try {
     const categories = await categoryService.getCategories();
     return res.status(OK).json({ categories });
@@ -53,7 +53,7 @@ router.get(p.getCategories, requirePermission(EPermission.AUCTION_MANAGE), async
 /**
  * Get category by id
  */
-router.get(p.getCategoryById, requirePermission(EPermission.AUCTION_MANAGE), async (req: Request, res: Response) => {
+router.get(p.getCategoryById, requirePermission(EPermission.AUCTION_READ), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       id: mongoIdValidation.required().messages({
