@@ -63,6 +63,7 @@ export interface IItem extends Document {
     en?: string,
     tn?: string;
   };
+  isBeingLivestreamed: boolean;
   isBidIncrementedManually: boolean;
   isClosedBidding: boolean;
   manualBidAmount: number; // Set by the auction master, usually used in livestream bids
@@ -94,6 +95,7 @@ export interface IItemInput {
   sellerId: Schema.Types.ObjectId;
   auctionId: Schema.Types.ObjectId;
   categoryId: Schema.Types.ObjectId;
+  isBeingLivestreamed?: boolean;
   isBidIncrementedManually?: boolean;
   isClosedBidding?: boolean;
   manualBidAmount?: number;
@@ -152,6 +154,7 @@ const schema = new Schema<IItem>({
   currentBid: { type: Number },
   buyoutPrice: { type: Number },
   manualBidAmount: { type: Number, default: 0 },
+  isBeingLivestreamed: { type: Boolean, default: false },
   isBidIncrementedManually: {type: Boolean, default: false},
   isClosedBidding: {type: Boolean, default: false},
   gallery: { type: [String], required: true },
