@@ -2,8 +2,9 @@ import userService from '../services/user-service';
 import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
-import { isoAlpha2CountryValidation, isStringNumberLike, mongoIdValidation, phoneValidation } from '../shared/functions';
+import { isoAlpha2CountryValidation, isStringNumberLike, mongoIdValidation, phoneValidation, validatePaygateNotifyChecksum } from '../shared/functions';
 import transactionService from '../services/transaction-service';
+import { Transaction } from '../models/transaction-model';
 import auctionService from '../services/auction-service';
 import categoryService from '../services/category-service';
 import itemService from '../services/item-service';
@@ -23,7 +24,9 @@ import {
   EParticipationType,
   SearchFilters,
   ELanguageType,
-  languageType
+  languageType,
+  SERVICE_URLS,
+  PAYGATE_ENCRYPTION_KEY
 } from '../globals';
 
 // Constants
@@ -34,6 +37,7 @@ const { OK, CREATED } = StatusCodes;
 export const p = {
   createInitAdmin: '/createInitAdmin',
   processSuccessfulPaymentFromPayGate: '/processSuccessfulPaymentFromPayGate',
+  paygateReturn: '/paygateReturn',
   getItems: '/getItems',
   getAuctions: '/getAuctions',
   search: '/search',
@@ -351,17 +355,47 @@ router.post(p.processSuccessfulPaymentFromPayGate, async (req: Request, res: Res
     // Validate schema against input
     Joi.assert(req.body, schema);
 
+    // Verify the notification came from PayGate
+    if (!validatePaygateNotifyChecksum(req.body, PAYGATE_ENCRYPTION_KEY)) {
+      console.error('PayGate NOTIFY_URL: checksum validation failed', req.body);
+      return res.status(OK).send('OK'); // Still respond OK to avoid retries on tampered requests
+    }
+
     // Log or process the received payment details
     const paymentDetails = req.body;
     console.log('Payment details:', paymentDetails);
 
     // Call your service to handle the successful payment
-    const transaction = await transactionService.processSuccessfulPaymentFromPayGate(paymentDetails);
+    await transactionService.processSuccessfulPaymentFromPayGate(paymentDetails);
 
-    return res.status(CREATED).json({ transaction });
+    // PayGate requires a plain-text "OK" response to confirm receipt before redirecting the browser
+    return res.status(OK).send('OK');
   } catch (error) {
     console.error('Error processing PayGate payment:', error);
-    return res.status(400).json({ error: error.message });
+    // Still respond OK so PayGate proceeds to redirect the browser
+    return res.status(OK).send('OK');
+  }
+});
+
+/**
+ * PayGate browser redirect handler.
+ * PayGate POSTs the browser back to RETURN_URL after payment.
+ * This endpoint looks up the transaction and 302-redirects the browser to the frontend lot page.
+ */
+router.post(p.paygateReturn, async (req: Request, res: Response) => {
+  try {
+    const { REFERENCE } = req.body;
+    if (REFERENCE) {
+      const tx = await Transaction.findById(REFERENCE, { auctionId: 1, itemId: 1 });
+      if (tx) {
+        return res.redirect(`${SERVICE_URLS.clientURI}/auction/${tx.auctionId.toString()}/lot/${tx.itemId.toString()}`);
+      }
+    }
+    // Fallback: redirect to homepage if transaction not found
+    return res.redirect(SERVICE_URLS.clientURI);
+  } catch (error) {
+    console.error('Error in paygateReturn:', error);
+    return res.redirect(SERVICE_URLS.clientURI);
   }
 });
 
