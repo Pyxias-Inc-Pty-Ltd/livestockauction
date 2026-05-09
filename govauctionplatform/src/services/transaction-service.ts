@@ -639,10 +639,11 @@ async function getTransactions(currentUser: IAdmin | IBidder, conditions: Map<st
     // Limit
     q.limit(_limit);
 
-    // Populate buyerId, itemId, and sellerId
+    // Populate buyerId, itemId, sellerId, and auctionId
     q.populate('buyerId')
       .populate('itemId')
-      .populate('sellerId');
+      .populate('sellerId')
+      .populate('auctionId', 'title');
 
     return await q;
 
