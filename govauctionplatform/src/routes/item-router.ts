@@ -104,15 +104,9 @@ router.post(p.createItem, requirePermission(EPermission.LOT_CREATE), async (req:
         'any.required': '"description" is a required field'
       }),
       terms: Joi.object().keys({
-        en: Joi.string().required().messages({
-          'any.required': '"terms.en" is a required field'
-        }),
-        tn: Joi.string().required().messages({
-          'any.required': '"terms.tn" is a required field'
-        }), 
-      }).required().messages({
-        'any.required': '"terms" is a required field'
-      }),
+        en: Joi.string().optional(),
+        tn: Joi.string().optional(),
+      }).optional(),
       startingBid: Joi.number().required().messages({
         'any.required': '"startingBid" is a required field'
       }),

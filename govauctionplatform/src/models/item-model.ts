@@ -58,9 +58,9 @@ export interface IItem extends Document {
     en: string,
     tn: string;
   };
-  terms: {
-    en: string,
-    tn: string;
+  terms?: {
+    en?: string,
+    tn?: string;
   };
   isBidIncrementedManually: boolean;
   isClosedBidding: boolean;
@@ -108,9 +108,9 @@ export interface IItemInput {
   };
   baitsDump?: string;
   isPurchased?: boolean;
-  terms: {
-    en: string,
-    tn: string;
+  terms?: {
+    en?: string,
+    tn?: string;
   };
   startingBid: number;
   status: itemStatus;
@@ -139,8 +139,8 @@ const schema = new Schema<IItem>({
     tn: { type: String, required: true, trim: true }
   },
   terms: {
-    en: { type: String, required: true, trim: true },
-    tn: { type: String, required: true, trim: true }
+    en: { type: String, required: false, trim: true },
+    tn: { type: String, required: false, trim: true }
   },
   startingBid: { type: Number, required: true },
   isPurchased: { type: Boolean, default: false, required: true },
