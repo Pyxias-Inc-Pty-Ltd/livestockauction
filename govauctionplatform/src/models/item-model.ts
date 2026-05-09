@@ -31,6 +31,7 @@ export interface IItemMetadata {
   colour?: string;
   condition?: string;
   hoursUsed?: number;
+  age?: number;
   power?: number;
   isOperational?: boolean;
 }
@@ -259,6 +260,10 @@ const schema = new Schema<IItem>({
       min: 0
     },
     power: {
+      type: Number,
+      min: 0
+    },
+    age: {
       type: Number,
       min: 0
     },
