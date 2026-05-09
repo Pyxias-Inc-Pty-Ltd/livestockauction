@@ -681,6 +681,14 @@ async function updateAuction(currentUser: ISeller, auctionId: string, input: Par
       throw new NotFoundError('Auction not found');
     }
 
+    // Cascade time changes to all lots in this auction
+    if (input.startTime || input.endTime) {
+      const lotTimeUpdate: Record<string, any> = {};
+      if (input.startTime) lotTimeUpdate.startTime = input.startTime;
+      if (input.endTime)   lotTimeUpdate.endTime   = input.endTime;
+      await Item.updateMany({ auctionId }, lotTimeUpdate);
+    }
+
     return updatedAuction;
   } catch (error) {
     throw error;
