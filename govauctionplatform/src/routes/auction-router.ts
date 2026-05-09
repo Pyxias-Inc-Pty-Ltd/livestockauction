@@ -211,7 +211,7 @@ router.get(p.getAuctionReport, requirePermission(EPermission.AUCTION_REPORT), as
 /**
  * Get a list of required attributes
  */
-router.get(p.getRequiredAttributes, requirePermission(EPermission.AUCTION_MANAGE), async (req: Request, res: Response) => {
+router.get(p.getRequiredAttributes, requirePermission(EPermission.AUCTION_READ), async (req: Request, res: Response) => {
   try {
     const requiredAttributes = await auctionService.getRequiredAttributes();
     return res.status(OK).json({ requiredAttributes });
@@ -480,7 +480,7 @@ router.put(p.updateAuctionCoordinates, requirePermission(EPermission.AUCTION_UPD
 /**
  * Add invited bidders to an auction.
  */
-router.post(p.addInvitedBidders, requirePermission(EPermission.AUCTION_CREATE), async (req: Request, res: Response) => {
+router.post(p.addInvitedBidders, requirePermission(EPermission.AUCTION_UPDATE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       auctionId: mongoIdValidation.required().messages({
@@ -504,7 +504,7 @@ router.post(p.addInvitedBidders, requirePermission(EPermission.AUCTION_CREATE), 
 /**
  * Remove an invited bidder from an auction.
  */
-router.post(p.removeInvitedBidder, requirePermission(EPermission.AUCTION_CREATE), async (req: Request, res: Response) => {
+router.post(p.removeInvitedBidder, requirePermission(EPermission.AUCTION_UPDATE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       auctionId: mongoIdValidation.required().messages({
@@ -550,7 +550,7 @@ router.get(p.getInvitedBidders, async (req: Request, res: Response) => {
  * Invite a bidder by email. If no account exists for that email, stores a pending
  * invite and sends an invitation email. Resolves automatically on registration.
  */
-router.post(p.inviteByEmail, requirePermission(EPermission.AUCTION_CREATE), async (req: Request, res: Response) => {
+router.post(p.inviteByEmail, requirePermission(EPermission.AUCTION_UPDATE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       auctionId: mongoIdValidation.required().messages({
