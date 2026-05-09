@@ -96,7 +96,7 @@ const formSectionSchema = Joi.object({
 /**
  * Get form by id.
  */
-router.get(p.getFormById, requirePermission(EPermission.FORM_MANAGE), async (req: Request, res: Response) => {
+router.get(p.getFormById, requirePermission(EPermission.FORM_READ), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       id: mongoIdValidation.required().messages({
