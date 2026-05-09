@@ -15,7 +15,7 @@ import { assignRealmRole, createKeycloakUser, deleteKeycloakUser, resetKeycloakU
  */
 async function getById(id: string | Schema.Types.ObjectId, projection?: any): Promise<IUser | null> {
   try {
-    return await User.findById(id, projection);
+    return await User.findById(id, projection).populate('allowedRequiredAttributes');
   } catch (error) {
     // Rethrow error
     throw error;
@@ -810,6 +810,24 @@ async function searchBidders(searchTerm: string, limit = 20): Promise<IBidder[]>
  *
  * @param userId - MongoDB document ID
  */
+async function updateSellerAllowedAttributes(sellerId: string, attributeIds: string[]): Promise<ISeller> {
+  try {
+    const seller = await Seller.findByIdAndUpdate(
+      sellerId,
+      { allowedRequiredAttributes: attributeIds },
+      { new: true }
+    ).populate('allowedRequiredAttributes');
+
+    if (!seller) {
+      throw new NotFoundError('Seller not found');
+    }
+
+    return seller;
+  } catch (error) {
+    throw error;
+  }
+}
+
 async function deleteUser(userId: string): Promise<void> {
   try {
     const user = await User.findById(userId);
@@ -849,4 +867,5 @@ export default {
   updatePasswordInKeycloak,
   deleteUser,
   searchBidders,
+  updateSellerAllowedAttributes,
 } as const;

@@ -9,6 +9,7 @@ import categoryService from '../services/category-service';
 import itemService from '../services/item-service';
 import collectionService from '../services/collection-service';
 import { esService } from '../services/elasticsearch-service';
+import { RequiredAttribute } from '../models/auction-model';
 import {
   ESortOrderType,
   EAuctionSortType,
@@ -135,7 +136,17 @@ router.get(p.getAuctionById, async (req: Request, res: Response) => {
 
     const { id } = req.query;
     const auction = await auctionService.getById(id as string);
-    return res.status(OK).json({ auction });
+
+    let requiredAttributeSlugs: string[] = [];
+    if (auction && auction.requiredAttributes?.length) {
+      const attrs = await RequiredAttribute.find(
+        { _id: { $in: auction.requiredAttributes } },
+        { nameSlug: 1, _id: 0 }
+      );
+      requiredAttributeSlugs = attrs.map(a => a.nameSlug);
+    }
+
+    return res.status(OK).json({ auction: { ...auction?.toJSON(), requiredAttributeSlugs } });
   } catch (error) {
     throw error;
   }

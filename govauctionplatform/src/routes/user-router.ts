@@ -35,7 +35,8 @@ export const p = {
   createAuctionApprover: '/createAuctionApprover',
   getAuctionApprovers: '/getAuctionApprovers',
   updateAuctionApproverStatus: '/updateAuctionApproverStatus',
-  getAuctionApproverById: '/getAuctionApproverById'
+  getAuctionApproverById: '/getAuctionApproverById',
+  updateSellerAttributes: '/updateSellerAttributes',
 } as const;
 
 /**
@@ -457,6 +458,30 @@ router.get(p.getBidderById, requirePermission(EPermission.USER_BIDDER_READ), asy
     }
 
     return res.status(OK).json({ bidder });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Update allowed required attributes for a seller (admin only)
+ */
+router.put(p.updateSellerAttributes, requirePermission(EPermission.USER_MANAGE), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      sellerId: mongoIdValidation.required().messages({
+        'any.required': '"sellerId" is a required field'
+      }),
+      allowedRequiredAttributes: Joi.array().items(mongoIdValidation).required().messages({
+        'any.required': '"allowedRequiredAttributes" is a required field'
+      }),
+    }).required();
+
+    Joi.assert(req.body, schema);
+
+    const { sellerId, allowedRequiredAttributes } = req.body;
+    const seller = await userService.updateSellerAllowedAttributes(sellerId, allowedRequiredAttributes);
+    return res.status(OK).json({ seller });
   } catch (error) {
     throw error;
   }
