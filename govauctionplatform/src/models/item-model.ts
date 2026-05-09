@@ -116,6 +116,7 @@ export interface IItemInput {
     tn?: string;
   };
   startingBid: number;
+  buyoutPrice?: number;
   status: itemStatus;
   bidIncrement?: number;
   reservePrice: number;
