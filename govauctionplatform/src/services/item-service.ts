@@ -1,4 +1,4 @@
-import { Bidder, IAdmin, IBidder } from "../models/user-model";
+import { Bidder, IAdmin, IBidder, ISeller } from "../models/user-model";
 import { IEligibleBidder, IItem, IItemInput, Item } from "../models/item-model";
 import { formatBAITSAnimalEID, getAnimalBreedById, getAnimalByEID, isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
 import { ForbiddenError, InternalServerError, NotFoundError } from "../shared/errors";
@@ -129,10 +129,55 @@ async function deleteItem(currentUser: IAdmin, itemId: string | Schema.Types.Obj
 }
 
 /**
+ * Update an item. Only allowed when status is NOT_BEGUN and caller is the seller.
+ */
+async function updateItem(currentUser: ISeller, itemId: string, input: Partial<IItemInput>): Promise<IItem> {
+  try {
+    const item = await getById(itemId);
+
+    if (!item) {
+      throw new NotFoundError('Item not found');
+    }
+
+    if (item.sellerId.toString() !== currentUser.id.toString()) {
+      throw new ForbiddenError('You do not have permission to update this item');
+    }
+
+    if (item.status !== EItemStatus.NOT_BEGUN) {
+      throw new ForbiddenError('Can only edit a lot that has not yet begun');
+    }
+
+    if (input.startTime && !isBeforeStartDate(new Date(), new Date(input.startTime))) {
+      throw new ForbiddenError('Start time must not come before the current time');
+    }
+
+    if (input.startTime && input.endTime && !isStartDateBeforeEndDate(new Date(input.startTime), new Date(input.endTime))) {
+      throw new ForbiddenError('End time must not come before the start time');
+    }
+
+    const updatableFields: Array<keyof IItemInput> = [
+      'title', 'description', 'terms', 'gallery',
+      'startingBid', 'reservePrice', 'buyoutPrice',
+      'startTime', 'endTime', 'metadata',
+    ];
+
+    for (const field of updatableFields) {
+      if (input[field] !== undefined) {
+        (item as any)[field] = input[field];
+      }
+    }
+
+    return await item.save();
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
  * Sets the new bid amount manually.
- * 
+ *
  * @param amount
- * @return 
+ * @return
  */
 async function setNewBidAmountManually(input: { itemId: string | Schema.Types.ObjectId, amount: number }): Promise<IItem> {
   try {
@@ -634,6 +679,7 @@ async function getItemsWithWinnerForRefund(): Promise<IItem[]> {
 // Export default
 export default {
   createItem,
+  updateItem,
   setWinningBidder,
   autoSelectWinner,
   updateItemWithBid,
