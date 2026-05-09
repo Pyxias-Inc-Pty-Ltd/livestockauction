@@ -621,6 +621,59 @@ async function unpublishAuction(currentUser: ISeller, auctionId: string): Promis
 }
 
 /**
+ * Update an auction's editable fields.
+ * Only allowed when publishedStatus is UNPUBLISHED or REJECTED.
+ * Only the creator (seller) may edit their own auction.
+ */
+async function updateAuction(currentUser: ISeller, auctionId: string, input: Partial<IAuctionInput>): Promise<IAuction> {
+  try {
+    const auction = await getById(auctionId);
+
+    if (!auction) {
+      throw new NotFoundError('Auction not found');
+    }
+
+    if (auction.creatorId.toString() !== (currentUser as any)._id.toString()) {
+      throw new ForbiddenError('You do not have permission to edit this auction');
+    }
+
+    if (
+      auction.publishedStatus !== EPublishedStatus.UNPUBLISHED &&
+      auction.publishedStatus !== EPublishedStatus.REJECTED
+    ) {
+      throw new ForbiddenError('Only unpublished or rejected auctions can be edited');
+    }
+
+    if (input.startTime && !isBeforeStartDate(new Date(), new Date(input.startTime as any))) {
+      throw new ForbiddenError('Start time must not come before the current time');
+    }
+
+    if (input.startTime && input.endTime && !isStartDateBeforeEndDate(new Date(input.startTime as any), new Date(input.endTime as any))) {
+      throw new ForbiddenError('End time must not come before the start time');
+    }
+
+    // If auction was REJECTED, reset publishedStatus back to UNPUBLISHED on edit
+    const publishedStatusReset = auction.publishedStatus === EPublishedStatus.REJECTED
+      ? { publishedStatus: EPublishedStatus.UNPUBLISHED, reasonForRejection: undefined }
+      : {};
+
+    const updatedAuction = await Auction.findByIdAndUpdate(
+      auctionId,
+      { ...input, ...publishedStatusReset },
+      { new: true, runValidators: true }
+    ).select('-__v -globallyEligibleBidders');
+
+    if (!updatedAuction) {
+      throw new NotFoundError('Auction not found');
+    }
+
+    return updatedAuction;
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
  * Updates the coordinates of an auction.
  */
 async function updateAuctionCoordinates(auctionId: string,auctionCoordinates: { type: 'Point'; coordinates: [number, number] }): Promise<IAuction | null> {
@@ -750,6 +803,7 @@ export default {
   unpublishAuction,
   rejectAuction,
   trackAuctionStatus,
+  updateAuction,
   updateAuctionCoordinates,
   addInvitedBidders,
   removeInvitedBidder,

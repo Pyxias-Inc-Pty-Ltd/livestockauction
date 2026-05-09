@@ -2,7 +2,7 @@ import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isoDateValidation, isStringNumberLike, mongoIdValidation } from '../shared/functions';
-import { requirePermission } from '../shared/middleware';
+import { requirePermission, SellerOnly } from '../shared/middleware';
 import { IAdmin, IAuctionApprover, ISeller, IUser } from '../models/user-model';
 import auctionService from '../services/auction-service';
 import { EAuctionStatus, EAuctionSortType, EParticipationType, EPermission, ESortOrderType, EPublishedStatus } from '../globals';
@@ -22,6 +22,7 @@ export const p = {
   unpublishAuction: '/unpublishAuction',
   rejectAuction: '/rejectAuction',
   getAllAuctions: '/getAllAuctions',
+  updateAuction: '/updateAuction',
   updateAuctionCoordinates: '/updateAuctionCoordinates',
   addInvitedBidders: '/addInvitedBidders',
   removeInvitedBidder: '/removeInvitedBidder',
@@ -363,6 +364,71 @@ router.get(p.getAllAuctions, requirePermission(EPermission.AUCTION_READ), async 
 
     const auctions = await auctionService.getAuctions(conditions);
     return res.status(OK).json({ auctions });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Update an auction (seller only, UNPUBLISHED or REJECTED status only)
+ */
+router.put(p.updateAuction, SellerOnly(), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      auctionId: mongoIdValidation.required().messages({
+        'any.required': '"auctionId" is a required field'
+      }),
+      title: Joi.object().keys({
+        en: Joi.string().required(),
+        tn: Joi.string().required(),
+      }),
+      auctionLocation: Joi.string(),
+      auctionCoordinates: Joi.object().keys({
+        coordinates: Joi.array().items(Joi.number().min(-180).max(180)).length(2).required(),
+      }),
+      terms: Joi.object().keys({
+        en: Joi.string().required(),
+        tn: Joi.string().required(),
+      }),
+      isBeingLivestreamed: Joi.boolean(),
+      isClosedBidding: Joi.boolean(),
+      streamUrl: Joi.string().uri().when('isBeingLivestreamed', {
+        is: true,
+        then: Joi.required(),
+        otherwise: Joi.optional()
+      }),
+      thumbnailUrl: Joi.string(),
+      hasRegistrationFee: Joi.boolean(),
+      registrationFee: Joi.number().min(0).when('hasRegistrationFee', {
+        is: true,
+        then: Joi.required(),
+        otherwise: Joi.optional()
+      }),
+      categoryId: mongoIdValidation,
+      startTime: isoDateValidation,
+      endTime: isoDateValidation,
+      participationType: Joi.string().valid(
+        EParticipationType.CITIZEN_ONLY,
+        EParticipationType.EVERYONE
+      ),
+      requiredAttributes: Joi.array().items(mongoIdValidation),
+      collectionWindowDays: Joi.number().integer().min(1),
+      collectionStartTime: Joi.string().pattern(/^\d{2}:\d{2}$/).messages({
+        'string.pattern.base': '"collectionStartTime" must be in HH:mm format'
+      }),
+      collectionEndTime: Joi.string().pattern(/^\d{2}:\d{2}$/).messages({
+        'string.pattern.base': '"collectionEndTime" must be in HH:mm format'
+      }),
+      isInviteOnly: Joi.boolean(),
+      invitedBidders: Joi.array().items(mongoIdValidation),
+    }).required();
+
+    Joi.assert(req.body, schema);
+
+    const { auctionId, ...updateData } = req.body;
+
+    const auction = await auctionService.updateAuction(req.user as ISeller, auctionId, updateData);
+    return res.status(OK).json({ auction });
   } catch (error) {
     throw error;
   }
