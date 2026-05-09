@@ -384,14 +384,19 @@ router.post(p.processSuccessfulPaymentFromPayGate, async (req: Request, res: Res
  */
 router.post(p.paygateReturn, async (req: Request, res: Response) => {
   try {
-    const { REFERENCE } = req.body;
-    if (REFERENCE) {
-      const tx = await Transaction.findById(REFERENCE, { auctionId: 1, itemId: 1 });
-      if (tx) {
-        return res.redirect(`${SERVICE_URLS.clientURI}/auction/${tx.auctionId.toString()}/lot/${tx.itemId.toString()}`);
-      }
+    const { auctionId, itemId } = req.query as { auctionId?: string; itemId?: string };
+    const { TRANSACTION_STATUS, RESULT_CODE } = req.body;
+
+    let paymentParam = 'success';
+    if (TRANSACTION_STATUS !== '1') {
+      if (RESULT_CODE === '900003') paymentParam = 'insufficient_funds';
+      else if (TRANSACTION_STATUS === '3' || TRANSACTION_STATUS === '4') paymentParam = 'cancelled';
+      else paymentParam = 'declined';
     }
-    // Fallback: redirect to homepage if transaction not found
+
+    if (auctionId && itemId) {
+      return res.redirect(`${SERVICE_URLS.clientURI}/auction/${auctionId}/lot/${itemId}?payment=${paymentParam}`);
+    }
     return res.redirect(SERVICE_URLS.clientURI);
   } catch (error) {
     console.error('Error in paygateReturn:', error);
