@@ -652,6 +652,14 @@ async function updateAuction(currentUser: ISeller, auctionId: string, input: Par
       throw new ForbiddenError('End time must not come before the start time');
     }
 
+    // Normalize auctionCoordinates to always include type: 'Point'
+    if (input.auctionCoordinates) {
+      input.auctionCoordinates = {
+        type: 'Point',
+        coordinates: input.auctionCoordinates.coordinates,
+      };
+    }
+
     // If auction was REJECTED, reset publishedStatus back to UNPUBLISHED on edit
     const publishedStatusReset = auction.publishedStatus === EPublishedStatus.REJECTED
       ? { publishedStatus: EPublishedStatus.UNPUBLISHED, reasonForRejection: undefined }
@@ -660,7 +668,7 @@ async function updateAuction(currentUser: ISeller, auctionId: string, input: Par
     const updatedAuction = await Auction.findByIdAndUpdate(
       auctionId,
       { ...input, ...publishedStatusReset },
-      { new: true, runValidators: true }
+      { new: true }
     ).select('-__v -globallyEligibleBidders');
 
     if (!updatedAuction) {
