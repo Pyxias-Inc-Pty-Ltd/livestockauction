@@ -114,6 +114,7 @@ router.post(p.createItem, requirePermission(EPermission.LOT_CREATE), async (req:
         'any.required': '"reservePrice" is a required field'
       }),
       buyoutPrice: Joi.number().allow(null).optional(),
+      isBeingLivestreamed: Joi.boolean().default(false),
       isClosedBidding: Joi.boolean().default(false),
       isBidIncrementedManually: Joi.boolean().required().when('isClosedBidding', {
         is: true,
