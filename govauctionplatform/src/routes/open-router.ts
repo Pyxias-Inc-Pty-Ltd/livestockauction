@@ -327,26 +327,26 @@ router.post(p.processSuccessfulPaymentFromPayGate, async (req: Request, res: Res
       REFERENCE: Joi.string().required().messages({
         'any.required': '"REFERENCE" is a required field',
       }),
-      TRANSACTION_STATUS: Joi.string().valid("1", "0").required().messages({
+      TRANSACTION_STATUS: Joi.string().valid("0", "1", "2", "3", "4", "5", "7").required().messages({
         'any.required': '"TRANSACTION_STATUS" is a required field',
       }),
       RESULT_CODE: Joi.string().required().messages({
         'any.required': '"RESULT_CODE" is a required field',
       }),
-      AUTH_CODE: Joi.string().optional(),
+      AUTH_CODE: Joi.string().allow('').optional(),
       CURRENCY: Joi.string().required().messages({
         'any.required': '"CURRENCY" is a required field',
       }),
-      AMOUNT: Joi.number().required().messages({
+      AMOUNT: Joi.alternatives().try(Joi.number(), Joi.string()).required().messages({
         'any.required': '"AMOUNT" is a required field',
       }),
-      RESULT_DESC: Joi.string().optional(),
+      RESULT_DESC: Joi.string().allow('').optional(),
       TRANSACTION_ID: Joi.string().required().messages({
         'any.required': '"TRANSACTION_ID" is a required field',
       }),
-      RISK_INDICATOR: Joi.string().optional(),
-      PAY_METHOD: Joi.string().optional(),
-      PAY_METHOD_DETAIL: Joi.string().optional(),
+      RISK_INDICATOR: Joi.string().allow('').optional(),
+      PAY_METHOD: Joi.string().allow('').optional(),
+      PAY_METHOD_DETAIL: Joi.string().allow('').optional(),
       CHECKSUM: Joi.string().required().messages({
         'any.required': '"CHECKSUM" is a required field',
       }),
