@@ -213,7 +213,15 @@ router.get(p.getAuctionReport, requirePermission(EPermission.AUCTION_REPORT), as
  */
 router.get(p.getRequiredAttributes, requirePermission(EPermission.AUCTION_READ), async (req: Request, res: Response) => {
   try {
-    const requiredAttributes = await auctionService.getRequiredAttributes();
+    const caller = req.user as IUser;
+    let requiredAttributes = await auctionService.getRequiredAttributes();
+
+    if (caller.userType === 'SELLER') {
+      const seller = req.user as ISeller;
+      const allowed = new Set((seller.allowedRequiredAttributes ?? []).map(id => id.toString()));
+      requiredAttributes = requiredAttributes.filter(a => allowed.has(a._id.toString()));
+    }
+
     return res.status(OK).json({ requiredAttributes });
   } catch (error) {
     throw error;
