@@ -177,6 +177,7 @@ router.post(p.createItem, requirePermission(EPermission.LOT_CREATE), async (req:
         hoursUsed: Joi.number().min(0),
         power: Joi.number().min(0),
         mileage: Joi.number().min(0),
+        age: Joi.number().min(0),
         engineNumber: Joi.string(),
         chassisNumber: Joi.string(),
         registrationNumber: Joi.string(),
