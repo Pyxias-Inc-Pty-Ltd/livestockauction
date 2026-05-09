@@ -413,6 +413,26 @@ export function convertToPaygateFormat(
 }
 
 /**
+ * Validates the CHECKSUM on a PayGate NOTIFY_URL POST.
+ * PayGate computes the checksum by concatenating all notification field values
+ * (excluding CHECKSUM itself, in the order they appear) then appending the encryption key, and MD5-hashing.
+ */
+export function validatePaygateNotifyChecksum(body: Record<string, string>, encryptionKey: string): boolean {
+  const NOTIFY_FIELD_ORDER = [
+    'PAYGATE_ID', 'PAY_REQUEST_ID', 'REFERENCE', 'TRANSACTION_STATUS',
+    'RESULT_CODE', 'AUTH_CODE', 'CURRENCY', 'AMOUNT', 'RESULT_DESC',
+    'TRANSACTION_ID', 'RISK_INDICATOR', 'PAY_METHOD', 'PAY_METHOD_DETAIL',
+    'USER1', 'USER2', 'USER3',
+  ];
+  const checksumString = NOTIFY_FIELD_ORDER
+    .filter(field => body[field] !== undefined && body[field] !== null && body[field] !== '')
+    .map(field => body[field])
+    .join('') + encryptionKey;
+  const expected = createHash('md5').update(checksumString).digest('hex');
+  return expected === body['CHECKSUM'];
+}
+
+/**
  * Formats a PayGate query string into a URL suitable for processing.
  *
  * @param {string} baseString - The query string containing PayGate parameters.
