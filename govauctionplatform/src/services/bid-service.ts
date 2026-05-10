@@ -29,6 +29,12 @@ interface BidTransactionOptions {
    * bids) without duplicating the transaction boilerplate.
    */
   transformBid?: (bid: any) => void;
+  /**
+   * Optional hook called inside the transaction immediately after
+   * `updateItemWithBid` succeeds.  Use for mode-specific item mutations that
+   * must be atomic with the bid (e.g. advancing manualBidAmount).
+   */
+  afterItemUpdate?: (item: any, sess: ClientSession) => Promise<void>;
 }
 
 /**
@@ -135,6 +141,9 @@ async function _runBidTransaction(
         throw new Error('Concurrent bid conflict — please retry');
       }
 
+      // Optional mode-specific item mutation (e.g. advancing manualBidAmount).
+      if (opts.afterItemUpdate) await opts.afterItemUpdate(item, sess!);
+
       // Apply any mode-specific field transforms before persisting.
       if (opts.transformBid) opts.transformBid(newBid);
 
@@ -186,24 +195,25 @@ async function _runBidTransaction(
 async function createOpenBid(currentUser: IBidder, input: IBidInput): Promise<IBid> {
   return _runBidTransaction(currentUser, input, {
     validateAmount: (item) => {
-      const floor = item.currentBid ?? item.startingBid;
-
-      if (input.bidAmount <= item.startingBid) {
-        throw new ForbiddenError('Bid amount must be higher than the starting bid');
+      // First bid: must meet the starting bid.
+      if (input.bidAmount < item.startingBid) {
+        throw new ForbiddenError('Bid amount must be at least the starting bid');
       }
 
-      if (item.currentBid && input.bidAmount <= item.currentBid) {
-        throw new ForbiddenError('Bid amount must be higher than the current bid');
-      }
-
-      // Enforce minimum increment if configured.
-      if (item.bidIncrement) {
-        const minimumBid = floor + item.bidIncrement;
-        if (input.bidAmount < minimumBid) {
-          throw new ForbiddenError(
-            `Bid must be at least ${minimumBid} ` +
-            `(current price ${floor} + increment ${item.bidIncrement})`,
-          );
+      if (item.currentBid) {
+        // Subsequent bids: must exceed the current leading bid.
+        if (input.bidAmount <= item.currentBid) {
+          throw new ForbiddenError('Bid amount must be higher than the current bid');
+        }
+        // Enforce minimum increment only between consecutive bids.
+        if (item.bidIncrement) {
+          const minimumBid = item.currentBid + item.bidIncrement;
+          if (input.bidAmount < minimumBid) {
+            throw new ForbiddenError(
+              `Bid must be at least ${minimumBid} ` +
+              `(current bid ${item.currentBid} + increment ${item.bidIncrement})`,
+            );
+          }
         }
       }
     },
@@ -234,11 +244,22 @@ async function createOpenBid(currentUser: IBidder, input: IBidInput): Promise<IB
 async function createLivestreamBid(currentUser: IBidder, input: IBidInput): Promise<IBid> {
   return _runBidTransaction(currentUser, input, {
     validateAmount: (item) => {
-      if (input.bidAmount !== item.manualBidAmount) {
+      if (input.bidAmount < (item.manualBidAmount ?? 0)) {
         throw new ForbiddenError(
-          `Bid amount must equal the auctioneer's called price of ${item.manualBidAmount}`,
+          `Bid amount must be at least the auctioneer's called price of ${item.manualBidAmount}`,
         );
       }
+    },
+    // Advance manualBidAmount atomically when the bid is accepted.
+    // This eliminates the pre-flight CREATE_NEW_MANUAL_BID_AMOUNT step on the
+    // client — manualBidAmount can only change via an accepted bid, so a
+    // browser refresh will never leave it stuck at an unconfirmed value.
+    afterItemUpdate: async (item, sess) => {
+      await Item.updateOne(
+        { _id: item._id },
+        { $set: { manualBidAmount: input.bidAmount } },
+        { session: sess },
+      );
     },
     enforceOneBidPerBidder: false,
   });
