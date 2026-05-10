@@ -6,7 +6,7 @@ import { encryptBidAmount, decryptBidAmount } from "../shared/bid-crypto";
 import itemService from "./item-service";
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { ClientSession, Schema, startSession } from 'mongoose';
-import { EBidSortType, ESortOrderType, EItemStatus, EParticipationType, EIdentityNumberVerificationStatus, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { EBidSortType, ESortOrderType, EItemStatus, EParticipationType, EIdentityNumberVerificationStatus, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, LOCAL_NATIONALITY } from "../globals";
 import { isMongoId } from "validator";
 import auctionService from "./auction-service";
 
@@ -101,14 +101,16 @@ async function _runBidTransaction(
         );
       }
 
-      // identityNumber verification: GOVERNMENT sector auctions require VERIFIED
-      // national ID (OMANG/passport) before any bid is accepted.
+      // identityNumber verification: local (BW) bidders must have their OMANG
+      // verified before bidding. International bidders are exempt — their
+      // passports cannot be auto-verified via the local CIPA API.
       if (
+        currentUser.nationality === LOCAL_NATIONALITY &&
         currentUser.identityNumberVerificationStatus !==
-        EIdentityNumberVerificationStatus.VERIFIED
+          EIdentityNumberVerificationStatus.VERIFIED
       ) {
         throw new ForbiddenError(
-          'Your identity must be verified before you can place a bid',
+          'Your national ID (OMANG) must be verified before you can place a bid',
         );
       }
 
