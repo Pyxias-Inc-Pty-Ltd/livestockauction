@@ -99,15 +99,30 @@ export function startBidWorker(io: Server): Worker<BidJobData, BidJobResult> {
           // Mode 3: never reveal amount — only signal that bid count grew.
           io.to(room).emit(ESocketEventCode.SEALED_BID_ACCEPTED);
         } else {
-          // Mode 1 & 2: publish the new leading price.
-          io.to(room).emit(ESocketEventCode.UPDATE_BID_AMOUNT, bid.bidAmount);
+          // Mode 1 & 2: include full bid data so clients can update their store
+          // directly without making a separate HTTP fetchBids call.
+          const bidData = bid.toJSON();
+          io.to(room).emit(ESocketEventCode.UPDATE_BID_AMOUNT, {
+            newPrice: bid.bidAmount,
+            bid: bidData,
+          });
+
+          // Also notify the bidder's private room with the bid data — lets them
+          // replace their optimistic entry without an extra HTTP round trip.
+          io.to(socketId).emit(ESocketEventCode.BID_RESULT, {
+            status: 'accepted',
+            bidId: bid.id.toString(),
+            bid: bidData,
+          });
         }
 
-        // ── Notify bidder of success (private room = socket.id) ───────────────
-        io.to(socketId).emit(ESocketEventCode.BID_RESULT, {
-          status: 'accepted',
-          bidId: bid.id.toString(),
-        });
+        // ── Notify bidder of success for sealed mode ──────────────────────────
+        if (mode === 'sealed') {
+          io.to(socketId).emit(ESocketEventCode.BID_RESULT, {
+            status: 'accepted',
+            bidId: bid.id.toString(),
+          });
+        }
 
         return { bidId: bid.id.toString(), mode };
 
