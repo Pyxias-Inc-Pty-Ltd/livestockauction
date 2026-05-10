@@ -74,6 +74,7 @@ async function _runBidTransaction(
         isInviteOnly: 1,
         participationType: 1,
         sectorType: 1,
+        participantsWithBiddingNumbers: 1,
       });
       if (!auction) throw new NotFoundError('Auction not found');
 
@@ -143,6 +144,15 @@ async function _runBidTransaction(
 
       // Optional mode-specific item mutation (e.g. advancing manualBidAmount).
       if (opts.afterItemUpdate) await opts.afterItemUpdate(item, sess!);
+
+      // Stamp the bidder's assigned bidding number so it travels with the saved
+      // document and appears in socket payloads (BID_RESULT, UPDATE_BID_AMOUNT).
+      if (auction.participantsWithBiddingNumbers?.length > 0) {
+        const entry = (auction.participantsWithBiddingNumbers as string[]).find(
+          (e) => e.startsWith(currentUser.id.toString() + ':'),
+        );
+        if (entry) newBid.bidNumber = entry.split(':')[1];
+      }
 
       // Apply any mode-specific field transforms before persisting.
       if (opts.transformBid) opts.transformBid(newBid);
