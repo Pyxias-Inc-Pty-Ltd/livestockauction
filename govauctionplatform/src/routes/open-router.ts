@@ -10,7 +10,7 @@ import categoryService from '../services/category-service';
 import itemService from '../services/item-service';
 import collectionService from '../services/collection-service';
 import { esService } from '../services/elasticsearch-service';
-import { RequiredAttribute } from '../models/auction-model';
+import { Auction, RequiredAttribute } from '../models/auction-model';
 import {
   ESortOrderType,
   EAuctionSortType,
@@ -139,7 +139,7 @@ router.get(p.getAuctionById, async (req: Request, res: Response) => {
     Joi.assert(req.query, qSchema);
 
     const { id } = req.query;
-    const auction = await auctionService.getById(id as string);
+    const auction = await Auction.findById(id as string).populate('creatorId', 'name');
 
     let requiredAttributeSlugs: string[] = [];
     if (auction && auction.requiredAttributes?.length) {
