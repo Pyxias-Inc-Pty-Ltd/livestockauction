@@ -3,6 +3,9 @@ import { ForbiddenError, InternalServerError, NotFoundError } from "../shared/er
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession } from 'mongoose';
 import { ITransaction, Transaction, ITransactionInput } from "../models/transaction-model";
+import { Item } from "../models/item-model";
+import { Forum } from "../models/forum-model";
+import { Auction } from "../models/auction-model";
 import itemService from "./item-service";
 import { EPaymentStatus, ERefundReason, ESortOrderType, ETransactionSortType, ETransactionType, LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, MAX_LIST_LIMIT_NUMBER, PAYGATE_ENCRYPTION_KEY, PAYGATE_ID, SERVICE_URLS, transactionType, LOCAL_CURRENCY, DEFAULT_LANG, DEFAULT_PAYMENT_EMAIL, LOCALY_COUNTRY_ALPHA_3_CODE } from "../globals";
 import bidService from "./bid-service";
@@ -385,6 +388,12 @@ async function processSuccessfulPaymentFromPayGate(input: {
       throw new NotFoundError('Transaction not found');
     }
 
+    // Idempotency guard — PayGate may retry NOTIFY_URL up to 2 times.
+    // If we have already fully processed this transaction, return it as-is.
+    if (transaction.status === EPaymentStatus.COMPLETED) {
+      return transaction;
+    }
+
     const meta = transaction.metadata as Map<string, string>;
     meta.set('resultCode', input.RESULT_CODE);
     if (input.RESULT_DESC) meta.set('resultDesc', input.RESULT_DESC);
@@ -458,13 +467,18 @@ async function processSuccessfulPaymentFromPayGate(input: {
 
       const stringBuyerId = transaction.buyerId.toString();
 
-      if (item.eligibleBidders.indexOf(stringBuyerId) === -1) {
-        item.eligibleBidders.push(stringBuyerId);
-      }
+      // Atomic $addToSet prevents duplicates even when NOTIFY_URL fires concurrently.
+      await Item.updateOne(
+        { _id: item._id },
+        { $addToSet: { eligibleBidders: stringBuyerId } },
+        { session: sess }
+      );
 
-      if (forum.participants.indexOf(stringBuyerId) === -1) {
-        forum.participants.push(stringBuyerId);
-      }
+      await Forum.updateOne(
+        { _id: forum._id },
+        { $addToSet: { participants: stringBuyerId } },
+        { session: sess }
+      );
 
       const auction = await auctionService.getById(item.auctionId);
       if (!auction) {
@@ -472,9 +486,11 @@ async function processSuccessfulPaymentFromPayGate(input: {
       }
 
       if (auction.hasRegistrationFee) {
-        if (auction.globallyEligibleBidders.indexOf(stringBuyerId) === -1) {
-          auction.globallyEligibleBidders.push(stringBuyerId);
-        }
+        await Auction.updateOne(
+          { _id: auction._id },
+          { $addToSet: { globallyEligibleBidders: stringBuyerId } },
+          { session: sess }
+        );
       }
 
       if (auction.participantsWithBiddingNumbers.length > 0) {
@@ -498,12 +514,8 @@ async function processSuccessfulPaymentFromPayGate(input: {
           `${stringBuyerId}:BIDDER${prefixWithZero(bidderCounter.sequenceValue)}`
         );
         await auction.save({ session: sess });
-      } else if (auction.hasRegistrationFee) {
-        await auction.save({ session: sess });
       }
 
-      await forum.save({ session: sess });
-      await item.save({ session: sess });
       await transaction.save({ session: sess });
 
     } else if (transaction.transactionType === 'PURCHASE') {
