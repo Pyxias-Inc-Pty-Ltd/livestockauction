@@ -544,11 +544,11 @@ async function processSuccessfulPaymentFromPayGate(input: {
       await transaction.save({ session: sess });
 
     } else if (transaction.transactionType === 'PURCHASE') {
-      item.isPurchased = true;
-      await sess.withTransaction(async () => {
-        await transaction.save({ session: sess });
-        await item.save({ session: sess });
-      });
+      // Save transaction status and mark item as purchased.
+      // Use findByIdAndUpdate to bypass full-document validation (legacy items
+      // may be missing required fields added after creation).
+      await transaction.save();
+      await Item.findByIdAndUpdate(item._id, { $set: { isPurchased: true } });
 
       // Create collection record — done outside the ACID transaction so that
       // a collection-creation failure does not roll back the payment itself.
