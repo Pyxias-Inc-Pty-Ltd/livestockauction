@@ -22,6 +22,7 @@ export default {
     // Verify signature + issuer against Keycloak JWKS
     const { payload } = await jwtVerify(bearerToken, JWKS, {
       issuer: KEYCLOAK_ISSUER,
+      clockTolerance: 30, // tolerate up to 30s of clock skew between server and Keycloak
     });
 
     const keycloakId = payload.sub;

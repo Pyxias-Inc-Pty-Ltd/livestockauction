@@ -192,8 +192,16 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
       amount = winningBid.bidAmount - item.reservePrice;
     }
 
-    // Create payment transaction
-    const paymentInput: ITransactionInput = {
+    // Reuse any existing pending purchase transaction for this item + buyer rather
+    // than creating a duplicate on every modal open / page refresh.
+    const existingPurchase = await Transaction.findOne({
+      itemId: item._id,
+      buyerId: currentUser.id,
+      transactionType: ETransactionType.PURCHASE,
+      status: EPaymentStatus.PENDING,
+    });
+
+    const savedPurchase = existingPurchase ?? await new Transaction({
       auctionId: item.auctionId,
       currency: LOCAL_CURRENCY,
       transactionType: 'PURCHASE',
@@ -203,14 +211,10 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
       sellerId: item.sellerId,
       relatedTransaction: reservation._id,
       metadata: {}
-    };
+    } as ITransactionInput).save();
 
-    const newPurchase = new Transaction(paymentInput);
-
-    // Save payment transaction
-    const savedPurchase = await newPurchase.save();
-
-    // Generate payment link using PayGate
+    // Always re-initiate with PayGate — refreshes the payment link in case the
+    // previous one expired (PayGate links are short-lived).
     const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), savedPurchase.amount, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/paygateReturn?auctionId=${item.auctionId.toString()}&itemId=${item._id.toString()}`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
 
     const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
