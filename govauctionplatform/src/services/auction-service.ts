@@ -749,79 +749,63 @@ async function rejectAuction(currentUser: IAuctionApprover, auctionId: string, r
 
 /**
  * Updates the status of auctions based on their start and end times, considering their published status.
- * Updates each document individually to trigger Mongoose post-save middleware within a transaction.
+ * Uses bulkWrite (no MongoDB session/transaction) so it works on both standalone and replica-set deployments.
  *
  * - Only updates auctions that are `PUBLISHED`.
  * - Auctions that have started (`startTime <= now`) and are `PUBLISHED` are marked as `ACTIVE`.
  * - Auctions that have ended (`endTime <= now`) and are `PUBLISHED` are marked as `ENDED`.
- * - Auctions that are `NOT_BEGUN` but not yet `PUBLISHED` remain unchanged.
+ * - Cascades: closes all ACTIVE/NOT_BEGUN lots that belong to auctions being ended.
  *
  * @throws {Error} If an error occurs during the database update operation.
  * @return {Promise<void>} A promise that resolves once the updates are complete.
  */
 async function trackAuctionStatus(): Promise<void> {
-  const sess = await startSession();
   try {
-    await sess.withTransaction(async () => {
-      const [auctionsToEnd, auctionsToActivate] = await Promise.all([
-        Auction.find({ 
-          endTime: { $lte: new Date() }, 
-          status: { $ne: EAuctionStatus.ENDED },
-          publishedStatus: EPublishedStatus.PUBLISHED 
-        }).session(sess),
-        
-        Auction.find({
-          startTime: { $lte: new Date() }, 
-          status: EAuctionStatus.NOT_BEGUN, 
-          publishedStatus: EPublishedStatus.PUBLISHED
-        }).session(sess)
-      ]);
-      
-      const allAuctionsToUpdate = new Map<string, any>();
-      
-      // Add auctions to end
-      auctionsToEnd.forEach(auction => {
-        allAuctionsToUpdate.set(auction._id.toString(), {
-          auction,
-          newStatus: EAuctionStatus.ENDED
-        });
-      });
-      
-      auctionsToActivate.forEach(auction => {
-        allAuctionsToUpdate.set(auction._id.toString(), {
-          auction,
-          newStatus: EAuctionStatus.ACTIVE
-        });
-      });
-      
-      // Update each auction individually
-      const updatePromises = Array.from(allAuctionsToUpdate.values()).map(({ auction, newStatus }) => {
-        auction.status = newStatus;
-        return auction.save({ session: sess });
-      });
+    const now = new Date();
 
-      await Promise.all(updatePromises);
+    const [auctionsToEnd, auctionsToActivate] = await Promise.all([
+      Auction.find(
+        { endTime: { $lte: now }, status: { $ne: EAuctionStatus.ENDED }, publishedStatus: EPublishedStatus.PUBLISHED },
+        { _id: 1 },
+      ),
+      Auction.find(
+        { startTime: { $lte: now }, status: EAuctionStatus.NOT_BEGUN, publishedStatus: EPublishedStatus.PUBLISHED },
+        { _id: 1 },
+      ),
+    ]);
 
-      // Cascade: end all non-ended lots that belong to auctions being ended.
-      // Lots may have individual endTimes later than their auction — when the
-      // auction closes those lots must close with it.
-      if (auctionsToEnd.length > 0) {
-        const endedAuctionIds = auctionsToEnd.map(a => a._id);
-        await Item.updateMany(
-          {
-            auctionId: { $in: endedAuctionIds },
-            status: { $in: [EItemStatus.ACTIVE, EItemStatus.NOT_BEGUN] },
-          },
-          { $set: { status: EItemStatus.ENDED } },
-          { session: sess },
-        );
-      }
+    const bulkOps: any[] = [];
+
+    auctionsToEnd.forEach(auction => {
+      bulkOps.push({
+        updateOne: { filter: { _id: auction._id }, update: { $set: { status: EAuctionStatus.ENDED } } },
+      });
     });
+
+    auctionsToActivate.forEach(auction => {
+      bulkOps.push({
+        updateOne: { filter: { _id: auction._id }, update: { $set: { status: EAuctionStatus.ACTIVE } } },
+      });
+    });
+
+    if (bulkOps.length > 0) {
+      await Auction.bulkWrite(bulkOps);
+    }
+
+    // Cascade: close all lots belonging to auctions that just ended.
+    if (auctionsToEnd.length > 0) {
+      const endedAuctionIds = auctionsToEnd.map(a => a._id);
+      await Item.updateMany(
+        {
+          auctionId: { $in: endedAuctionIds },
+          status: { $in: [EItemStatus.ACTIVE, EItemStatus.NOT_BEGUN] },
+        },
+        { $set: { status: EItemStatus.ENDED } },
+      );
+    }
   } catch (error) {
-    console.error('Error in trackAuctionStatus transaction:', error);
+    console.error('Error in trackAuctionStatus:', error);
     throw error;
-  } finally {
-    await sess.endSession();
   }
 }
 

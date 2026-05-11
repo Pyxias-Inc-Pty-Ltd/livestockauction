@@ -563,88 +563,75 @@ async function getEligibleBidders(itemId: string | Schema.Types.ObjectId): Promi
 
 /**
  * Updates the status of items based on their start and end times.
- * Updates each document individually to trigger Mongoose post-save middleware
- * within a MongoDB transaction for atomicity.
+ * Uses bulkWrite (no MongoDB session/transaction) so it works on both
+ * standalone and replica-set deployments.
  *
  * - Marks items as `ENDED` if their `endTime` has passed.
  * - Marks items as `ACTIVE` if their `startTime` has passed and they are still `NOT_BEGUN`.
+ * - Safety net: closes any lots still ACTIVE/NOT_BEGUN whose parent auction is already ENDED.
  *
  * @throws {Error} If an error occurs during the database update operation.
  * @return {Promise<void>} A promise that resolves once the updates are complete.
  */
 async function trackItemStatus(): Promise<void> {
-  const sess = await startSession();
-  // Collected inside the transaction; consumed outside after commit.
-  const sealedItemIdsJustEnded: string[] = [];
-
   try {
-    await sess.withTransaction(async () => {
-      // Find auctions that have already ended so we can close any orphaned lots.
-      const endedAuctionIds = await Auction.distinct('_id', {
-        status: EAuctionStatus.ENDED,
-      }).session(sess);
+    const now = new Date();
 
-      const [itemsToEnd, itemsToActivate, orphanedItems] = await Promise.all([
-        Item.find({
-          endTime: { $lte: new Date() },
-          status: { $ne: EItemStatus.ENDED }
-        }).session(sess),
-        Item.find({
-          startTime: { $lte: new Date() },
-          status: EItemStatus.NOT_BEGUN
-        }).session(sess),
-        // Safety net: lots still ACTIVE/NOT_BEGUN whose auction is already ENDED.
-        // Catches lots whose individual endTime is later than the auction endTime.
-        Item.find({
-          auctionId: { $in: endedAuctionIds },
-          status: { $in: [EItemStatus.ACTIVE, EItemStatus.NOT_BEGUN] },
-        }).session(sess),
-      ]);
-
-      const itemsToUpdate = new Map<string, { item: any; newStatus: EItemStatus }>();
-
-      itemsToEnd.forEach(item => {
-        itemsToUpdate.set(item._id.toString(), {
-          item,
-          newStatus: EItemStatus.ENDED
-        });
-        // Track sealed items that are about to close so we can decrypt their
-        // bids after the transaction commits.
-        if (item.isClosedBidding) {
-          sealedItemIdsJustEnded.push(item._id.toString());
-        }
-      });
-
-      itemsToActivate.forEach(item => {
-        itemsToUpdate.set(item._id.toString(), {
-          item,
-          newStatus: EItemStatus.ACTIVE
-        });
-      });
-
-      // Orphaned lots override any ACTIVE assignment above.
-      orphanedItems.forEach(item => {
-        itemsToUpdate.set(item._id.toString(), {
-          item,
-          newStatus: EItemStatus.ENDED,
-        });
-        if (item.isClosedBidding) {
-          sealedItemIdsJustEnded.push(item._id.toString());
-        }
-      });
-
-      // Update each document individually
-      const updatePromises = Array.from(itemsToUpdate.values()).map(({ item, newStatus }) => {
-        item.status = newStatus;
-        return item.save({ session: sess });
-      });
-
-      await Promise.all(updatePromises);
+    // Find ended auction IDs for orphaned-lot detection.
+    const endedAuctionIds = await Auction.distinct('_id', {
+      status: EAuctionStatus.ENDED,
     });
 
-    // After the transaction commits: decrypt sealed bids for items that just
-    // ended.  This unblocks winner determination and post-auction reporting.
-    // Each item is processed independently — one failure doesn't block others.
+    const [itemsToEnd, itemsToActivate, orphanedItems] = await Promise.all([
+      Item.find(
+        { endTime: { $lte: now }, status: { $ne: EItemStatus.ENDED } },
+        { _id: 1, isClosedBidding: 1 },
+      ),
+      Item.find(
+        { startTime: { $lte: now }, status: EItemStatus.NOT_BEGUN },
+        { _id: 1 },
+      ),
+      // Safety net: lots still ACTIVE/NOT_BEGUN whose auction is already ENDED.
+      Item.find(
+        {
+          auctionId: { $in: endedAuctionIds },
+          status: { $in: [EItemStatus.ACTIVE, EItemStatus.NOT_BEGUN] },
+        },
+        { _id: 1, isClosedBidding: 1 },
+      ),
+    ]);
+
+    const sealedItemIdsJustEnded: string[] = [];
+    const itemsToUpdate = new Map<string, { _id: any; newStatus: EItemStatus }>();
+
+    itemsToEnd.forEach(item => {
+      itemsToUpdate.set(item._id.toString(), { _id: item._id, newStatus: EItemStatus.ENDED });
+      if (item.isClosedBidding) sealedItemIdsJustEnded.push(item._id.toString());
+    });
+
+    itemsToActivate.forEach(item => {
+      itemsToUpdate.set(item._id.toString(), { _id: item._id, newStatus: EItemStatus.ACTIVE });
+    });
+
+    // Orphaned lots override any ACTIVE assignment above.
+    orphanedItems.forEach(item => {
+      itemsToUpdate.set(item._id.toString(), { _id: item._id, newStatus: EItemStatus.ENDED });
+      if (item.isClosedBidding && !sealedItemIdsJustEnded.includes(item._id.toString())) {
+        sealedItemIdsJustEnded.push(item._id.toString());
+      }
+    });
+
+    if (itemsToUpdate.size > 0) {
+      const bulkOps = Array.from(itemsToUpdate.values()).map(({ _id, newStatus }) => ({
+        updateOne: {
+          filter: { _id },
+          update: { $set: { status: newStatus } },
+        },
+      }));
+      await Item.bulkWrite(bulkOps);
+    }
+
+    // Decrypt sealed bids for items that just ended.
     if (sealedItemIdsJustEnded.length > 0) {
       await Promise.all(
         sealedItemIdsJustEnded.map((itemId) =>
@@ -659,31 +646,25 @@ async function trackItemStatus(): Promise<void> {
 
     // Auto-select the winner for every lot that just ended (all modes).
     // For sealed lots this runs after decryption so getWinningBid sees real amounts.
-    // Collect all items that transitioned to ENDED in this tick.
-    const allEndedItemIds: string[] = [];
-    // itemsToEnd was populated inside the transaction; collect via a targeted query.
     const justEndedItems = await Item.find(
-      { endTime: { $lte: new Date() }, status: EItemStatus.ENDED, winningBidder: { $exists: false } },
+      { endTime: { $lte: now }, status: EItemStatus.ENDED, winningBidder: { $exists: false } },
       { _id: 1 },
     );
-    justEndedItems.forEach((item) => allEndedItemIds.push(item._id.toString()));
 
-    if (allEndedItemIds.length > 0) {
+    if (justEndedItems.length > 0) {
       await Promise.all(
-        allEndedItemIds.map((itemId) =>
-          autoSelectWinner(itemId).catch((err: Error) =>
+        justEndedItems.map((item) =>
+          autoSelectWinner(item._id.toString()).catch((err: Error) =>
             console.error(
-              `[item-service] autoSelectWinner failed for item ${itemId}: ${err.message}`,
+              `[item-service] autoSelectWinner failed for item ${item._id}: ${err.message}`,
             ),
           ),
         ),
       );
     }
   } catch (error) {
-    console.error('Error in trackItemStatus transaction:', error);
+    console.error('Error in trackItemStatus:', error);
     throw error;
-  } finally {
-    await sess.endSession();
   }
 }
 
