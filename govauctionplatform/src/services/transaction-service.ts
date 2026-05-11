@@ -182,8 +182,8 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
     let amount = 0;
     // TODO: Check for "Registration Fee"
     if (auction.hasRegistrationFee) {
-      const purchase = await Transaction.findOne({ buyerId: item.winningBidder, auctionId: auction._id, transactionType: "PURCHASE" }, { _id: 1 });
-      if (purchase) {
+      const completedRegistration = await Transaction.findOne({ buyerId: item.winningBidder, auctionId: auction._id, transactionType: "PURCHASE", status: EPaymentStatus.COMPLETED }, { _id: 1 });
+      if (completedRegistration) {
         amount = winningBid.bidAmount;
       } else {
         amount = winningBid.bidAmount - item.reservePrice;
@@ -192,16 +192,33 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
       amount = winningBid.bidAmount - item.reservePrice;
     }
 
-    // Reuse any existing pending purchase transaction for this item + buyer rather
-    // than creating a duplicate on every modal open / page refresh.
-    const existingPurchase = await Transaction.findOne({
+    // Guard: if already paid, do not initiate another transaction.
+    const completedPurchase = await Transaction.findOne({
       itemId: item._id,
       buyerId: currentUser.id,
       transactionType: ETransactionType.PURCHASE,
-      status: EPaymentStatus.PENDING,
+      status: EPaymentStatus.COMPLETED,
+    });
+    if (completedPurchase) {
+      throw new InternalServerError('This item has already been paid for');
+    }
+
+    // Reuse any existing PENDING, FAILED, or CANCELLED purchase transaction rather
+    // than creating a duplicate on every modal open, page refresh, or retry.
+    // A FAILED/CANCELLED record is reset to PENDING so the same transaction ID is
+    // reused with a fresh PayGate link — one transaction record per item purchase.
+    let existingPurchase = await Transaction.findOne({
+      itemId: item._id,
+      buyerId: currentUser.id,
+      transactionType: ETransactionType.PURCHASE,
+      status: { $in: [EPaymentStatus.PENDING, EPaymentStatus.FAILED, EPaymentStatus.CANCELLED] },
     });
 
-    const savedPurchase = existingPurchase ?? await new Transaction({
+    if (existingPurchase && existingPurchase.status !== EPaymentStatus.PENDING) {
+      existingPurchase.status = EPaymentStatus.PENDING;
+    }
+
+    const savedPurchase = existingPurchase ?? new Transaction({
       auctionId: item.auctionId,
       currency: LOCAL_CURRENCY,
       transactionType: 'PURCHASE',
@@ -211,7 +228,7 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
       sellerId: item.sellerId,
       relatedTransaction: reservation._id,
       metadata: {}
-    } as ITransactionInput).save();
+    } as ITransactionInput);
 
     // Always re-initiate with PayGate — refreshes the payment link in case the
     // previous one expired (PayGate links are short-lived).
