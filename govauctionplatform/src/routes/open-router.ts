@@ -384,7 +384,7 @@ router.post(p.processSuccessfulPaymentFromPayGate, async (req: Request, res: Res
  */
 router.post(p.paygateReturn, async (req: Request, res: Response) => {
   try {
-    const { auctionId, itemId } = req.query as { auctionId?: string; itemId?: string };
+    const { auctionId, itemId, type } = req.query as { auctionId?: string; itemId?: string; type?: string };
     const { TRANSACTION_STATUS, RESULT_CODE } = req.body;
 
     let paymentParam = 'success';
@@ -395,7 +395,8 @@ router.post(p.paygateReturn, async (req: Request, res: Response) => {
     }
 
     if (auctionId && itemId) {
-      return res.redirect(`${SERVICE_URLS.clientURI}/auction/${auctionId}/lot/${itemId}?payment=${paymentParam}`);
+      const typeParam = type ? `&type=${type}` : '';
+      return res.redirect(`${SERVICE_URLS.clientURI}/auction/${auctionId}/lot/${itemId}?payment=${paymentParam}${typeParam}`);
     }
     return res.redirect(SERVICE_URLS.clientURI);
   } catch (error) {
