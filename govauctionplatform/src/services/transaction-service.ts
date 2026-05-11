@@ -801,7 +801,7 @@ async function createPendingPurchaseForWinner(itemId: string, winnerBidderId: st
       transactionType: ETransactionType.PURCHASE,
       itemId: item._id,
       amount,
-      buyerId: winnerBidderId,
+      buyerId: winnerBidderId as any,
       sellerId: item.sellerId,
       relatedTransaction: reservation._id,
       metadata: {},
