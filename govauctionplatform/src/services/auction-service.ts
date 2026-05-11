@@ -3,7 +3,7 @@ import { generateAuctionNumber, isBeforeStartDate, isStartDateBeforeEndDate } fr
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession, Types } from 'mongoose';
-import { MAX_GEO_DISTANCE_AUCTION, EAuctionSortType, EAuctionStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, languageType, SERVICE_URLS, ID_VERIFICATION_API_KEY, auctionInviteEmailTemplate } from "../globals";
+import { MAX_GEO_DISTANCE_AUCTION, EAuctionSortType, EAuctionStatus, EItemStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, languageType, SERVICE_URLS, ID_VERIFICATION_API_KEY, auctionInviteEmailTemplate } from "../globals";
 import { Auction, IAuction, IAuctionInput, IRequiredAttribute, IRequiredAttributeInput, RequiredAttribute } from "../models/auction-model";
 import * as axios from "axios";
 import categoryService from "./category-service";
@@ -799,8 +799,23 @@ async function trackAuctionStatus(): Promise<void> {
         auction.status = newStatus;
         return auction.save({ session: sess });
       });
-      
+
       await Promise.all(updatePromises);
+
+      // Cascade: end all non-ended lots that belong to auctions being ended.
+      // Lots may have individual endTimes later than their auction — when the
+      // auction closes those lots must close with it.
+      if (auctionsToEnd.length > 0) {
+        const endedAuctionIds = auctionsToEnd.map(a => a._id);
+        await Item.updateMany(
+          {
+            auctionId: { $in: endedAuctionIds },
+            status: { $in: [EItemStatus.ACTIVE, EItemStatus.NOT_BEGUN] },
+          },
+          { $set: { status: EItemStatus.ENDED } },
+          { session: sess },
+        );
+      }
     });
   } catch (error) {
     console.error('Error in trackAuctionStatus transaction:', error);
