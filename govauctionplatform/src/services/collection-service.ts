@@ -354,6 +354,7 @@ async function getCollections(conditions: Map<string, any>): Promise<ICollection
   }
 
   q.limit(_limit);
+  q.populate('itemId', 'title');
 
   return await q;
 }
