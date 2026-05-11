@@ -76,6 +76,8 @@ async function createCollection(
   }
 
   const otpCode = generateOtpCode();
+  // TODO: Remove this log before production release
+  console.info(`[collection-service] Created OTP for item ${item._id.toString()}: ${otpCode}`);
   const otpCodeHash = hashOtp(otpCode, item._id.toString());
 
   // Deadline = end of the last collection day (using collectionEndTime)
@@ -446,8 +448,10 @@ async function resendCollectionOtp(currentUser: IBidder, itemId: string): Promis
   }
 
   const newOtp = generateOtpCode();
-  collection.otpCodeHash = hashOtp(newOtp, itemId);
-  await collection.save();
+  const newOtpHash = hashOtp(newOtp, itemId);
+  // TODO: Remove this log before production release
+  console.info(`[collection-service] Resend OTP for item ${itemId}: ${newOtp}`);
+  await Collection.findByIdAndUpdate(collection._id, { $set: { otpCodeHash: newOtpHash } });
 
   const item = await itemService.getById(itemId, { auctionId: 1, sellerId: 1, winningBidder: 1, title: 1 });
   if (!item) {
@@ -462,7 +466,13 @@ async function resendCollectionOtp(currentUser: IBidder, itemId: string): Promis
     throw new NotFoundError('Auction not found');
   }
 
-  await sendCollectionOtp(item, auction, newOtp, collection.collectionDeadline);
+  // Fire-and-forget delivery — same pattern as createCollection.
+  // Delivery failure is logged but must not surface as an API error.
+  sendCollectionOtp(item, auction, newOtp, collection.collectionDeadline).catch((err: Error) => {
+    console.error(
+      `[collection-service] Failed to resend OTP for item ${itemId}: ${err.message}`
+    );
+  });
 }
 
 export default {
