@@ -703,11 +703,13 @@ async function getTransactions(currentUser: IAdmin | IBidder, conditions: Map<st
 
 /**
  * Tracks transactions that have been pending for more than 15 minutes.
- * 
- * This function updates transactions of type `RESERVATION` or `PURCHASE`
- * that were created at least 15 minutes ago and are still in the `PENDING` state,
- * marking them as `FAILED`.
- * 
+ *
+ * Only expires transactions where a PayGate session was actually initiated
+ * (identified by the presence of PAY_REQUEST_ID in metadata). Placeholder
+ * PENDING purchase transactions created automatically by the cron have no
+ * PAY_REQUEST_ID and are intentionally left alive until the winner initiates
+ * payment.
+ *
  * @throws {Error} If an error occurs during the database update operation.
  * @return {Promise<void>} A promise that resolves once the update is complete.
  */
@@ -718,6 +720,7 @@ async function trackTransactionStatus (): Promise<void> {
       {
         createdDate: { $lte: fifteenMinutesAgo },
         status: EPaymentStatus.PENDING,
+        'metadata.PAY_REQUEST_ID': { $exists: true },
         $or: [
           { transactionType: ETransactionType.RESERVATION },
           { transactionType: ETransactionType.PURCHASE }
@@ -728,6 +731,90 @@ async function trackTransactionStatus (): Promise<void> {
   } catch (error) {
     // Rethrow error
     throw error;
+  }
+}
+
+/**
+ * Auto-create a PENDING purchase transaction for a lot winner immediately
+ * after the cron assigns them. This ensures the transaction appears in the
+ * winner's list without requiring them to visit the lot page first.
+ *
+ * Idempotent — skips silently if any PURCHASE transaction already exists
+ * for this item + buyer combination.
+ *
+ * No PayGate session is initiated here. The winner uses "Retry Payment"
+ * from their transactions list to get a fresh payment link when ready.
+ *
+ * @param itemId
+ * @param winnerBidderId
+ */
+async function createPendingPurchaseForWinner(itemId: string, winnerBidderId: string): Promise<void> {
+  try {
+    // Idempotent: skip if any PURCHASE transaction already exists
+    const existing = await Transaction.findOne({
+      itemId,
+      buyerId: winnerBidderId,
+      transactionType: ETransactionType.PURCHASE,
+    }, { _id: 1 });
+    if (existing) return;
+
+    const [item, winningBid] = await Promise.all([
+      itemService.getById(itemId, { reservePrice: 1, sellerId: 1, auctionId: 1 }),
+      bidService.getWinningBid(itemId),
+    ]);
+    if (!item || !winningBid) return;
+
+    // Link to the winner's completed reservation
+    const reservation = await Transaction.findOne({
+      itemId,
+      buyerId: winnerBidderId,
+      transactionType: ETransactionType.RESERVATION,
+      status: EPaymentStatus.COMPLETED,
+    }, { _id: 1 });
+
+    if (!reservation) {
+      console.warn(
+        `[transaction-service] No completed reservation for item ${itemId}, winner ${winnerBidderId}. Cannot auto-create purchase transaction.`,
+      );
+      return;
+    }
+
+    const auction = await auctionService.getById(item.auctionId, { hasRegistrationFee: 1 });
+    if (!auction) return;
+
+    let amount = winningBid.bidAmount - item.reservePrice;
+    if (auction.hasRegistrationFee) {
+      const completedRegistration = await Transaction.findOne({
+        buyerId: winnerBidderId,
+        auctionId: auction._id,
+        transactionType: ETransactionType.PURCHASE,
+        status: EPaymentStatus.COMPLETED,
+      }, { _id: 1 });
+      if (completedRegistration) {
+        amount = winningBid.bidAmount;
+      }
+    }
+
+    const purchase = new Transaction({
+      auctionId: item.auctionId,
+      currency: LOCAL_CURRENCY,
+      transactionType: ETransactionType.PURCHASE,
+      itemId: item._id,
+      amount,
+      buyerId: winnerBidderId,
+      sellerId: item.sellerId,
+      relatedTransaction: reservation._id,
+      metadata: {},
+    } as ITransactionInput);
+
+    await purchase.save();
+    console.info(
+      `[transaction-service] Auto-created pending purchase for item ${itemId}, winner ${winnerBidderId}`,
+    );
+  } catch (error) {
+    console.error(
+      `[transaction-service] createPendingPurchaseForWinner failed for item ${itemId}: ${(error as Error).message}`,
+    );
   }
 }
 
@@ -872,5 +959,6 @@ export default {
   trackTransactionStatus,
   getById,
   initiateDisputeRefund,
-  initiateNonWinnerReservationRefunds
+  initiateNonWinnerReservationRefunds,
+  createPendingPurchaseForWinner,
 } as const;

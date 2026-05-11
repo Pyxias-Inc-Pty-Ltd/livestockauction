@@ -50,15 +50,20 @@ export function startCronJobs(): void {
     withCronLock('trackItemStatus', async () => {
       await itemService.trackItemStatus();
 
-      // After winners are assigned, initiate refunds for non-winning bidders.
+      // After winners are assigned: create pending purchase transactions for
+      // winners and initiate refunds for non-winning bidders.
       const items = await itemService.getItemsWithWinnerForRefund();
       await Promise.allSettled(
-        items.map((item) =>
+        items.flatMap((item) => [
+          transactionService.createPendingPurchaseForWinner(
+            item._id.toString(),
+            item.winningBidder!.toString(),
+          ),
           transactionService.initiateNonWinnerReservationRefunds(
             item._id.toString(),
             item.winningBidder!.toString(),
           ),
-        ),
+        ]),
       );
     });
   });
