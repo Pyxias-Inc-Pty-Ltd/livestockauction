@@ -1,10 +1,11 @@
 import { Bidder, IAdmin, IBidder, ISeller } from "../models/user-model";
 import { IEligibleBidder, IItem, IItemInput, Item } from "../models/item-model";
+import { Auction } from "../models/auction-model";
 import { formatBAITSAnimalEID, getAnimalBreedById, getAnimalByEID, isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
 import { ForbiddenError, InternalServerError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { Schema } from 'mongoose';
-import { EGenderType, EItemSortType, EItemStatus, ESortOrderType, languageType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { EAuctionStatus, EGenderType, EItemSortType, EItemStatus, ESortOrderType, languageType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
 import auctionService from "./auction-service";
 import { ClientSession, startSession } from 'mongoose';
 import bidService from "./bid-service";
@@ -578,7 +579,12 @@ async function trackItemStatus(): Promise<void> {
 
   try {
     await sess.withTransaction(async () => {
-      const [itemsToEnd, itemsToActivate] = await Promise.all([
+      // Find auctions that have already ended so we can close any orphaned lots.
+      const endedAuctionIds = await Auction.distinct('_id', {
+        status: EAuctionStatus.ENDED,
+      }).session(sess);
+
+      const [itemsToEnd, itemsToActivate, orphanedItems] = await Promise.all([
         Item.find({
           endTime: { $lte: new Date() },
           status: { $ne: EItemStatus.ENDED }
@@ -586,7 +592,13 @@ async function trackItemStatus(): Promise<void> {
         Item.find({
           startTime: { $lte: new Date() },
           status: EItemStatus.NOT_BEGUN
-        }).session(sess)
+        }).session(sess),
+        // Safety net: lots still ACTIVE/NOT_BEGUN whose auction is already ENDED.
+        // Catches lots whose individual endTime is later than the auction endTime.
+        Item.find({
+          auctionId: { $in: endedAuctionIds },
+          status: { $in: [EItemStatus.ACTIVE, EItemStatus.NOT_BEGUN] },
+        }).session(sess),
       ]);
 
       const itemsToUpdate = new Map<string, { item: any; newStatus: EItemStatus }>();
@@ -608,6 +620,17 @@ async function trackItemStatus(): Promise<void> {
           item,
           newStatus: EItemStatus.ACTIVE
         });
+      });
+
+      // Orphaned lots override any ACTIVE assignment above.
+      orphanedItems.forEach(item => {
+        itemsToUpdate.set(item._id.toString(), {
+          item,
+          newStatus: EItemStatus.ENDED,
+        });
+        if (item.isClosedBidding) {
+          sealedItemIdsJustEnded.push(item._id.toString());
+        }
       });
 
       // Update each document individually
