@@ -207,32 +207,38 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
       throw new InternalServerError('This item has already been paid for');
     }
 
-    // Reuse any existing PENDING, FAILED, or CANCELLED purchase transaction rather
-    // than creating a duplicate on every modal open, page refresh, or retry.
-    // A FAILED/CANCELLED record is reset to PENDING so the same transaction ID is
-    // reused with a fresh PayGate link — one transaction record per item purchase.
-    let existingPurchase = await Transaction.findOne({
+    // Reuse an existing PENDING/FAILED/CANCELLED transaction only if it has never
+    // been submitted to PayGate (no PAY_REQUEST_ID in metadata — e.g. the cron
+    // auto-created placeholder). If a prior PayGate session exists for that record,
+    // PayGate will reject a re-submission with the same reference ID, so we create
+    // a fresh transaction record with a new ID instead.
+    const existingPurchase = await Transaction.findOne({
       itemId: item._id,
       buyerId: currentUser.id,
       transactionType: ETransactionType.PURCHASE,
       status: { $in: [EPaymentStatus.PENDING, EPaymentStatus.FAILED, EPaymentStatus.CANCELLED] },
     });
 
-    if (existingPurchase && existingPurchase.status !== EPaymentStatus.PENDING) {
-      existingPurchase.status = EPaymentStatus.PENDING;
-    }
+    const existingHadPayGateSession = existingPurchase
+      && (existingPurchase.metadata as Map<string, string>).get('PAY_REQUEST_ID');
 
-    const savedPurchase = existingPurchase ?? new Transaction({
-      auctionId: item.auctionId,
-      currency: LOCAL_CURRENCY,
-      transactionType: 'PURCHASE',
-      itemId: item.id,
-      amount,
-      buyerId: currentUser.id,
-      sellerId: item.sellerId,
-      relatedTransaction: reservation._id,
-      metadata: {}
-    } as ITransactionInput);
+    const savedPurchase = (existingPurchase && !existingHadPayGateSession)
+      ? existingPurchase
+      : new Transaction({
+          auctionId: item.auctionId,
+          currency: LOCAL_CURRENCY,
+          transactionType: 'PURCHASE',
+          itemId: item.id,
+          amount,
+          buyerId: currentUser.id,
+          sellerId: item.sellerId,
+          relatedTransaction: reservation._id,
+          metadata: {}
+        } as ITransactionInput);
+
+    if (!savedPurchase.isNew && savedPurchase.status !== EPaymentStatus.PENDING) {
+      savedPurchase.status = EPaymentStatus.PENDING;
+    }
 
     // Always re-initiate with PayGate — refreshes the payment link in case the
     // previous one expired (PayGate links are short-lived).
