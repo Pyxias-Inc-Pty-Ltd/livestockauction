@@ -339,8 +339,11 @@ async function setWinningBidder(
     );
   }
 
-  item.winningBidder = input.bidderId as any;
-  return await item.save();
+  return await Item.findByIdAndUpdate(
+    item._id,
+    { $set: { winningBidder: input.bidderId } },
+    { new: true },
+  ) as IItem;
 }
 
 /**
@@ -383,8 +386,13 @@ async function autoSelectWinner(itemId: string): Promise<IItem | null> {
     return item;
   }
 
-  item.winningBidder = winningBid.userId as any;
-  return await item.save();
+  // Use findByIdAndUpdate to bypass full-document validation — items created
+  // before required fields were added (e.g. bidIncrement) would fail item.save().
+  return await Item.findByIdAndUpdate(
+    item._id,
+    { $set: { winningBidder: winningBid.userId } },
+    { new: true },
+  );
 }
 
 async function updateItemWithBid(item: IItem, newBidAmount: number, session: ClientSession): Promise<boolean> {
