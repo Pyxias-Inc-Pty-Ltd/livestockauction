@@ -646,8 +646,11 @@ async function trackItemStatus(): Promise<void> {
 
     // Auto-select the winner for every lot that just ended (all modes).
     // For sealed lots this runs after decryption so getWinningBid sees real amounts.
+    // Query all ENDED lots with no winner — intentionally omits endTime filter
+    // so lots force-ended by the auction cascade (whose individual endTime may
+    // still be in the future) are also processed.
     const justEndedItems = await Item.find(
-      { endTime: { $lte: now }, status: EItemStatus.ENDED, winningBidder: null },
+      { status: EItemStatus.ENDED, winningBidder: null },
       { _id: 1 },
     );
 
