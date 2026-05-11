@@ -3,12 +3,13 @@ import { generateAuctionNumber, isBeforeStartDate, isStartDateBeforeEndDate } fr
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession, Types } from 'mongoose';
-import { MAX_GEO_DISTANCE_AUCTION, EAuctionSortType, EAuctionStatus, EItemStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, languageType, SERVICE_URLS, ID_VERIFICATION_API_KEY, auctionInviteEmailTemplate } from "../globals";
+import { MAX_GEO_DISTANCE_AUCTION, EAuctionSortType, EAuctionStatus, EItemStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, languageType, SERVICE_URLS, ID_VERIFICATION_API_KEY, auctionInviteEmailTemplate, ETransactionType } from "../globals";
 import { Auction, IAuction, IAuctionInput, IRequiredAttribute, IRequiredAttributeInput, RequiredAttribute } from "../models/auction-model";
 import * as axios from "axios";
 import categoryService from "./category-service";
 import forumService from "./forum-service";
 import { Item } from "../models/item-model";
+import { Transaction } from "../models/transaction-model";
 
 /**
  * Add an auction.
@@ -527,6 +528,40 @@ async function getAuctionReport(auctionId: string | Schema.Types.ObjectId) {
       }
     ]);
 
+    // Refund transactions grouped by status
+    const refundMetrics = await Transaction.aggregate([
+      {
+        $match: {
+          auctionId: new Types.ObjectId(auctionId.toString()),
+          transactionType: ETransactionType.REFUND
+        }
+      },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+          total: { $sum: '$amount' }
+        }
+      }
+    ]);
+
+    // Reservation transactions grouped by status
+    const reservationMetrics = await Transaction.aggregate([
+      {
+        $match: {
+          auctionId: new Types.ObjectId(auctionId.toString()),
+          transactionType: ETransactionType.RESERVATION
+        }
+      },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+          total: { $sum: '$amount' }
+        }
+      }
+    ]);
+
     return {
       participantsByGenderAge,
       highestLowestBids,
@@ -534,7 +569,9 @@ async function getAuctionReport(auctionId: string | Schema.Types.ObjectId) {
       subtotalsByBreedSex,
       itemsPurchasedVsNotPurchased,
       grandTotal: grandTotal[0]?.total || 0,
-      sumOfEligibleBidders: sumOfEligibleBidders[0]?.totalEligibleBidders || 0
+      sumOfEligibleBidders: sumOfEligibleBidders[0]?.totalEligibleBidders || 0,
+      refundMetrics,
+      reservationMetrics
     };
   } catch (error) {
     // Rethrow error

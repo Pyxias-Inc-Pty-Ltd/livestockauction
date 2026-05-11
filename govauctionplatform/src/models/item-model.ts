@@ -35,6 +35,11 @@ export interface IItemMetadata {
   age?: number;
   power?: number;
   isOperational?: boolean;
+  birthType?: string;
+  parentMale?: string;
+  parentFemale?: string;
+  birthWeight?: number;
+  weaningWeight?: number;
 }
 
 export interface IEligibleBidder {
@@ -244,6 +249,26 @@ const schema = new Schema<IItem>({
     transmission: {
       type: String,
       trim: true
+    },
+    birthType: {
+      type: String,
+      trim: true
+    },
+    parentMale: {
+      type: String,
+      trim: true
+    },
+    parentFemale: {
+      type: String,
+      trim: true
+    },
+    birthWeight: {
+      type: Number,
+      min: 0
+    },
+    weaningWeight: {
+      type: Number,
+      min: 0
     },
     chassisNumber: {
       type: String,
