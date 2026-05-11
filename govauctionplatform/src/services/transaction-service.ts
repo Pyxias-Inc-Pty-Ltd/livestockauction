@@ -148,9 +148,13 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
       throw new NotFoundError('Token not found');
     }
 
-    // Check if the bidder is the winner
+    // If winningBidder not yet assigned (cron lag), attempt to assign it now.
     if (!item.winningBidder) {
-      throw new InternalServerError('Winning bidder not found');
+      const resolved = await itemService.autoSelectWinner(input.itemId);
+      if (!resolved?.winningBidder) {
+        throw new InternalServerError('Winning bidder not found');
+      }
+      item.winningBidder = resolved.winningBidder;
     }
 
     if (item.winningBidder.toString() !== currentUser.id.toString()) {
