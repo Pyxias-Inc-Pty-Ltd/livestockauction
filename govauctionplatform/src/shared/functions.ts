@@ -385,6 +385,12 @@ export function convertToPaygateFormat(
     NOTIFY_URL: string,
     encryptionKey: string
 ): string {
+    if (!PAYGATE_ID) {
+        throw new Error('PAYGATE_ID is not configured — add it to your .env file');
+    }
+    if (!encryptionKey) {
+        throw new Error('PAYGATE_ENCRYPTION_KEY is not configured — add it to your .env file');
+    }
     const amount = AMOUNT * 100;
     const transactionDate = luxon.DateTime.fromJSDate(TRANSACTION_DATE).toFormat('yyyy-LL-dd HH:mm:ss');
 
