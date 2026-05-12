@@ -10,7 +10,7 @@ import itemService from "./item-service";
 import { EPaymentStatus, ERefundReason, ESortOrderType, ETransactionSortType, ETransactionType, LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, MAX_LIST_LIMIT_NUMBER, PAYGATE_ENCRYPTION_KEY, PAYGATE_ID, SERVICE_URLS, transactionType, LOCAL_CURRENCY, DEFAULT_LANG, DEFAULT_PAYMENT_EMAIL, LOCALY_COUNTRY_ALPHA_3_CODE } from "../globals";
 import bidService from "./bid-service";
 import * as luxon from "luxon";
-import { generatePayGatePaymentURL, prefixWithZero, convertToPaygateFormat } from "../shared/functions";
+import { callPayGateInitiate, prefixWithZero, convertToPaygateFormat } from "../shared/functions";
 import tokenService from "./token-service";
 import auctionService from "./auction-service";
 import forumService from "./forum-service";
@@ -94,27 +94,10 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
     // Generate payment link using PayGate
     const formattedString = convertToPaygateFormat(PAYGATE_ID, savedReservation.id.toString(), item.reservePrice, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/paygateReturn?auctionId=${item.auctionId.toString()}&itemId=${item._id.toString()}&type=reservation`, savedReservation.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
 
-    const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
-      method: "POST",
-      body: formattedString,
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      }
-    });
+    const { paymentLink, payRequestId } = await callPayGateInitiate(formattedString);
 
-    if (!queryResponse.ok) {
-      throw new InternalServerError(`Failed to create payment link: ${queryResponse.status}`);
-    }
-
-    const textReponse = await queryResponse.text();
-    const paygateInitParams = new URLSearchParams(textReponse);
-
-    (savedReservation.metadata as Map<string, string>).set('paymentLink', generatePayGatePaymentURL(textReponse));
-
-    const payRequestId = paygateInitParams.get('PAY_REQUEST_ID');
-    if (payRequestId) {
-      (savedReservation.metadata as Map<string, string>).set('PAY_REQUEST_ID', payRequestId);
-    }
+    (savedReservation.metadata as Map<string, string>).set('paymentLink', paymentLink);
+    (savedReservation.metadata as Map<string, string>).set('PAY_REQUEST_ID', payRequestId);
 
     // Save payment transaction
     await savedReservation.save();
@@ -244,27 +227,10 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
     // previous one expired (PayGate links are short-lived).
     const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), savedPurchase.amount, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/paygateReturn?auctionId=${item.auctionId.toString()}&itemId=${item._id.toString()}&type=purchase`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
 
-    const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
-      method: "POST",
-      body: formattedString,
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      }
-    });
+    const { paymentLink, payRequestId } = await callPayGateInitiate(formattedString);
 
-    if (!queryResponse.ok) {
-      throw new InternalServerError(`Failed to create payment link: ${queryResponse.status}`);
-    }
-
-    const textReponse = await queryResponse.text();
-    const paygateInitParams = new URLSearchParams(textReponse);
-
-    (savedPurchase.metadata as Map<string, string>).set('paymentLink', generatePayGatePaymentURL(textReponse));
-
-    const payRequestId = paygateInitParams.get('PAY_REQUEST_ID');
-    if (payRequestId) {
-      (savedPurchase.metadata as Map<string, string>).set('PAY_REQUEST_ID', payRequestId);
-    }
+    (savedPurchase.metadata as Map<string, string>).set('paymentLink', paymentLink);
+    (savedPurchase.metadata as Map<string, string>).set('PAY_REQUEST_ID', payRequestId);
 
     await savedPurchase.save();
 
@@ -343,27 +309,10 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
     // Generate payment link using PayGate
     const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), item.buyoutPrice, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/paygateReturn?auctionId=${item.auctionId.toString()}&itemId=${item._id.toString()}&type=purchase`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
 
-    const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
-      method: "POST",
-      body: formattedString,
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      }
-    });
+    const { paymentLink, payRequestId } = await callPayGateInitiate(formattedString);
 
-    if (!queryResponse.ok) {
-      throw new InternalServerError(`Failed to create payment link: ${queryResponse.status}`);
-    }
-
-    const textReponse = await queryResponse.text();
-    const paygateInitParams = new URLSearchParams(textReponse);
-
-    (savedPurchase.metadata as Map<string, string>).set('paymentLink', generatePayGatePaymentURL(textReponse));
-
-    const payRequestId = paygateInitParams.get('PAY_REQUEST_ID');
-    if (payRequestId) {
-      (savedPurchase.metadata as Map<string, string>).set('PAY_REQUEST_ID', payRequestId);
-    }
+    (savedPurchase.metadata as Map<string, string>).set('paymentLink', paymentLink);
+    (savedPurchase.metadata as Map<string, string>).set('PAY_REQUEST_ID', payRequestId);
 
     await savedPurchase.save();
 

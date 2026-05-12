@@ -448,22 +448,56 @@ export function validatePaygateNotifyChecksum(body: Record<string, string>, encr
  * @throws {Error} If either PAY_REQUEST_ID or CHECKSUM is missing in the input string.
  */
 export function generatePayGatePaymentURL(baseString: string) {
-  // Define the base URL
   const baseUrl = `${SERVICE_URLS.paygateBaseURI}/process.trans`;
-
-  // Convert the base string into an object
   const params = new URLSearchParams(baseString);
-
-  // Extract required parameters
   const payRequestId = params.get("PAY_REQUEST_ID");
   const checksum = params.get("CHECKSUM");
 
-  // Construct the formatted URL
   if (payRequestId && checksum) {
     return `${baseUrl}?PAY_REQUEST_ID=${encodeURIComponent(payRequestId)}&CHECKSUM=${encodeURIComponent(checksum)}`;
   } else {
     throw new Error("Missing required parameters: PAY_REQUEST_ID or CHECKSUM");
   }
+}
+
+/**
+ * Calls the PayGate initiate.trans endpoint and parses the response.
+ * Checks for PayGate-level errors before extracting the payment link.
+ *
+ * @param formattedString - The URL-encoded request body produced by convertToPaygateFormat
+ * @returns {{ paymentLink: string, payRequestId: string }}
+ * @throws {Error} If the HTTP request fails or PayGate returns an error
+ */
+export async function callPayGateInitiate(formattedString: string): Promise<{ paymentLink: string, payRequestId: string }> {
+  const queryResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/initiate.trans`, {
+    method: "POST",
+    body: formattedString,
+    headers: { "Content-Type": "application/x-www-form-urlencoded" }
+  });
+
+  if (!queryResponse.ok) {
+    throw new Error(`PayGate initiate.trans returned HTTP ${queryResponse.status}`);
+  }
+
+  const textResponse = await queryResponse.text();
+  const params = new URLSearchParams(textResponse);
+
+  // PayGate returns an ERROR field on failure (e.g. invalid amount, bad credentials)
+  const payGateError = params.get("ERROR");
+  if (payGateError) {
+    throw new Error(`PayGate error: ${payGateError}`);
+  }
+
+  const payRequestId = params.get("PAY_REQUEST_ID");
+  const checksum = params.get("CHECKSUM");
+
+  if (!payRequestId || !checksum) {
+    throw new Error(`PayGate response missing PAY_REQUEST_ID or CHECKSUM. Raw response: ${textResponse}`);
+  }
+
+  const paymentLink = `${SERVICE_URLS.paygateBaseURI}/process.trans?PAY_REQUEST_ID=${encodeURIComponent(payRequestId)}&CHECKSUM=${encodeURIComponent(checksum)}`;
+
+  return { paymentLink, payRequestId };
 }
 
 /**
