@@ -597,6 +597,15 @@ async function getTransactions(currentUser: IAdmin | IBidder, conditions: Map<st
 
     if (currentUser.userType === "BIDDER") {
       q.where({ buyerId: currentUser._id });
+    } else if (currentUser.userType === "SELLER") {
+      // Sellers are auto-scoped to their own transactions unless an
+      // explicit buyerId filter is requested (e.g. by admin features).
+      if (!conditions.get('sellerId')) {
+        q.where({ sellerId: currentUser._id });
+      }
+      if (conditions.get('buyerId')) {
+        q.where({ buyerId: conditions.get('buyerId') });
+      }
     } else {
       if (conditions.get('buyerId')) {
         q.where({ buyerId: conditions.get('buyerId') });
