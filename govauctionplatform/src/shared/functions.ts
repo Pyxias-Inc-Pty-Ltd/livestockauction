@@ -391,7 +391,9 @@ export function convertToPaygateFormat(
     if (!encryptionKey) {
         throw new Error('PAYGATE_ENCRYPTION_KEY is not configured — add it to your .env file');
     }
-    const amount = AMOUNT * 100;
+    // Convert to cents (integer) — Math.round avoids floating-point issues
+    // e.g., 100.55 * 100 = 10055.000000000002 → Math.round → 10055
+    const amount = Math.round(AMOUNT * 100);
     const transactionDate = luxon.DateTime.fromJSDate(TRANSACTION_DATE).toFormat('yyyy-LL-dd HH:mm:ss');
 
     // Create the checksum string by concatenating the input values
