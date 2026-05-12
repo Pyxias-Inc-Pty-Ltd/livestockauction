@@ -40,7 +40,7 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
     }
 
     // Find auction
-    const auction = await auctionService.getById(item.auctionId, { participationType: 1, isInviteOnly: 1, invitedBidders: 1 });
+    const auction = await auctionService.getById(item.auctionId, { participationType: 1, isInviteOnly: 1, invitedBidders: 1, hasRegistrationFee: 1, registrationFee: 1 });
 
     // Check if exists
     if (!auction) {
@@ -74,13 +74,19 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
     const now = luxon.DateTime.now().setZone(currentUser.tz);
     const endOfDate = now.endOf('day');
 
+    // Determine reservation amount: use auction-level registration fee when set,
+    // otherwise fall back to the item's reserve price.
+    const reservationAmount = auction.hasRegistrationFee
+      ? (auction.registrationFee || 0)
+      : item.reservePrice;
+
     // Create payment transaction
     const paymentInput: ITransactionInput = {
       auctionId: item.auctionId,
       currency: LOCAL_CURRENCY,
       transactionType: 'RESERVATION',
       itemId: item.id,
-      amount: item.reservePrice,
+      amount: reservationAmount,
       buyerId: currentUser.id,
       sellerId: item.sellerId,
       metadata: {}
@@ -92,7 +98,7 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
     const savedReservation = await newReservation.save();
 
     // Generate payment link using PayGate
-    const formattedString = convertToPaygateFormat(PAYGATE_ID, savedReservation.id.toString(), item.reservePrice, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/paygateReturn?auctionId=${item.auctionId.toString()}&itemId=${item._id.toString()}&type=reservation`, savedReservation.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
+    const formattedString = convertToPaygateFormat(PAYGATE_ID, savedReservation.id.toString(), savedReservation.amount, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/paygateReturn?auctionId=${item.auctionId.toString()}&itemId=${item._id.toString()}&type=reservation`, savedReservation.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
 
     const { paymentLink, payRequestId } = await callPayGateInitiate(formattedString);
 
