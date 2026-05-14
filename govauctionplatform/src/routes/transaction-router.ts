@@ -161,10 +161,13 @@ router.get(p.hasCompletedReservation, requirePermission(EPermission.TRANSACTION_
       })
     }).required();
     Joi.assert(req.query, schema);
+    console.log('[hasCompletedReservation] req.user._id:', req.user?._id, 'type:', typeof req.user?._id);
+    console.log('[hasCompletedReservation] req.query.itemId:', req.query.itemId, 'type:', typeof req.query.itemId);
     const hasReservation = await transactionService.pollPaidTransaction(req.user as IBidder, {
       itemId: req.query.itemId as string,
       transactionType: ETransactionType.RESERVATION,
     });
+    console.log('[hasCompletedReservation] returning hasReservation:', hasReservation);
     return res.status(OK).json({ hasReservation });
   } catch (error) {
     throw error;

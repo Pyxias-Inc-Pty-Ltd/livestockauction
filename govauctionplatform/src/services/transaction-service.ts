@@ -338,8 +338,27 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
  */
 async function pollPaidTransaction (currentUser: IBidder, input: { itemId: string, transactionType: transactionType }): Promise<boolean> {
   try {
-    const transaction = await Transaction.findOne({ transactionType: input.transactionType, itemId: input.itemId, buyerId: currentUser._id, status: EPaymentStatus.COMPLETED }, { _id: 1 });
+    const query = { transactionType: input.transactionType, itemId: input.itemId, buyerId: currentUser._id, status: EPaymentStatus.COMPLETED };
+    console.log('[pollPaidTransaction] query:', JSON.stringify(query));
+    console.log('[pollPaidTransaction] currentUser._id:', currentUser._id, 'type:', typeof currentUser._id);
 
+    // Also check: are there ANY transactions for this user+item, regardless of status?
+    const anyTx = await Transaction.findOne({ transactionType: input.transactionType, itemId: input.itemId, buyerId: currentUser._id });
+    if (anyTx) {
+      console.log('[pollPaidTransaction] found transaction for user+item:', {
+        id: anyTx._id,
+        status: anyTx.status,
+        itemId: anyTx.itemId,
+        buyerId: anyTx.buyerId,
+        amount: anyTx.amount,
+      });
+    } else {
+      console.log('[pollPaidTransaction] no transaction found for user+item at all');
+    }
+
+    const transaction = await Transaction.findOne(query, { _id: 1 });
+
+    console.log('[pollPaidTransaction] result:', transaction ? 'COMPLETED reservation found' : 'no completed reservation');
     return transaction ? true : false;
 
   } catch (error) {
