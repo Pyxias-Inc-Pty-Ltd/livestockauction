@@ -58,18 +58,20 @@ export default {
     return await bidService.retractBid(bidder, data);
   },
 
-  joinBiddingRoom: function (socket: any, data: string): undefined {
+  joinBiddingRoom: function (socket: any, data: string | { lotId: string }): undefined {
     try {
-      socket.join(`${data}-bid`);
+      const lotId = typeof data === 'string' ? data : data.lotId;
+      socket.join(`${lotId}-bid`);
       return;
     } catch (error) {
       throw error;
     }
   },
 
-  joinBiddingRoomChat: function (socket: any, data: string): undefined {
+  joinBiddingRoomChat: function (socket: any, data: string | { lotId: string }): undefined {
     try {
-      socket.join(`${data}-chat`);
+      const chatTarget = typeof data === 'string' ? data : data.lotId;
+      socket.join(`${chatTarget}-chat`);
       return;
     } catch (error) {
       throw error;
