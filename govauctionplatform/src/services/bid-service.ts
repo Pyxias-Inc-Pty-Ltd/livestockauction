@@ -72,18 +72,30 @@ async function _runBidTransaction(
       // Fetch only the fields needed for these checks to keep the read cheap.
       const auction = await auctionService.getById(item.auctionId, {
         isInviteOnly: 1,
+        hasRegistrationFee: 1,
+        globallyEligibleBidders: 1,
         participationType: 1,
         sectorType: 1,
         participantsWithBiddingNumbers: 1,
       });
       if (!auction) throw new NotFoundError('Auction not found');
 
-      // ── Eligibility (only enforced for invite-only auctions) ──────────────────
-      if (
-        auction.isInviteOnly &&
-        !item.eligibleBidders.includes(currentUser.id.toString())
-      ) {
+      // ── Eligibility ────────────────────────────────────────────────────────────
+      // Two independent gates:
+      //   1. Invite-only auctions — user must be explicitly listed on the item
+      //   2. Payment gate — user must have paid the reserve (per-lot) or
+      //      registration fee (auction-wide).  Both payment paths add the user
+      //      to either item.eligibleBidders or auction.globallyEligibleBidders.
+      const userId = currentUser.id.toString();
+      const inItemEligible = item.eligibleBidders?.includes(userId);
+      const inGlobalEligible = auction.globallyEligibleBidders?.includes(userId);
+
+      if (auction.isInviteOnly && !inItemEligible) {
         throw new ForbiddenError('You are not eligible to bid on this lot');
+      }
+
+      if (!inItemEligible && !inGlobalEligible) {
+        throw new ForbiddenError('You must pay the reserve price before bidding');
       }
 
       // ── Status ────────────────────────────────────────────────────────────────
