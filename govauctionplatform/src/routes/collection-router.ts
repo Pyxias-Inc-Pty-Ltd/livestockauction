@@ -6,7 +6,7 @@ import { requirePermission, requireAnyPermission } from '../shared/middleware';
 import { IAdmin, IBidder, IUser } from '../models/user-model';
 import collectionService from '../services/collection-service';
 import transactionService from '../services/transaction-service';
-import { ECollectionStatus, EPermission, ESortOrderType } from '../globals';
+import { ECollectionStatus, EPermission, ESortOrderType, EUserType } from '../globals';
 
 // Constants
 const router = Router();
@@ -200,6 +200,9 @@ router.get(p.getCollections, requireAnyPermission(EPermission.COLLECTION_READ, E
     const isScopedToOwn = !req.permissions.includes(EPermission.COLLECTION_READ)
       && req.permissions.includes(EPermission.COLLECTION_READ_OWN);
 
+    const user = req.user as IUser;
+    const isSeller = user?.userType === EUserType.SELLER;
+
     const conditions = new Map<string, any>();
     conditions.set('limit', parseInt(limit as string));
     conditions.set('sortOrder', sortOrder);
@@ -209,12 +212,18 @@ router.get(p.getCollections, requireAnyPermission(EPermission.COLLECTION_READ, E
 
     if (isScopedToOwn) {
       // Force buyerId to the authenticated user's own ID
-      conditions.set('buyerId', (req.user as IUser)._id);
+      conditions.set('buyerId', user._id);
     } else if (buyerId) {
       conditions.set('buyerId', buyerId);
     }
 
-    if (sellerId) conditions.set('sellerId', sellerId);
+    // Sellers see only their own collections; admins can filter by any sellerId.
+    if (isSeller) {
+      conditions.set('sellerId', user._id);
+    } else if (sellerId) {
+      conditions.set('sellerId', sellerId);
+    }
+
     if (auctionId) conditions.set('auctionId', auctionId);
     if (status) conditions.set('status', status);
 
