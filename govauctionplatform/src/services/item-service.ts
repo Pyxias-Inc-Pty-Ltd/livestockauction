@@ -353,9 +353,16 @@ async function setWinningBidder(
     );
   }
 
+  // For manual-bid (livestream) lots, awarding the winner also ends the lot.
+  // Timed lots are already ENDED by the cron before this point.
+  const update: any = { winningBidder: input.bidderId };
+  if (item.isBidIncrementedManually) {
+    update.status = EItemStatus.ENDED;
+  }
+
   return await Item.findByIdAndUpdate(
     item._id,
-    { $set: { winningBidder: input.bidderId } },
+    { $set: update },
     { new: true },
   ) as IItem;
 }
