@@ -1,8 +1,9 @@
 import { Bidder, IAdmin, IBidder, ISeller } from "../models/user-model";
 import { IEligibleBidder, IItem, IItemInput, Item } from "../models/item-model";
+import { Bid } from "../models/bid-model";
 import { Auction } from "../models/auction-model";
 import { formatBAITSAnimalEID, getAnimalBreedById, getAnimalByEID, isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
-import { ForbiddenError, InternalServerError, NotFoundError } from "../shared/errors";
+import { ForbiddenError, InternalServerError, NotFoundError, BadRequestError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { Schema } from 'mongoose';
 import { EAuctionStatus, EGenderType, EItemSortType, EItemStatus, ESortOrderType, languageType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
@@ -195,6 +196,16 @@ async function setNewBidAmountManually(input: { itemId: string | Schema.Types.Ob
       throw new ForbiddenError('Bid amount can not be set manually on this item');
     }
 
+    // Guard: the call price must be strictly higher than the highest accepted bid.
+    const highestBid = await Bid.findOne({ itemId: input.itemId, isRetracted: false })
+      .sort({ bidAmount: -1 })
+      .select('bidAmount')
+      .lean();
+    const maxBid = highestBid?.bidAmount ?? 0;
+    if (input.amount <= maxBid) {
+      throw new BadRequestError(`Call price must be higher than the highest bid (${maxBid})`);
+    }
+
     item.manualBidAmount = input.amount;
 
     return await item.save();
@@ -319,7 +330,10 @@ async function setWinningBidder(
   const item = await getById(input.itemId);
   if (!item) throw new NotFoundError('Item not found');
 
-  if (item.status !== EItemStatus.ENDED) {
+  // Manual-bid (livestream) lots are seller-controlled — allow awarding
+  // the winner as soon as the seller decides bidding is over, without
+  // waiting for the cron to transition status to ENDED.
+  if (!item.isBidIncrementedManually && item.status !== EItemStatus.ENDED) {
     throw new ForbiddenError('Winner can only be set after the lot has ended');
   }
 
