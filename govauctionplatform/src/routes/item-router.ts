@@ -188,7 +188,11 @@ router.post(p.createItem, requirePermission(EPermission.LOT_CREATE), async (req:
         chassisNumber: Joi.string(),
         registrationNumber: Joi.string(),
         colour: Joi.string(),
-        isOperational: Joi.boolean()
+        isOperational: Joi.boolean(),
+        plotNumber: Joi.string(),
+        plotSize: Joi.number().min(0),
+        locationText: Joi.string(),
+        titleDeedOrTribalLeaseNumber: Joi.string(),
       }).required().messages({
         'any.required': '"metadata" is a required field'
       }),
