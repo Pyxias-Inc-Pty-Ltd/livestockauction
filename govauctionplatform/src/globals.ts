@@ -548,7 +548,10 @@ export enum ESocketEventCode {
   SEALED_BID_ACCEPTED = "e:19",
   // Emitted to the bidder's private socket room with the final outcome of
   // their queued bid: { status: 'accepted' | 'rejected', bidId?, error? }.
-  BID_RESULT = "e:20"
+  BID_RESULT = "e:20",
+  // Emitted to everyone in a bid room when a bidder joins or leaves.
+  // Payload: { count: number } — the current number of connected bidders.
+  AUDIENCE_UPDATED = "e:21"
 }
 
 export enum EProductStatus {

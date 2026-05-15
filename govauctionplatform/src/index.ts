@@ -51,16 +51,30 @@ io.use(async (socket: any, next: any) => {
 
 const onConnection = (socket: Socket) => {
   console.log('a user connected: ', socket.id);
-  socket.on(ESocketEventCode.JOIN_BIDDING_ROOM, function (data, cb) {
+  socket.on(ESocketEventCode.JOIN_BIDDING_ROOM, async function (data, cb) {
     try {
       console.log("ESocketEventCode.JOIN_BIDDING_ROOM: ", data);
       bidHandler.joinBiddingRoom(socket, data);
       cb({ status: OK });
+      // Broadcast updated connected-bidder count to everyone in the room.
+      const room = `${data.lotId}-bid`;
+      const sockets = await io.in(room).fetchSockets();
+      io.in(room).emit(ESocketEventCode.AUDIENCE_UPDATED, { count: sockets.length });
     } catch (error) {
       if (error instanceof CustomError) {
         cb({ status: error.HttpStatus, msg: error.message });
       } else {
         cb({ status: INTERNAL_SERVER_ERROR });
+      }
+    }
+  });
+
+  socket.on('disconnecting', async () => {
+    for (const room of socket.rooms) {
+      if (room.endsWith('-bid')) {
+        const sockets = await io.in(room).fetchSockets();
+        // Subtract 1 because this socket is still counted in the room during 'disconnecting'.
+        io.in(room).emit(ESocketEventCode.AUDIENCE_UPDATED, { count: sockets.length - 1 });
       }
     }
   });
