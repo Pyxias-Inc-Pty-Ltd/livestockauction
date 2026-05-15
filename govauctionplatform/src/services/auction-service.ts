@@ -708,9 +708,24 @@ async function updateAuction(currentUser: ISeller, auctionId: string, input: Par
       ? { status: EAuctionStatus.NOT_BEGUN }
       : {};
 
+    // When disabling the registration fee, remove the stale fee amount so it
+    // cannot be referenced in downstream payment/transaction workflows.
+    const unsetFields: Record<string, ''> = {};
+    if (input.hasRegistrationFee === false) {
+      delete (input as any).registrationFee;
+      unsetFields.registrationFee = '';
+    }
+
+    const updateDoc: Record<string, any> = {
+      $set: { ...input, ...publishedStatusReset, ...statusReset },
+    };
+    if (Object.keys(unsetFields).length > 0) {
+      updateDoc.$unset = unsetFields;
+    }
+
     const updatedAuction = await Auction.findByIdAndUpdate(
       auctionId,
-      { ...input, ...publishedStatusReset, ...statusReset },
+      updateDoc,
       { new: true }
     ).select('-__v -globallyEligibleBidders');
 
