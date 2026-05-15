@@ -247,7 +247,7 @@ router.put(p.updateItem, SellerOnly(), async (req: Request, res: Response) => {
 /**
  * Set the winning bidder
  */
-router.put(p.setWinningBidder, async (req: Request, res: Response) => {
+router.put(p.setWinningBidder, requirePermission(EPermission.LOT_MANAGE), async (req: Request, res: Response) => {
   try {
     const schema = Joi.object().keys({
       itemId: mongoIdValidation.required().messages({
