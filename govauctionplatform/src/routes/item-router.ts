@@ -184,6 +184,7 @@ router.post(p.createItem, requirePermission(EPermission.LOT_CREATE), async (req:
         age: Joi.number().min(0),
         engineNumber: Joi.string(),
         transmission: Joi.string(),
+        fuelType: Joi.string(),
         chassisNumber: Joi.string(),
         registrationNumber: Joi.string(),
         colour: Joi.string(),
