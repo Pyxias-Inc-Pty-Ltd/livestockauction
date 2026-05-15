@@ -36,6 +36,10 @@ export interface IItemMetadata {
   age?: number;
   power?: number;
   isOperational?: boolean;
+  plotNumber?: string;
+  plotSize?: number;
+  locationText?: string;
+  titleDeedOrTribalLeaseNumber?: string;
   birthType?: string;
   parentMale?: string;
   parentFemale?: string;
@@ -312,6 +316,22 @@ const schema = new Schema<IItem>({
     },
     isOperational: {
       type: Boolean
+    },
+    plotNumber: {
+      type: String,
+      trim: true
+    },
+    plotSize: {
+      type: Number,
+      min: 0
+    },
+    locationText: {
+      type: String,
+      trim: true
+    },
+    titleDeedOrTribalLeaseNumber: {
+      type: String,
+      trim: true
     }
   }
 }, {
