@@ -32,6 +32,7 @@ jest.mock('../../src/shared/redis', () => ({ redisConnection: {} }));
 jest.mock('../../src/shared/bid-lock', () => ({
   acquireBidLock: jest.fn(),
   releaseBidLock: jest.fn(),
+  acquireBidLockWithWait: jest.fn(),
 }));
 
 jest.mock('../../src/services/bid-service', () => ({
@@ -191,26 +192,22 @@ describe('bid-worker', () => {
 
       const result = await runJob(makeJob());
 
-      // Correct service called
       expect(bidService.createOpenBid).toHaveBeenCalledTimes(1);
       expect(bidService.createLivestreamBid).not.toHaveBeenCalled();
       expect(bidService.createSealedBid).not.toHaveBeenCalled();
 
-      // UPDATE_BID_AMOUNT → item bid room
       const roomEmit = emittedEvents().find(
         (e) => e.room === `${itemId.toHexString()}-bid` && e.event === ESocketEventCode.UPDATE_BID_AMOUNT,
       );
       expect(roomEmit).toBeDefined();
       expect(roomEmit!.args[0]).toMatchObject({ newPrice: bid.bidAmount });
 
-      // BID_RESULT → bidder socket room
-      const socketEmit = emittedEvents().find(
+      const bidderEmit = emittedEvents().find(
         (e) => e.room === SOCKET_ID && e.event === ESocketEventCode.BID_RESULT,
       );
-      expect(socketEmit).toBeDefined();
-      expect(socketEmit!.args[0]).toMatchObject({ status: 'accepted', bidId: bid.id.toString() });
+      expect(bidderEmit).toBeDefined();
+      expect(bidderEmit!.args[0]).toMatchObject({ status: 'accepted', bidId: bid.id.toString() });
 
-      // Returned job result
       expect(result).toMatchObject({ bidId: bid.id.toString(), mode: 'open' });
     });
   });
@@ -249,14 +246,12 @@ describe('bid-worker', () => {
       expect(bidService.createOpenBid).not.toHaveBeenCalled();
       expect(bidService.createLivestreamBid).not.toHaveBeenCalled();
 
-      // SEALED_BID_ACCEPTED has no payload (no bid amount leaked)
       const sealedEmit = emittedEvents().find(
         (e) => e.room === `${itemId.toHexString()}-bid` && e.event === ESocketEventCode.SEALED_BID_ACCEPTED,
       );
       expect(sealedEmit).toBeDefined();
       expect(sealedEmit!.args).toHaveLength(0);
 
-      // Must NOT emit UPDATE_BID_AMOUNT for sealed mode
       const amountEmit = emittedEvents().find((e) => e.event === ESocketEventCode.UPDATE_BID_AMOUNT);
       expect(amountEmit).toBeUndefined();
 
@@ -275,7 +270,6 @@ describe('bid-worker', () => {
         `Bid lock for item ${itemId.toHexString()} is held`,
       );
 
-      // No BID_RESULT emitted — client keeps waiting
       expect(emittedEvents().filter((e) => e.event === ESocketEventCode.BID_RESULT)).toHaveLength(0);
     });
 
@@ -311,11 +305,11 @@ describe('bid-worker', () => {
 
       await expect(runJob(makeJob())).rejects.toBeInstanceOf(UnrecoverableError);
 
-      const socketEmit = emittedEvents().find(
+      const bidderEmit = emittedEvents().find(
         (e) => e.room === SOCKET_ID && e.event === ESocketEventCode.BID_RESULT,
       );
-      expect(socketEmit).toBeDefined();
-      expect(socketEmit!.args[0]).toMatchObject({
+      expect(bidderEmit).toBeDefined();
+      expect(bidderEmit!.args[0]).toMatchObject({
         status: 'rejected',
         error: 'Not eligible to bid on this item',
       });
@@ -331,24 +325,23 @@ describe('bid-worker', () => {
         runJob(makeJob({ bidderId: missingBidderId })),
       ).rejects.toBeInstanceOf(UnrecoverableError);
 
-      const socketEmit = emittedEvents().find(
+      const bidderEmit = emittedEvents().find(
         (e) => e.room === SOCKET_ID && e.event === ESocketEventCode.BID_RESULT,
       );
-      expect(socketEmit).toBeDefined();
-      expect(socketEmit!.args[0]).toMatchObject({ status: 'rejected' });
+      expect(bidderEmit).toBeDefined();
+      expect(bidderEmit!.args[0]).toMatchObject({ status: 'rejected' });
     });
   });
 
   describe('NotFoundError — item does not exist in DB', () => {
     it('emits BID_RESULT rejected and throws UnrecoverableError', async () => {
-      // No item seeded — worker throws NotFoundError('Item not found')
       await expect(runJob(makeJob())).rejects.toBeInstanceOf(UnrecoverableError);
 
-      const socketEmit = emittedEvents().find(
+      const bidderEmit = emittedEvents().find(
         (e) => e.room === SOCKET_ID && e.event === ESocketEventCode.BID_RESULT,
       );
-      expect(socketEmit).toBeDefined();
-      expect(socketEmit!.args[0]).toMatchObject({ status: 'rejected' });
+      expect(bidderEmit).toBeDefined();
+      expect(bidderEmit!.args[0]).toMatchObject({ status: 'rejected' });
     });
   });
 
@@ -362,7 +355,6 @@ describe('bid-worker', () => {
 
       await expect(runJob(makeJob())).rejects.toBe(networkErr);
 
-      // No BID_RESULT — client shows "pending" until a retry succeeds
       expect(emittedEvents().filter((e) => e.event === ESocketEventCode.BID_RESULT)).toHaveLength(0);
     });
   });
