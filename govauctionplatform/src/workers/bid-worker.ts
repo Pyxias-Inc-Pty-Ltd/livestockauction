@@ -1,7 +1,7 @@
 import { Job, UnrecoverableError, Worker } from 'bullmq';
-import { Server } from 'socket.io';
 import { redisConnection } from '../shared/redis';
 import { acquireBidLock, releaseBidLock } from '../shared/bid-lock';
+import { socketEmitter } from '../shared/socket-emitter';
 import { BidJobData, BidJobResult, BID_QUEUE_NAME } from '../queues/bid-queue';
 import bidService from '../services/bid-service';
 import { Item } from '../models/item-model';
@@ -11,13 +11,12 @@ import { ESocketEventCode } from '../globals';
 import { ForbiddenError, NotFoundError } from '../shared/errors';
 
 /**
- * Start the bid worker, injecting the Socket.io server so the worker can
- * broadcast results directly — no Redis adapter required for single-instance
- * deployments.
+ * Start the bid worker.
  *
- * Scaling note: if this service is ever deployed with multiple replicas, swap
- * the `io.to(room).emit(...)` calls for `@socket.io/redis-emitter` and add the
- * `@socket.io/redis-adapter` to the Socket.io server setup.
+ * Socket.io events are published via the Redis emitter (`socketEmitter`) rather
+ * than a local `Server` reference.  The `@socket.io/redis-adapter` attached to
+ * every server instance subscribes to the same Redis channel, so events reach
+ * clients regardless of which instance they are connected to.
  *
  * Error handling:
  *  - ForbiddenError / NotFoundError → business logic failure, no retry.
@@ -26,10 +25,10 @@ import { ForbiddenError, NotFoundError } from '../shared/errors';
  *  - Anything else (MongoNetworkError, transient Redis blip, etc.) → re-throw
  *    so BullMQ retries with exponential back-off.  The bidder's UI should show
  *    a "pending" spinner until BID_RESULT arrives.
- *
- * @param io  The running Socket.io server instance.
+ *  - Permanent failure after all retries → worker.on('failed') notifies the
+ *    bidder so they are never left without feedback.
  */
-export function startBidWorker(io: Server): Worker<BidJobData, BidJobResult> {
+export function startBidWorker(): Worker<BidJobData, BidJobResult> {
   const worker = new Worker<BidJobData, BidJobResult>(
     BID_QUEUE_NAME,
     async (job: Job<BidJobData>): Promise<BidJobResult> => {
@@ -97,19 +96,19 @@ export function startBidWorker(io: Server): Worker<BidJobData, BidJobResult> {
         // ── Broadcast to item room ────────────────────────────────────────────
         if (mode === 'sealed') {
           // Mode 3: never reveal amount — only signal that bid count grew.
-          io.to(room).emit(ESocketEventCode.SEALED_BID_ACCEPTED);
+          socketEmitter.to(room).emit(ESocketEventCode.SEALED_BID_ACCEPTED);
         } else {
           // Mode 1 & 2: include full bid data so clients can update their store
           // directly without making a separate HTTP fetchBids call.
           const bidData = bid.toJSON();
-          io.to(room).emit(ESocketEventCode.UPDATE_BID_AMOUNT, {
+          socketEmitter.to(room).emit(ESocketEventCode.UPDATE_BID_AMOUNT, {
             newPrice: bid.bidAmount,
             bid: bidData,
           });
 
           // Also notify the bidder's private room with the bid data — lets them
           // replace their optimistic entry without an extra HTTP round trip.
-          io.to(socketId).emit(ESocketEventCode.BID_RESULT, {
+          socketEmitter.to(socketId).emit(ESocketEventCode.BID_RESULT, {
             status: 'accepted',
             bidId: bid.id.toString(),
             bid: bidData,
@@ -118,7 +117,7 @@ export function startBidWorker(io: Server): Worker<BidJobData, BidJobResult> {
 
         // ── Notify bidder of success for sealed mode ──────────────────────────
         if (mode === 'sealed') {
-          io.to(socketId).emit(ESocketEventCode.BID_RESULT, {
+          socketEmitter.to(socketId).emit(ESocketEventCode.BID_RESULT, {
             status: 'accepted',
             bidId: bid.id.toString(),
           });
@@ -129,13 +128,12 @@ export function startBidWorker(io: Server): Worker<BidJobData, BidJobResult> {
       } catch (error: any) {
         if (error instanceof ForbiddenError || error instanceof NotFoundError) {
           // Business logic error — notify bidder and stop retrying.
-          io.to(socketId).emit(ESocketEventCode.BID_RESULT, {
+          socketEmitter.to(socketId).emit(ESocketEventCode.BID_RESULT, {
             status: 'rejected',
             error: error.message,
           });
 
-          // Append BID_REJECTED audit event.  We do a best-effort lookup of
-          // auctionId — if the item doesn't exist, use a zero ObjectId sentinel.
+          // Append BID_REJECTED audit event.
           const rejectedItem = await Item.findById(input.itemId, { auctionId: 1, isBidIncrementedManually: 1, isClosedBidding: 1 }).catch(() => null);
           const rejectionMode: BidJobResult['mode'] = rejectedItem?.isClosedBidding
             ? 'sealed'
@@ -177,10 +175,18 @@ export function startBidWorker(io: Server): Worker<BidJobData, BidJobResult> {
   );
 
   worker.on('failed', (job, err) => {
-    if (job) {
-      console.error(
-        `[bid-worker] Job ${job.id} failed (attempt ${job.attemptsMade}/${job.opts.attempts ?? '?'}): ${err.message}`,
-      );
+    if (!job) return;
+    console.error(
+      `[bid-worker] Job ${job.id} failed (attempt ${job.attemptsMade}/${job.opts.attempts ?? '?'}): ${err.message}`,
+    );
+    // UnrecoverableError means the bidder was already notified inside the
+    // processor. For everything else — lock contention or transient infra
+    // failures — notify them now so they are never left without feedback.
+    if (!(err instanceof UnrecoverableError)) {
+      socketEmitter.to(job.data.socketId).emit(ESocketEventCode.BID_RESULT, {
+        status: 'rejected',
+        error: 'Your bid could not be processed due to high demand. Please try again.',
+      });
     }
   });
 
