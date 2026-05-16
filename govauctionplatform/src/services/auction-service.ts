@@ -3,13 +3,13 @@ import { generateAuctionNumber, isBeforeStartDate, isStartDateBeforeEndDate } fr
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession, Types } from 'mongoose';
-import { MAX_GEO_DISTANCE_AUCTION, EAuctionSortType, EAuctionStatus, EItemStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, languageType, SERVICE_URLS, ID_VERIFICATION_API_KEY, auctionInviteEmailTemplate, ETransactionType } from "../globals";
+import { MAX_GEO_DISTANCE_AUCTION, EAuctionSortType, EAuctionStatus, EItemStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, languageType, SERVICE_URLS, ID_VERIFICATION_API_KEY, auctionInviteEmailTemplate, ETransactionType, EPaymentStatus } from "../globals";
 import { Auction, IAuction, IAuctionInput, IRequiredAttribute, IRequiredAttributeInput, RequiredAttribute } from "../models/auction-model";
 import * as axios from "axios";
 import categoryService from "./category-service";
 import forumService from "./forum-service";
 import { Item } from "../models/item-model";
-import { Transaction } from "../models/transaction-model";
+import { Transaction, ITransactionInput } from "../models/transaction-model";
 
 /**
  * Add an auction.
@@ -880,6 +880,7 @@ export default {
   updateAuctionCoordinates,
   addInvitedBidders,
   removeInvitedBidder,
+  revokeInvitedBidder,
   getInvitedBidders,
   inviteByEmail,
 } as const;
@@ -913,6 +914,81 @@ async function removeInvitedBidder(auctionId: string, bidderId: string): Promise
     (id: any) => id.toString() !== bidderId
   );
   return await auction.save();
+}
+
+/**
+ * Revoke an invited bidder from a NOT_BEGUN auction.
+ * - Guards: only allowed when auction.status === NOT_BEGUN
+ * - Removes bidder from auction.invitedBidders
+ * - Pulls bidder from item.eligibleBidders on all items in the auction
+ * - Creates PENDING REFUND transactions for any COMPLETED RESERVATION transactions
+ */
+async function revokeInvitedBidder(auctionId: string, bidderId: string): Promise<IAuction> {
+  const auction = await getById(auctionId);
+  if (!auction) throw new NotFoundError('Auction not found');
+
+  if (auction.status !== EAuctionStatus.NOT_BEGUN) {
+    throw new ForbiddenError('Bidders can only be revoked when the auction has not yet begun');
+  }
+
+  // Remove from invitedBidders
+  auction.invitedBidders = auction.invitedBidders.filter(
+    (id: any) => id.toString() !== bidderId
+  );
+  const savedAuction = await auction.save();
+
+  // Cascade: remove from eligibleBidders on all items
+  await Item.updateMany({ auctionId }, { $pull: { eligibleBidders: bidderId } });
+
+  // Create REFUND transactions for any COMPLETED RESERVATION transactions
+  const reservations = await Transaction.find({
+    auctionId,
+    buyerId: bidderId,
+    transactionType: ETransactionType.RESERVATION,
+    status: EPaymentStatus.COMPLETED,
+  });
+
+  if (reservations.length > 0) {
+    const refundPromises = reservations.map(async (reservation) => {
+      const existingRefund = await Transaction.findOne({
+        relatedTransaction: reservation._id,
+        transactionType: ETransactionType.REFUND,
+      });
+
+      if (existingRefund) return;
+
+      const refundInput: ITransactionInput = {
+        auctionId: reservation.auctionId,
+        itemId: reservation.itemId,
+        buyerId: reservation.buyerId,
+        sellerId: reservation.sellerId,
+        currency: reservation.currency,
+        amount: reservation.amount,
+        transactionType: ETransactionType.REFUND,
+        relatedTransaction: reservation._id,
+        metadata: {},
+      };
+
+      const refundTx = new Transaction(refundInput);
+      refundTx.status = EPaymentStatus.PENDING;
+
+      const originalPayRequestId = (reservation.metadata as Map<string, string>).get('PAY_REQUEST_ID');
+      if (originalPayRequestId) {
+        (refundTx.metadata as Map<string, string>).set('originalPAY_REQUEST_ID', originalPayRequestId);
+      }
+
+      await refundTx.save();
+    });
+
+    await Promise.allSettled(refundPromises).then((results) => {
+      const failed = results.filter((r) => r.status === 'rejected');
+      if (failed.length > 0) {
+        console.error(`[auction-service] ${failed.length} revoke refund(s) failed for bidder ${bidderId} in auction ${auctionId}`);
+      }
+    });
+  }
+
+  return savedAuction;
 }
 
 /**
