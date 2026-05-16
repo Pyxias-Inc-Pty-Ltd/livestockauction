@@ -45,6 +45,29 @@ jest.mock('../../../src/services/category-service', () => ({
   default: { getById: jest.fn() },
 }));
 
+jest.mock('../../../src/queues/close-lot-queue', () => ({
+  scheduleCloseLot: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('../../../src/shared/bid-lock', () => ({
+  acquireBidLockWithWait: jest.fn().mockResolvedValue(true),
+  releaseBidLock: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('../../../src/shared/socket-emitter', () => {
+  const emittedEvents: { room: string; event: string; args: any[] }[] = [];
+  const mockEmitter = {
+    to: (room: string) => ({
+      emit: (event: string, ...args: any[]) => {
+        emittedEvents.push({ room, event, args });
+      },
+    }),
+    _emittedEvents: emittedEvents,
+    _reset: () => { emittedEvents.length = 0; },
+  };
+  return { socketEmitter: mockEmitter };
+});
+
 // ─── Imports ─────────────────────────────────────────────────────────────────
 
 import { Types } from 'mongoose';
@@ -53,7 +76,7 @@ import '../../../src/models/form-model';    // register Form model so populate d
 import '../../../src/models/user-model';   // register Bidder model for getEligibleBidders
 import '../../../src/models/auction-model'; // register Auction model (item pre-save hook queries it)
 import { ForbiddenError, InternalServerError, NotFoundError } from '../../../src/shared/errors';
-import { EItemStatus, EPublishedStatus } from '../../../src/globals';
+import { EItemStatus, EPublishedStatus, ESocketEventCode } from '../../../src/globals';
 import itemService from '../../../src/services/item-service';
 import auctionService from '../../../src/services/auction-service';
 import bidService from '../../../src/services/bid-service';
@@ -61,6 +84,9 @@ import { connectTestDbReplSet, disconnectTestDb, clearTestDb } from '../../helpe
 import { buildItem } from '../../helpers/factories/item.factory';
 import { Auction } from '../../../src/models/auction-model';
 import { buildAuction } from '../../helpers/factories/auction.factory';
+import { scheduleCloseLot } from '../../../src/queues/close-lot-queue';
+import { acquireBidLockWithWait, releaseBidLock } from '../../../src/shared/bid-lock';
+import { socketEmitter } from '../../../src/shared/socket-emitter';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -109,6 +135,7 @@ afterAll(disconnectTestDb);
 afterEach(async () => {
   await clearTestDb();
   jest.clearAllMocks();
+  (socketEmitter as any)._reset();
 });
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -343,6 +370,61 @@ describe('item-service', () => {
       const result = await itemService.setWinningBidder({ itemId: item.id, bidderId: bidderId.toString() });
       expect(result.winningBidder!.toString()).toBe(bidderId.toString());
     });
+
+    it('acquires the bid lock before reading the winning bid', async () => {
+      const bidderId = new Types.ObjectId();
+      const item = await seedItem({
+        status: EItemStatus.ENDED,
+        eligibleBidders: [bidderId.toString()],
+      });
+      (bidService.getWinningBid as jest.Mock).mockResolvedValueOnce({
+        userId: bidderId,
+        bidAmount: 1000,
+      });
+
+      await itemService.setWinningBidder({ itemId: item.id, bidderId: bidderId.toString() });
+
+      expect(acquireBidLockWithWait).toHaveBeenCalledWith(
+        item._id.toString(),
+        expect.stringContaining('set-winner:'),
+      );
+      // Lock acquired before getWinningBid — verify call order
+      const lockOrder = (acquireBidLockWithWait as jest.Mock).mock.invocationCallOrder[0];
+      const bidOrder = (bidService.getWinningBid as jest.Mock).mock.invocationCallOrder[0];
+      expect(lockOrder).toBeLessThan(bidOrder);
+    });
+
+    it('releases the lock even when getWinningBid throws', async () => {
+      const bidderId = new Types.ObjectId();
+      const item = await seedItem({
+        status: EItemStatus.ENDED,
+        eligibleBidders: [bidderId.toString()],
+      });
+      (bidService.getWinningBid as jest.Mock).mockRejectedValueOnce(new Error('DB timeout'));
+
+      await expect(
+        itemService.setWinningBidder({ itemId: item.id, bidderId: bidderId.toString() }),
+      ).rejects.toThrow('DB timeout');
+
+      expect(releaseBidLock).toHaveBeenCalled();
+    });
+
+    it('throws ForbiddenError when the bid lock cannot be acquired', async () => {
+      (acquireBidLockWithWait as jest.Mock).mockResolvedValueOnce(false);
+
+      const bidderId = new Types.ObjectId();
+      const item = await seedItem({
+        status: EItemStatus.ENDED,
+        eligibleBidders: [bidderId.toString()],
+      });
+
+      await expect(
+        itemService.setWinningBidder({ itemId: item.id, bidderId: bidderId.toString() }),
+      ).rejects.toThrow(ForbiddenError);
+
+      // Lock was not acquired — should not have been released either
+      expect(releaseBidLock).not.toHaveBeenCalled();
+    });
   });
 
   // ─── autoSelectWinner ──────────────────────────────────────────────────────
@@ -453,6 +535,46 @@ describe('item-service', () => {
       const unchanged = await Item.findOne({});
       expect(unchanged!.status).toBe(EItemStatus.NOT_BEGUN);
     });
+
+    it('emits BROADCAST_REFRESH_AFTER_WINNING to the bidding room when winner is assigned', async () => {
+      const bidderId = new Types.ObjectId();
+      const item = await seedItem({
+        status: EItemStatus.ACTIVE,
+        startTime: new Date(Date.now() - 7_200_000),
+        endTime: new Date(Date.now() - 60_000),
+      });
+      (bidService.getWinningBid as jest.Mock).mockResolvedValueOnce({
+        userId: bidderId,
+        bidAmount: 1000,
+      });
+
+      await itemService.trackItemStatus();
+
+      const events = (socketEmitter as any)._emittedEvents as { room: string; event: string; args: any[] }[];
+      const broadcast = events.find(
+        (e) => e.event === ESocketEventCode.BROADCAST_REFRESH_AFTER_WINNING,
+      );
+      expect(broadcast).toBeDefined();
+      expect(broadcast!.room).toBe(`${item._id.toString()}-bid`);
+      expect(broadcast!.args[0]).toBe(item._id.toString());
+    });
+
+    it('does NOT emit BROADCAST_REFRESH_AFTER_WINNING when lot goes unsold (no bids)', async () => {
+      await seedItem({
+        status: EItemStatus.ACTIVE,
+        startTime: new Date(Date.now() - 7_200_000),
+        endTime: new Date(Date.now() - 60_000),
+      });
+      (bidService.getWinningBid as jest.Mock).mockResolvedValueOnce(null);
+
+      await itemService.trackItemStatus();
+
+      const events = (socketEmitter as any)._emittedEvents as { room: string; event: string; args: any[] }[];
+      const broadcast = events.find(
+        (e) => e.event === ESocketEventCode.BROADCAST_REFRESH_AFTER_WINNING,
+      );
+      expect(broadcast).toBeUndefined();
+    });
   });
 
   // ─── getItemsWithWinnerForRefund ───────────────────────────────────────────
@@ -534,6 +656,80 @@ describe('item-service', () => {
       expect(result.status).toBe('NOT_BEGUN');
       const stored = await Item.findById(result._id);
       expect(stored).not.toBeNull();
+    });
+
+    it('schedules the close-lot job with the item id and endTime', async () => {
+      const auction = await seedAndMockAuction();
+      const endTime = new Date(Date.now() + 7_200_000);
+      const input = makeItemInput(auction._id as Types.ObjectId, { endTime });
+
+      const result = await itemService.createItem(mockAdmin, input);
+
+      // Allow the fire-and-forget promise to settle
+      await new Promise((r) => setImmediate(r));
+
+      expect(scheduleCloseLot).toHaveBeenCalledWith(
+        result._id.toString(),
+        expect.any(Date),
+      );
+    });
+  });
+
+  // ─── updateItem ────────────────────────────────────────────────────────────
+
+  describe('updateItem', () => {
+    it('throws ForbiddenError when caller is not the seller', async () => {
+      const item = await seedItem({ status: EItemStatus.NOT_BEGUN });
+      const wrongSeller = { id: new Types.ObjectId().toString() } as any;
+
+      await expect(
+        itemService.updateItem(wrongSeller, item.id, { startingBid: 600 }),
+      ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('throws ForbiddenError when item status is not NOT_BEGUN', async () => {
+      const sellerId = new Types.ObjectId();
+      const item = await seedItem({ status: EItemStatus.ACTIVE, sellerId: sellerId as any });
+      const seller = { id: sellerId.toString() } as any;
+
+      await expect(
+        itemService.updateItem(seller, item.id, { startingBid: 600 }),
+      ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('updates fields and returns the saved item', async () => {
+      const sellerId = new Types.ObjectId();
+      const item = await seedItem({ status: EItemStatus.NOT_BEGUN, sellerId: sellerId as any });
+      const seller = { id: sellerId.toString() } as any;
+
+      const result = await itemService.updateItem(seller, item.id, { startingBid: 999 });
+
+      expect(result.startingBid).toBe(999);
+    });
+
+    it('reschedules close-lot job when endTime is updated', async () => {
+      const sellerId = new Types.ObjectId();
+      const item = await seedItem({ status: EItemStatus.NOT_BEGUN, sellerId: sellerId as any });
+      const seller = { id: sellerId.toString() } as any;
+      const newEndTime = new Date(Date.now() + 9_000_000);
+
+      await itemService.updateItem(seller, item.id, { endTime: newEndTime });
+
+      await new Promise((r) => setImmediate(r));
+
+      expect(scheduleCloseLot).toHaveBeenCalledWith(item._id.toString(), expect.any(Date));
+    });
+
+    it('does NOT call scheduleCloseLot when endTime is not in the input', async () => {
+      const sellerId = new Types.ObjectId();
+      const item = await seedItem({ status: EItemStatus.NOT_BEGUN, sellerId: sellerId as any });
+      const seller = { id: sellerId.toString() } as any;
+
+      await itemService.updateItem(seller, item.id, { startingBid: 750 });
+
+      await new Promise((r) => setImmediate(r));
+
+      expect(scheduleCloseLot).not.toHaveBeenCalled();
     });
   });
 

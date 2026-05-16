@@ -262,6 +262,25 @@ describe('bid-service', () => {
       ).rejects.toThrow(ForbiddenError);
     });
 
+    it('rejects when endTime has passed even if status is still ACTIVE', async () => {
+      // Simulates the up-to-59 s window between lot endTime and the cron closing it.
+      // The endTime guard must stop bids immediately regardless of DB status.
+      const bidder = await seedBidder();
+      const item = await seedItem(bidder._id, {
+        status: EItemStatus.ACTIVE,
+        endTime: new Date(Date.now() - 1_000), // 1 s in the past
+      });
+
+      await expect(
+        bidService.createOpenBid(bidder as any, {
+          itemId: item._id,
+          userId: bidder._id,
+          bidAmount: 600,
+          bidTime: new Date(),
+        }),
+      ).rejects.toThrow(ForbiddenError);
+    });
+
     it('rejects bid amount at or below startingBid', async () => {
       const bidder = await seedBidder();
       const item = await seedItem(bidder._id, { startingBid: 500 });

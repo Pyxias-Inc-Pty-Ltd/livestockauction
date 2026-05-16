@@ -13,6 +13,7 @@ import { ClientSession, startSession } from 'mongoose';
 import bidService from "./bid-service";
 import categoryService from "./category-service";
 import { scheduleCloseLot } from "../queues/close-lot-queue";
+import { acquireBidLockWithWait, releaseBidLock } from "../shared/bid-lock";
 
 /**
  * Add an item.
@@ -359,30 +360,53 @@ async function setWinningBidder(
     throw new ForbiddenError('Bidder must be in the list of eligible bidders');
   }
 
-  const winningBid = await bidService.getWinningBid(item.id.toString());
-  if (!winningBid) {
-    throw new InternalServerError('No bids found for this lot');
-  }
-
-  if (winningBid.userId.toString() !== input.bidderId.toString()) {
+  // Acquire the per-item bid lock before reading the winning bid.
+  //
+  // Race condition without this lock:
+  //   1. setWinningBidder reads winningBid → A at $500
+  //   2. Bid B at $600 is saved by a concurrent bid-worker transaction
+  //   3. setWinningBidder validates against its stale read → A still passes
+  //   4. setWinningBidder writes { winningBidder: A, status: ENDED }
+  //   5. A wins despite B holding the higher bid
+  //
+  // With the lock: the bid-worker and setWinningBidder are mutually exclusive.
+  // Any in-flight bid completes first; then we read the authoritative state.
+  const lockToken = `set-winner:${item._id}:${Date.now()}`;
+  const acquired = await acquireBidLockWithWait(item._id.toString(), lockToken);
+  if (!acquired) {
     throw new ForbiddenError(
-      'The supplied bidder did not place the highest bid — ' +
-      'winner must be the holder of the leading bid',
+      'A bid is currently being processed for this lot — please try again in a moment',
     );
   }
 
-  // For manual-bid (livestream) lots, awarding the winner also ends the lot.
-  // Timed lots are already ENDED by the cron before this point.
-  const update: any = { winningBidder: input.bidderId };
-  if (item.isBidIncrementedManually) {
-    update.status = EItemStatus.ENDED;
-  }
+  try {
+    const winningBid = await bidService.getWinningBid(item.id.toString());
+    if (!winningBid) {
+      throw new InternalServerError('No bids found for this lot');
+    }
 
-  return await Item.findByIdAndUpdate(
-    item._id,
-    { $set: update },
-    { new: true },
-  ) as IItem;
+    if (winningBid.userId.toString() !== input.bidderId.toString()) {
+      throw new ForbiddenError(
+        'The supplied bidder did not place the highest bid — ' +
+        'winner must be the holder of the leading bid',
+      );
+    }
+
+    // For manual-bid (livestream) lots, awarding the winner also ends the lot.
+    // Timed lots are already ENDED by the cron before this point.
+    const update: any = { winningBidder: input.bidderId };
+    if (item.isBidIncrementedManually) {
+      update.status = EItemStatus.ENDED;
+    }
+
+    return await Item.findByIdAndUpdate(
+      item._id,
+      { $set: update },
+      { new: true },
+    ) as IItem;
+  } finally {
+    await releaseBidLock(item._id.toString(), lockToken);
+  }
 }
 
 /**
