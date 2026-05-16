@@ -13,6 +13,8 @@ import itemHandler from './handlers/item-handler';
 import * as admin from 'firebase-admin';
 import authHandler from './handlers/auth-handler';
 import { CustomError } from './shared/errors';
+import { createAdapter } from '@socket.io/redis-adapter';
+import IORedis from 'ioredis';
 import { bidQueue } from './queues/bid-queue';
 import { startBidWorker } from './workers/bid-worker';
 import { startCronJobs } from './cron';
@@ -32,12 +34,24 @@ export const firebase = admin.initializeApp({
 const httpServer = createServer(app);
 
 // Init socket.io
-export const io = new Server(httpServer, { 
+export const io = new Server(httpServer, {
   cors: {
     credentials: true,
     origin: ['http://localhost:5173', SERVICE_URLS.clientURI]
   }
 });
+
+// Attach Redis adapter so socket events are shared across all server instances.
+// pubClient/subClient must be separate connections — ioredis blocks on SUBSCRIBE
+// and cannot interleave regular commands on the same connection.
+const pubClient = new IORedis({
+  host: process.env.REDIS_HOST || 'localhost',
+  port: parseInt(process.env.REDIS_PORT || '6379', 10),
+  password: process.env.REDIS_PASS || undefined,
+  maxRetriesPerRequest: null,
+});
+const subClient = pubClient.duplicate();
+io.adapter(createAdapter(pubClient, subClient));
 
 // Check for auth on handshake
 io.use(async (socket: any, next: any) => {
@@ -237,7 +251,7 @@ httpServer.listen(port, async () => {
     // Start the bid worker.
     // Injecting `io` here avoids a circular import and ensures the worker
     // can broadcast directly to connected sockets.
-    startBidWorker(io);
+    startBidWorker();
     logger.info('Bid worker started');
 
     // Start cron jobs (distributed lock via Redis prevents double-execution

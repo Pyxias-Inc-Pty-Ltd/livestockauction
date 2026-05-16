@@ -44,11 +44,28 @@ jest.mock('../../src/services/bid-service', () => ({
   },
 }));
 
+// Mock the Redis emitter — prevents a real IORedis connection being opened and
+// lets tests assert on emitted socket events.
+jest.mock('../../src/shared/socket-emitter', () => {
+  const emittedEvents: { room: string; event: string; args: any[] }[] = [];
+  const mockEmitter = {
+    to: (room: string) => ({
+      emit: (event: string, ...args: any[]) => {
+        emittedEvents.push({ room, event, args });
+      },
+    }),
+    _emittedEvents: emittedEvents,
+    _reset: () => { emittedEvents.length = 0; },
+  };
+  return { socketEmitter: mockEmitter };
+});
+
 // ─── Imports (after mocks) ────────────────────────────────────────────────────
 
 import { Worker, UnrecoverableError } from 'bullmq';
 import { Types } from 'mongoose';
-import { acquireBidLock, releaseBidLock, acquireBidLockWithWait } from '../../src/shared/bid-lock';
+import { acquireBidLock, releaseBidLock } from '../../src/shared/bid-lock';
+import { socketEmitter } from '../../src/shared/socket-emitter';
 import bidService from '../../src/services/bid-service';
 import { startBidWorker } from '../../src/workers/bid-worker';
 import { Item } from '../../src/models/item-model';
@@ -66,9 +83,9 @@ let runJob: (job: any) => Promise<any>;
 /** Captured worker event handlers — keyed by event name. */
 let workerHandlers: Record<string, Function>;
 
-/** Per-test Socket.IO emission tracker. */
-let emittedEvents: { room: string; event: string; args: any[] }[];
-let mockIo: any;
+/** Shorthand to the shared emitted-events array from the mock. */
+const emittedEvents = (): { room: string; event: string; args: any[] }[] =>
+  (socketEmitter as any)._emittedEvents;
 
 /** Seeded document IDs — reset in beforeEach. */
 let itemId: Types.ObjectId;
@@ -77,23 +94,12 @@ let bidderId: Types.ObjectId;
 
 const SOCKET_ID = 'socket-test-abc';
 
-function buildMockIo() {
-  emittedEvents = [];
-  return {
-    to: jest.fn((room: string) => ({
-      emit: jest.fn((event: string, ...args: any[]) => {
-        emittedEvents.push({ room, event, args });
-      }),
-    })),
-  };
-}
-
 /** Build a minimal stub bid returned by the mocked bidService. */
 function stubBid(overrides: Record<string, any> = {}) {
   const _id = new Types.ObjectId();
   const bid = {
     _id,
-    id: _id,                // Mongoose `id` virtual — toString() gives hex string
+    id: _id,
     itemId,
     bidAmount: 1000,
     ...overrides,
@@ -139,9 +145,7 @@ afterAll(() => disconnectTestDb());
 
 beforeEach(async () => {
   jest.clearAllMocks();
-
-  // Rebuild mock IO + reset emission log.
-  mockIo = buildMockIo();
+  (socketEmitter as any)._reset();
 
   // Capture the worker processor and event handlers from the Worker constructor.
   workerHandlers = {};
@@ -157,10 +161,9 @@ beforeEach(async () => {
   // Default: lock always available, always released cleanly.
   (acquireBidLock as jest.Mock).mockResolvedValue(true);
   (releaseBidLock as jest.Mock).mockResolvedValue(undefined);
-  (acquireBidLockWithWait as jest.Mock).mockResolvedValue(true);
 
-  // Starting the worker registers the processor.
-  startBidWorker(mockIo);
+  // Starting the worker registers the processor and event handlers.
+  startBidWorker();
 
   // Fresh DB state + new IDs for every test.
   await clearTestDb();
@@ -189,26 +192,22 @@ describe('bid-worker', () => {
 
       const result = await runJob(makeJob());
 
-      // Correct service called
       expect(bidService.createOpenBid).toHaveBeenCalledTimes(1);
       expect(bidService.createLivestreamBid).not.toHaveBeenCalled();
       expect(bidService.createSealedBid).not.toHaveBeenCalled();
 
-      // UPDATE_BID_AMOUNT → item bid room
-      const roomEmit = emittedEvents.find(
+      const roomEmit = emittedEvents().find(
         (e) => e.room === `${itemId.toHexString()}-bid` && e.event === ESocketEventCode.UPDATE_BID_AMOUNT,
       );
       expect(roomEmit).toBeDefined();
       expect(roomEmit!.args[0]).toMatchObject({ newPrice: bid.bidAmount });
 
-      // BID_RESULT → bidder socket room
-      const socketEmit = emittedEvents.find(
+      const bidderEmit = emittedEvents().find(
         (e) => e.room === SOCKET_ID && e.event === ESocketEventCode.BID_RESULT,
       );
-      expect(socketEmit).toBeDefined();
-      expect(socketEmit!.args[0]).toMatchObject({ status: 'accepted', bidId: bid.id.toString() });
+      expect(bidderEmit).toBeDefined();
+      expect(bidderEmit!.args[0]).toMatchObject({ status: 'accepted', bidId: bid.id.toString() });
 
-      // Returned job result
       expect(result).toMatchObject({ bidId: bid.id.toString(), mode: 'open' });
     });
   });
@@ -225,7 +224,7 @@ describe('bid-worker', () => {
       expect(bidService.createOpenBid).not.toHaveBeenCalled();
       expect(bidService.createSealedBid).not.toHaveBeenCalled();
 
-      const roomEmit = emittedEvents.find(
+      const roomEmit = emittedEvents().find(
         (e) => e.room === `${itemId.toHexString()}-bid` && e.event === ESocketEventCode.UPDATE_BID_AMOUNT,
       );
       expect(roomEmit).toBeDefined();
@@ -247,15 +246,13 @@ describe('bid-worker', () => {
       expect(bidService.createOpenBid).not.toHaveBeenCalled();
       expect(bidService.createLivestreamBid).not.toHaveBeenCalled();
 
-      // SEALED_BID_ACCEPTED has no payload (no bid amount leaked)
-      const sealedEmit = emittedEvents.find(
+      const sealedEmit = emittedEvents().find(
         (e) => e.room === `${itemId.toHexString()}-bid` && e.event === ESocketEventCode.SEALED_BID_ACCEPTED,
       );
       expect(sealedEmit).toBeDefined();
-      expect(sealedEmit!.args).toHaveLength(0); // no args
+      expect(sealedEmit!.args).toHaveLength(0);
 
-      // Must NOT emit UPDATE_BID_AMOUNT for sealed mode
-      const amountEmit = emittedEvents.find((e) => e.event === ESocketEventCode.UPDATE_BID_AMOUNT);
+      const amountEmit = emittedEvents().find((e) => e.event === ESocketEventCode.UPDATE_BID_AMOUNT);
       expect(amountEmit).toBeUndefined();
 
       expect(result).toMatchObject({ mode: 'sealed' });
@@ -265,25 +262,15 @@ describe('bid-worker', () => {
   // ─── Bid lock ─────────────────────────────────────────────────────────────
 
   describe('bid lock', () => {
-    it('succeeds when acquireBidLockWithWait returns true', async () => {
+    it('throws a plain Error (BullMQ retry) when lock cannot be acquired', async () => {
       await seedItem();
-      (bidService.createOpenBid as jest.Mock).mockResolvedValue(stubBid());
-      (acquireBidLockWithWait as jest.Mock).mockResolvedValue(true);
+      (acquireBidLock as jest.Mock).mockResolvedValue(false);
 
-      const result = await runJob(makeJob());
+      await expect(runJob(makeJob())).rejects.toThrow(
+        `Bid lock for item ${itemId.toHexString()} is held`,
+      );
 
-      expect(result).toMatchObject({ mode: 'open' });
-      expect(bidService.createOpenBid).toHaveBeenCalledTimes(1);
-    });
-
-    it('throws a plain Error (BullMQ retry) when acquireBidLockWithWait returns false', async () => {
-      await seedItem();
-      (acquireBidLockWithWait as jest.Mock).mockResolvedValue(false);
-
-      await expect(runJob(makeJob())).rejects.toThrow('unavailable after extended wait');
-
-      // No BID_RESULT emitted from the processor — client waits for the failed handler
-      expect(emittedEvents.filter((e) => e.event === ESocketEventCode.BID_RESULT)).toHaveLength(0);
+      expect(emittedEvents().filter((e) => e.event === ESocketEventCode.BID_RESULT)).toHaveLength(0);
     });
 
     it('releases the lock in finally on success', async () => {
@@ -307,37 +294,6 @@ describe('bid-worker', () => {
     });
   });
 
-  // ─── worker.on('failed') — bidder notification ────────────────────────────
-
-  describe('failed handler', () => {
-    it('emits BID_RESULT rejected to bidder when all BullMQ attempts are exhausted (non-UnrecoverableError)', () => {
-      startBidWorker(mockIo); // ensure handlers are registered
-      const transientErr = new Error('MongoNetworkError: connection timed out');
-      const job = makeJob();
-
-      workerHandlers['failed'](job, transientErr);
-
-      const socketEmit = emittedEvents.find(
-        (e) => e.room === SOCKET_ID && e.event === ESocketEventCode.BID_RESULT,
-      );
-      expect(socketEmit).toBeDefined();
-      expect(socketEmit!.args[0]).toMatchObject({
-        status: 'rejected',
-        error: expect.stringContaining('high demand'),
-      });
-    });
-
-    it('does NOT emit BID_RESULT for UnrecoverableError (bidder already notified inside processor)', () => {
-      startBidWorker(mockIo);
-      const unrecoverable = new UnrecoverableError('Not eligible to bid on this item');
-      const job = makeJob();
-
-      workerHandlers['failed'](job, unrecoverable);
-
-      expect(emittedEvents.filter((e) => e.event === ESocketEventCode.BID_RESULT)).toHaveLength(0);
-    });
-  });
-
   // ─── Business logic errors → UnrecoverableError ───────────────────────────
 
   describe('ForbiddenError from bidService', () => {
@@ -349,11 +305,11 @@ describe('bid-worker', () => {
 
       await expect(runJob(makeJob())).rejects.toBeInstanceOf(UnrecoverableError);
 
-      const socketEmit = emittedEvents.find(
+      const bidderEmit = emittedEvents().find(
         (e) => e.room === SOCKET_ID && e.event === ESocketEventCode.BID_RESULT,
       );
-      expect(socketEmit).toBeDefined();
-      expect(socketEmit!.args[0]).toMatchObject({
+      expect(bidderEmit).toBeDefined();
+      expect(bidderEmit!.args[0]).toMatchObject({
         status: 'rejected',
         error: 'Not eligible to bid on this item',
       });
@@ -369,24 +325,23 @@ describe('bid-worker', () => {
         runJob(makeJob({ bidderId: missingBidderId })),
       ).rejects.toBeInstanceOf(UnrecoverableError);
 
-      const socketEmit = emittedEvents.find(
+      const bidderEmit = emittedEvents().find(
         (e) => e.room === SOCKET_ID && e.event === ESocketEventCode.BID_RESULT,
       );
-      expect(socketEmit).toBeDefined();
-      expect(socketEmit!.args[0]).toMatchObject({ status: 'rejected' });
+      expect(bidderEmit).toBeDefined();
+      expect(bidderEmit!.args[0]).toMatchObject({ status: 'rejected' });
     });
   });
 
   describe('NotFoundError — item does not exist in DB', () => {
     it('emits BID_RESULT rejected and throws UnrecoverableError', async () => {
-      // No item seeded — worker throws NotFoundError('Item not found')
       await expect(runJob(makeJob())).rejects.toBeInstanceOf(UnrecoverableError);
 
-      const socketEmit = emittedEvents.find(
+      const bidderEmit = emittedEvents().find(
         (e) => e.room === SOCKET_ID && e.event === ESocketEventCode.BID_RESULT,
       );
-      expect(socketEmit).toBeDefined();
-      expect(socketEmit!.args[0]).toMatchObject({ status: 'rejected' });
+      expect(bidderEmit).toBeDefined();
+      expect(bidderEmit!.args[0]).toMatchObject({ status: 'rejected' });
     });
   });
 
@@ -400,8 +355,32 @@ describe('bid-worker', () => {
 
       await expect(runJob(makeJob())).rejects.toBe(networkErr);
 
-      // No BID_RESULT — client shows "pending" until a retry succeeds
-      expect(emittedEvents.filter((e) => e.event === ESocketEventCode.BID_RESULT)).toHaveLength(0);
+      expect(emittedEvents().filter((e) => e.event === ESocketEventCode.BID_RESULT)).toHaveLength(0);
+    });
+  });
+
+  // ─── worker.on('failed') — bidder notification ────────────────────────────
+
+  describe('failed handler', () => {
+    it('emits BID_RESULT rejected to bidder when all BullMQ attempts are exhausted (non-UnrecoverableError)', () => {
+      const transientErr = new Error('MongoNetworkError: connection timed out');
+      workerHandlers['failed'](makeJob(), transientErr);
+
+      const emit = emittedEvents().find(
+        (e) => e.room === SOCKET_ID && e.event === ESocketEventCode.BID_RESULT,
+      );
+      expect(emit).toBeDefined();
+      expect(emit!.args[0]).toMatchObject({
+        status: 'rejected',
+        error: expect.stringContaining('high demand'),
+      });
+    });
+
+    it('does NOT double-notify for UnrecoverableError (bidder already notified inside processor)', () => {
+      const unrecoverable = new UnrecoverableError('Not eligible to bid on this item');
+      workerHandlers['failed'](makeJob(), unrecoverable);
+
+      expect(emittedEvents().filter((e) => e.event === ESocketEventCode.BID_RESULT)).toHaveLength(0);
     });
   });
 });
