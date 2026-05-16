@@ -12,6 +12,7 @@ import auctionService from "./auction-service";
 import { ClientSession, startSession } from 'mongoose';
 import bidService from "./bid-service";
 import categoryService from "./category-service";
+import { scheduleCloseLot } from "../queues/close-lot-queue";
 
 /**
  * Add an item.
@@ -85,6 +86,13 @@ async function createItem(currentUser: IAdmin, input: IItemInput): Promise<IItem
       });
 
     });
+
+    // Schedule the close-lot job to fire at exactly endTime.
+    // Fire-and-forget: a failure here is non-critical — the cron safety net
+    // (trackItemStatus) will still close the lot within ~60 s of endTime.
+    scheduleCloseLot(newItem._id.toString(), newItem.endTime).catch((err: Error) =>
+      console.error(`[item-service] Failed to schedule close-lot for ${newItem._id}: ${err.message}`),
+    );
 
     return newItem;
   } catch (error) {
@@ -170,7 +178,16 @@ async function updateItem(currentUser: ISeller, itemId: string, input: Partial<I
       }
     }
 
-    return await item.save();
+    const saved = await item.save();
+
+    // Reschedule close-lot if endTime was updated.
+    if (input.endTime) {
+      scheduleCloseLot(saved._id.toString(), saved.endTime).catch((err: Error) =>
+        console.error(`[item-service] Failed to reschedule close-lot for ${saved._id}: ${err.message}`),
+      );
+    }
+
+    return saved;
   } catch (error) {
     throw error;
   }
