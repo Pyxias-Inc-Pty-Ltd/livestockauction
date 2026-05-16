@@ -313,8 +313,8 @@ async function createLivestreamBid(currentUser: IBidder, input: IBidInput): Prom
 async function createSealedBid(currentUser: IBidder, input: IBidInput): Promise<IBid> {
   return _runBidTransaction(currentUser, input, {
     validateAmount: (item) => {
-      if (input.bidAmount <= item.startingBid) {
-        throw new ForbiddenError('Bid amount must be higher than the starting bid');
+      if (input.bidAmount < item.startingBid) {
+        throw new ForbiddenError('Bid amount must be at least the starting bid');
       }
       // No currentBid comparison — sealed bids must stay private until close.
     },
