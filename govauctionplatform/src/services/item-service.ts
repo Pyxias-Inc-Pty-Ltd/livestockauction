@@ -6,11 +6,13 @@ import { formatBAITSAnimalEID, getAnimalBreedById, getAnimalByEID, isBeforeStart
 import { ForbiddenError, InternalServerError, NotFoundError, BadRequestError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { Schema } from 'mongoose';
-import { EAuctionStatus, EGenderType, EItemSortType, EItemStatus, ESortOrderType, languageType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { EAuctionStatus, EGenderType, EItemSortType, EItemStatus, ESortOrderType, ESocketEventCode, languageType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { socketEmitter } from "../shared/socket-emitter";
 import auctionService from "./auction-service";
 import { ClientSession, startSession } from 'mongoose';
 import bidService from "./bid-service";
 import categoryService from "./category-service";
+import { scheduleCloseLot } from "../queues/close-lot-queue";
 
 /**
  * Add an item.
@@ -84,6 +86,13 @@ async function createItem(currentUser: IAdmin, input: IItemInput): Promise<IItem
       });
 
     });
+
+    // Schedule the close-lot job to fire at exactly endTime.
+    // Fire-and-forget: a failure here is non-critical — the cron safety net
+    // (trackItemStatus) will still close the lot within ~60 s of endTime.
+    scheduleCloseLot(newItem._id.toString(), newItem.endTime).catch((err: Error) =>
+      console.error(`[item-service] Failed to schedule close-lot for ${newItem._id}: ${err.message}`),
+    );
 
     return newItem;
   } catch (error) {
@@ -169,7 +178,16 @@ async function updateItem(currentUser: ISeller, itemId: string, input: Partial<I
       }
     }
 
-    return await item.save();
+    const saved = await item.save();
+
+    // Reschedule close-lot if endTime was updated.
+    if (input.endTime) {
+      scheduleCloseLot(saved._id.toString(), saved.endTime).catch((err: Error) =>
+        console.error(`[item-service] Failed to reschedule close-lot for ${saved._id}: ${err.message}`),
+      );
+    }
+
+    return saved;
   } catch (error) {
     throw error;
   }
@@ -686,11 +704,20 @@ async function trackItemStatus(): Promise<void> {
     if (justEndedItems.length > 0) {
       await Promise.all(
         justEndedItems.map((item) =>
-          autoSelectWinner(item._id.toString()).catch((err: Error) =>
-            console.error(
-              `[item-service] autoSelectWinner failed for item ${item._id}: ${err.message}`,
+          autoSelectWinner(item._id.toString())
+            .then((result) => {
+              if (result?.winningBidder) {
+                const itemId = item._id.toString();
+                socketEmitter
+                  .to(`${itemId}-bid`)
+                  .emit(ESocketEventCode.BROADCAST_REFRESH_AFTER_WINNING, itemId);
+              }
+            })
+            .catch((err: Error) =>
+              console.error(
+                `[item-service] autoSelectWinner failed for item ${item._id}: ${err.message}`,
+              ),
             ),
-          ),
         ),
       );
     }

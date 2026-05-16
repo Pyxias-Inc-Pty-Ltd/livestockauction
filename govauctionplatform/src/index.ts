@@ -17,6 +17,7 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import IORedis from 'ioredis';
 import { bidQueue } from './queues/bid-queue';
 import { startBidWorker } from './workers/bid-worker';
+import { startCloseLotWorker } from './workers/close-lot-worker';
 import { startCronJobs } from './cron';
 import { IBidder } from './models/user-model';
 
@@ -253,6 +254,8 @@ httpServer.listen(port, async () => {
     // can broadcast directly to connected sockets.
     startBidWorker();
     logger.info('Bid worker started');
+    startCloseLotWorker();
+    logger.info('Close-lot worker started');
 
     // Start cron jobs (distributed lock via Redis prevents double-execution
     // across multiple instances).
