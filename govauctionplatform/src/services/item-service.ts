@@ -732,6 +732,7 @@ export default {
   addInvitedBidders,
   removeInvitedBidder,
   getInvitedBidders,
+  isInvited,
 } as const;
 
 // ── Invited bidder helpers ─────────────────────────────────────────────────
@@ -775,4 +776,21 @@ async function getInvitedBidders(itemId: string): Promise<IBidder[]> {
   if (!item.invitedBidders || item.invitedBidders.length === 0) return [];
 
   return await Bidder.find({ _id: { $in: item.invitedBidders } }).select('-__v');
+}
+
+/**
+ * Check whether a specific user is invited to a lot.
+ * Checks both the item-level and auction-level invited bidder lists.
+ */
+async function isInvited(itemId: string, userId: string): Promise<boolean> {
+  const item = await getById(itemId, { invitedBidders: 1, auctionId: 1 });
+  if (!item) throw new NotFoundError('Item not found');
+
+  const inItem = (item.invitedBidders || []).some((id: any) => id.toString() === userId);
+  if (inItem) return true;
+
+  const auction = await Auction.findById(item.auctionId).select('invitedBidders').lean();
+  if (!auction) return false;
+
+  return (auction.invitedBidders || []).some((id: any) => id.toString() === userId);
 }
