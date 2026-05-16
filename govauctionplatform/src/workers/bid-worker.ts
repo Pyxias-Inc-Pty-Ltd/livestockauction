@@ -1,7 +1,7 @@
 import { Job, UnrecoverableError, Worker } from 'bullmq';
 import { Server } from 'socket.io';
 import { redisConnection } from '../shared/redis';
-import { acquireBidLock, releaseBidLock } from '../shared/bid-lock';
+import { acquireBidLock, releaseBidLock, acquireBidLockWithWait } from '../shared/bid-lock';
 import { BidJobData, BidJobResult, BID_QUEUE_NAME } from '../queues/bid-queue';
 import bidService from '../services/bid-service';
 import { Item } from '../models/item-model';
@@ -9,6 +9,7 @@ import { Bidder } from '../models/user-model';
 import { BidEvent } from '../models/bid-event-model';
 import { ESocketEventCode } from '../globals';
 import { ForbiddenError, NotFoundError } from '../shared/errors';
+
 
 /**
  * Start the bid worker, injecting the Socket.io server so the worker can
@@ -37,12 +38,12 @@ export function startBidWorker(io: Server): Worker<BidJobData, BidJobResult> {
 
       // Use job.id as the lock token — unique per BullMQ job.
       const lockToken = job.id!;
-      const acquired = await acquireBidLock(input.itemId, lockToken);
+      const acquired = await acquireBidLockWithWait(input.itemId, lockToken);
 
       if (!acquired) {
-        // Another worker is currently processing a bid for this item.
-        // Throw a plain error so BullMQ retries with back-off.
-        throw new Error(`Bid lock for item ${input.itemId} is held — retrying`);
+        // Polled for MAX_LOCK_WAIT_MS and still couldn't acquire — item is
+        // under extreme contention. Throw so BullMQ retries with back-off.
+        throw new Error(`Bid lock for item ${input.itemId} unavailable after extended wait`);
       }
 
       try {
@@ -177,10 +178,19 @@ export function startBidWorker(io: Server): Worker<BidJobData, BidJobResult> {
   );
 
   worker.on('failed', (job, err) => {
-    if (job) {
-      console.error(
-        `[bid-worker] Job ${job.id} failed (attempt ${job.attemptsMade}/${job.opts.attempts ?? '?'}): ${err.message}`,
-      );
+    if (!job) return;
+    console.error(
+      `[bid-worker] Job ${job.id} failed (attempt ${job.attemptsMade}/${job.opts.attempts ?? '?'}): ${err.message}`,
+    );
+    // UnrecoverableError means the job already notified the bidder inside the
+    // processor (ForbiddenError / NotFoundError path). For everything else —
+    // lock-contention exhaustion or transient infra failures — the bidder has
+    // received no feedback yet, so notify them now.
+    if (!(err instanceof UnrecoverableError)) {
+      io.to(job.data.socketId).emit(ESocketEventCode.BID_RESULT, {
+        status: 'rejected',
+        error: 'Your bid could not be processed due to high demand. Please try again.',
+      });
     }
   });
 
