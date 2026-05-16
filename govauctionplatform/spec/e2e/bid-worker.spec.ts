@@ -43,11 +43,28 @@ jest.mock('../../src/services/bid-service', () => ({
   },
 }));
 
+// Mock the Redis emitter — prevents a real IORedis connection being opened and
+// lets tests assert on emitted socket events.
+jest.mock('../../src/shared/socket-emitter', () => {
+  const emittedEvents: { room: string; event: string; args: any[] }[] = [];
+  const mockEmitter = {
+    to: (room: string) => ({
+      emit: (event: string, ...args: any[]) => {
+        emittedEvents.push({ room, event, args });
+      },
+    }),
+    _emittedEvents: emittedEvents,
+    _reset: () => { emittedEvents.length = 0; },
+  };
+  return { socketEmitter: mockEmitter };
+});
+
 // ─── Imports (after mocks) ────────────────────────────────────────────────────
 
 import { Worker, UnrecoverableError } from 'bullmq';
 import { Types } from 'mongoose';
 import { acquireBidLock, releaseBidLock } from '../../src/shared/bid-lock';
+import { socketEmitter } from '../../src/shared/socket-emitter';
 import bidService from '../../src/services/bid-service';
 import { startBidWorker } from '../../src/workers/bid-worker';
 import { Item } from '../../src/models/item-model';
@@ -62,9 +79,12 @@ import { buildBidder } from '../helpers/factories/user.factory';
 /** Captured worker processor — populated by the Worker mock in beforeEach. */
 let runJob: (job: any) => Promise<any>;
 
-/** Per-test Socket.IO emission tracker. */
-let emittedEvents: { room: string; event: string; args: any[] }[];
-let mockIo: any;
+/** Captured worker event handlers — keyed by event name. */
+let workerHandlers: Record<string, Function>;
+
+/** Shorthand to the shared emitted-events array from the mock. */
+const emittedEvents = (): { room: string; event: string; args: any[] }[] =>
+  (socketEmitter as any)._emittedEvents;
 
 /** Seeded document IDs — reset in beforeEach. */
 let itemId: Types.ObjectId;
@@ -73,27 +93,17 @@ let bidderId: Types.ObjectId;
 
 const SOCKET_ID = 'socket-test-abc';
 
-function buildMockIo() {
-  emittedEvents = [];
-  return {
-    to: jest.fn((room: string) => ({
-      emit: jest.fn((event: string, ...args: any[]) => {
-        emittedEvents.push({ room, event, args });
-      }),
-    })),
-  };
-}
-
 /** Build a minimal stub bid returned by the mocked bidService. */
 function stubBid(overrides: Record<string, any> = {}) {
   const _id = new Types.ObjectId();
-  return {
+  const bid = {
     _id,
-    id: _id,                // Mongoose `id` virtual — toString() gives hex string
+    id: _id,
     itemId,
     bidAmount: 1000,
     ...overrides,
   };
+  return { ...bid, toJSON: () => bid };
 }
 
 /** Build a fake BullMQ Job with sensible defaults. */
@@ -134,22 +144,25 @@ afterAll(() => disconnectTestDb());
 
 beforeEach(async () => {
   jest.clearAllMocks();
+  (socketEmitter as any)._reset();
 
-  // Rebuild mock IO + reset emission log.
-  mockIo = buildMockIo();
-
-  // Capture the worker processor from the Worker constructor call.
+  // Capture the worker processor and event handlers from the Worker constructor.
+  workerHandlers = {};
   (Worker as unknown as jest.Mock).mockImplementation((_name: string, processor: Function) => {
     runJob = processor as (job: any) => Promise<any>;
-    return { on: jest.fn().mockReturnThis() };
+    return {
+      on: jest.fn((event: string, handler: Function) => {
+        workerHandlers[event] = handler;
+      }),
+    };
   });
 
   // Default: lock always available, always released cleanly.
   (acquireBidLock as jest.Mock).mockResolvedValue(true);
   (releaseBidLock as jest.Mock).mockResolvedValue(undefined);
 
-  // Starting the worker registers the processor.
-  startBidWorker(mockIo);
+  // Starting the worker registers the processor and event handlers.
+  startBidWorker();
 
   // Fresh DB state + new IDs for every test.
   await clearTestDb();
@@ -184,14 +197,14 @@ describe('bid-worker', () => {
       expect(bidService.createSealedBid).not.toHaveBeenCalled();
 
       // UPDATE_BID_AMOUNT → item bid room
-      const roomEmit = emittedEvents.find(
+      const roomEmit = emittedEvents().find(
         (e) => e.room === `${itemId.toHexString()}-bid` && e.event === ESocketEventCode.UPDATE_BID_AMOUNT,
       );
       expect(roomEmit).toBeDefined();
-      expect(roomEmit!.args[0]).toBe(bid.bidAmount);
+      expect(roomEmit!.args[0]).toMatchObject({ newPrice: bid.bidAmount });
 
       // BID_RESULT → bidder socket room
-      const socketEmit = emittedEvents.find(
+      const socketEmit = emittedEvents().find(
         (e) => e.room === SOCKET_ID && e.event === ESocketEventCode.BID_RESULT,
       );
       expect(socketEmit).toBeDefined();
@@ -214,11 +227,11 @@ describe('bid-worker', () => {
       expect(bidService.createOpenBid).not.toHaveBeenCalled();
       expect(bidService.createSealedBid).not.toHaveBeenCalled();
 
-      const roomEmit = emittedEvents.find(
+      const roomEmit = emittedEvents().find(
         (e) => e.room === `${itemId.toHexString()}-bid` && e.event === ESocketEventCode.UPDATE_BID_AMOUNT,
       );
       expect(roomEmit).toBeDefined();
-      expect(roomEmit!.args[0]).toBe(2000);
+      expect(roomEmit!.args[0]).toMatchObject({ newPrice: 2000 });
 
       expect(result).toMatchObject({ mode: 'livestream' });
     });
@@ -237,14 +250,14 @@ describe('bid-worker', () => {
       expect(bidService.createLivestreamBid).not.toHaveBeenCalled();
 
       // SEALED_BID_ACCEPTED has no payload (no bid amount leaked)
-      const sealedEmit = emittedEvents.find(
+      const sealedEmit = emittedEvents().find(
         (e) => e.room === `${itemId.toHexString()}-bid` && e.event === ESocketEventCode.SEALED_BID_ACCEPTED,
       );
       expect(sealedEmit).toBeDefined();
-      expect(sealedEmit!.args).toHaveLength(0); // no args
+      expect(sealedEmit!.args).toHaveLength(0);
 
       // Must NOT emit UPDATE_BID_AMOUNT for sealed mode
-      const amountEmit = emittedEvents.find((e) => e.event === ESocketEventCode.UPDATE_BID_AMOUNT);
+      const amountEmit = emittedEvents().find((e) => e.event === ESocketEventCode.UPDATE_BID_AMOUNT);
       expect(amountEmit).toBeUndefined();
 
       expect(result).toMatchObject({ mode: 'sealed' });
@@ -263,7 +276,7 @@ describe('bid-worker', () => {
       );
 
       // No BID_RESULT emitted — client keeps waiting
-      expect(emittedEvents.filter((e) => e.event === ESocketEventCode.BID_RESULT)).toHaveLength(0);
+      expect(emittedEvents().filter((e) => e.event === ESocketEventCode.BID_RESULT)).toHaveLength(0);
     });
 
     it('releases the lock in finally on success', async () => {
@@ -298,7 +311,7 @@ describe('bid-worker', () => {
 
       await expect(runJob(makeJob())).rejects.toBeInstanceOf(UnrecoverableError);
 
-      const socketEmit = emittedEvents.find(
+      const socketEmit = emittedEvents().find(
         (e) => e.room === SOCKET_ID && e.event === ESocketEventCode.BID_RESULT,
       );
       expect(socketEmit).toBeDefined();
@@ -318,7 +331,7 @@ describe('bid-worker', () => {
         runJob(makeJob({ bidderId: missingBidderId })),
       ).rejects.toBeInstanceOf(UnrecoverableError);
 
-      const socketEmit = emittedEvents.find(
+      const socketEmit = emittedEvents().find(
         (e) => e.room === SOCKET_ID && e.event === ESocketEventCode.BID_RESULT,
       );
       expect(socketEmit).toBeDefined();
@@ -331,7 +344,7 @@ describe('bid-worker', () => {
       // No item seeded — worker throws NotFoundError('Item not found')
       await expect(runJob(makeJob())).rejects.toBeInstanceOf(UnrecoverableError);
 
-      const socketEmit = emittedEvents.find(
+      const socketEmit = emittedEvents().find(
         (e) => e.room === SOCKET_ID && e.event === ESocketEventCode.BID_RESULT,
       );
       expect(socketEmit).toBeDefined();
@@ -350,7 +363,32 @@ describe('bid-worker', () => {
       await expect(runJob(makeJob())).rejects.toBe(networkErr);
 
       // No BID_RESULT — client shows "pending" until a retry succeeds
-      expect(emittedEvents.filter((e) => e.event === ESocketEventCode.BID_RESULT)).toHaveLength(0);
+      expect(emittedEvents().filter((e) => e.event === ESocketEventCode.BID_RESULT)).toHaveLength(0);
+    });
+  });
+
+  // ─── worker.on('failed') — bidder notification ────────────────────────────
+
+  describe('failed handler', () => {
+    it('emits BID_RESULT rejected to bidder when all BullMQ attempts are exhausted (non-UnrecoverableError)', () => {
+      const transientErr = new Error('MongoNetworkError: connection timed out');
+      workerHandlers['failed'](makeJob(), transientErr);
+
+      const emit = emittedEvents().find(
+        (e) => e.room === SOCKET_ID && e.event === ESocketEventCode.BID_RESULT,
+      );
+      expect(emit).toBeDefined();
+      expect(emit!.args[0]).toMatchObject({
+        status: 'rejected',
+        error: expect.stringContaining('high demand'),
+      });
+    });
+
+    it('does NOT double-notify for UnrecoverableError (bidder already notified inside processor)', () => {
+      const unrecoverable = new UnrecoverableError('Not eligible to bid on this item');
+      workerHandlers['failed'](makeJob(), unrecoverable);
+
+      expect(emittedEvents().filter((e) => e.event === ESocketEventCode.BID_RESULT)).toHaveLength(0);
     });
   });
 });
