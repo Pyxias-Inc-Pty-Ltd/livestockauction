@@ -8,6 +8,11 @@ jest.mock('../../../src/shared/middleware', () => {
     },
     deserializeUser: (_req: any, _res: any, next: any) => next(),
     verifyWebhookSignature: (_req: any, _res: any, next: any) => next(),
+    SellerOnly: () => (_req: any, _res: any, next: any) => next(),
+    BidderOnly: () => (req: any, _res: any, next: any) => {
+      if (!req.user) return next(new UnauthorizedError('Authentication required'));
+      next();
+    },
   };
 });
 
@@ -20,6 +25,7 @@ jest.mock('../../../src/services/item-service', () => ({
     getManualBidAmount: jest.fn(),
     getItemsWon: jest.fn(),
     getEligibleBidders: jest.fn(),
+    isInvited: jest.fn(),
   },
 }));
 
@@ -192,6 +198,46 @@ describe('item-router', () => {
     it('returns 400 when itemId is missing', async () => {
       const res = await request(app).get(p.getManualBidAmount).query({});
       expect(res.status).toBe(400);
+    });
+  });
+
+  // ─── GET /isInvited ───────────────────────────────────────────────────────
+
+  describe('GET /isInvited', () => {
+    beforeEach(() => {
+      injectUser = { ...buildBidder(), _id: new Types.ObjectId(), id: new Types.ObjectId().toHexString() };
+    });
+
+    it('returns 200 { invited: true } when service returns true', async () => {
+      (itemService.isInvited as jest.Mock).mockResolvedValue(true);
+      const res = await request(app).get(p.isInvited).query({ itemId: ITEM_ID });
+      expect(res.status).toBe(200);
+      expect(res.body.invited).toBe(true);
+    });
+
+    it('returns 200 { invited: false } when service returns false', async () => {
+      (itemService.isInvited as jest.Mock).mockResolvedValue(false);
+      const res = await request(app).get(p.isInvited).query({ itemId: ITEM_ID });
+      expect(res.status).toBe(200);
+      expect(res.body.invited).toBe(false);
+    });
+
+    it('returns 401 when user is not authenticated', async () => {
+      injectUser = undefined;
+      const res = await request(app).get(p.isInvited).query({ itemId: ITEM_ID });
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 400 when itemId is missing', async () => {
+      const res = await request(app).get(p.isInvited).query({});
+      expect(res.status).toBe(400);
+    });
+
+    it('passes the authenticated user id to the service', async () => {
+      (itemService.isInvited as jest.Mock).mockResolvedValue(true);
+      const res = await request(app).get(p.isInvited).query({ itemId: ITEM_ID });
+      expect(res.status).toBe(200);
+      expect(itemService.isInvited).toHaveBeenCalledWith(ITEM_ID, injectUser.id);
     });
   });
 });

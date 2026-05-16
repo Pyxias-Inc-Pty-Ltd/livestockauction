@@ -536,4 +536,52 @@ describe('item-service', () => {
       expect(stored).not.toBeNull();
     });
   });
+
+  // ─── isInvited ────────────────────────────────────────────────────────────
+
+  describe('isInvited', () => {
+    const bidderId = new Types.ObjectId();
+    const otherBidderId = new Types.ObjectId();
+
+    async function seedAuction(overrides: Record<string, any> = {}) {
+      const data = {
+        ...buildAuction(),
+        thumbnailUrl: 'https://example.com/thumb.jpg',
+        auctionCoordinates: { type: 'Point', coordinates: [25.91, -24.65] },
+        publishedBy: new Types.ObjectId(),
+        globallyEligibleBidders: [],
+        numberOfLots: 0,
+        invitedBidders: [],
+        ...overrides,
+      };
+      await Auction.collection.insertOne(data as any);
+      return data;
+    }
+
+    it('returns true when the user is in item.invitedBidders', async () => {
+      const auction = await seedAuction();
+      const item = await seedItem({ auctionId: auction._id as any, invitedBidders: [bidderId as any] });
+      const result = await itemService.isInvited(item._id.toString(), bidderId.toString());
+      expect(result).toBe(true);
+    });
+
+    it('returns true when the user is in auction.invitedBidders but not item.invitedBidders', async () => {
+      const auction = await seedAuction({ invitedBidders: [bidderId] });
+      const item = await seedItem({ auctionId: auction._id as any, invitedBidders: [] });
+      const result = await itemService.isInvited(item._id.toString(), bidderId.toString());
+      expect(result).toBe(true);
+    });
+
+    it('returns false when the user is in neither invited list', async () => {
+      const auction = await seedAuction({ invitedBidders: [otherBidderId] });
+      const item = await seedItem({ auctionId: auction._id as any, invitedBidders: [otherBidderId as any] });
+      const result = await itemService.isInvited(item._id.toString(), bidderId.toString());
+      expect(result).toBe(false);
+    });
+
+    it('throws NotFoundError when the item does not exist', async () => {
+      const fakeId = new Types.ObjectId().toString();
+      await expect(itemService.isInvited(fakeId, bidderId.toString())).rejects.toThrow(NotFoundError);
+    });
+  });
 });

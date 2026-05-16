@@ -3,7 +3,7 @@ import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isoDateValidation, mongoIdValidation, urlValidation } from '../shared/functions';
-import { requirePermission, SellerOnly } from '../shared/middleware';
+import { requirePermission, SellerOnly, BidderOnly } from '../shared/middleware';
 import { IAdmin, IBidder, ISeller } from '../models/user-model';
 import { EItemSortType, EPermission, ESortOrderType, MAX_LIST_LIMIT_NUMBER } from '../globals';
 
@@ -23,6 +23,7 @@ export const p = {
   addInvitedBidders: '/addInvitedBidders',
   removeInvitedBidder: '/removeInvitedBidder',
   getInvitedBidders: '/getInvitedBidders',
+  isInvited: '/isInvited',
   updateItem: '/updateItem',
 } as const;
 
@@ -434,6 +435,29 @@ router.get(p.getInvitedBidders, async (req: Request, res: Response) => {
     const { itemId } = req.query;
     const bidders = await itemService.getInvitedBidders(itemId as string);
     return res.status(OK).json({ bidders });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Check whether the currently authenticated bidder is invited to a lot.
+ * Returns { invited: boolean } without exposing the full invited list.
+ */
+router.get(p.isInvited, BidderOnly(), async (req: Request, res: Response) => {
+  try {
+    const qSchema = Joi.object().keys({
+      itemId: mongoIdValidation.required().messages({
+        'any.required': '"itemId" is a required field',
+      }),
+    }).required();
+
+    Joi.assert(req.query, qSchema);
+
+    const { itemId } = req.query;
+    const userId = (req.user as IBidder).id.toString();
+    const invited = await itemService.isInvited(itemId as string, userId);
+    return res.status(OK).json({ invited });
   } catch (error) {
     throw error;
   }
