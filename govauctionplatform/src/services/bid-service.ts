@@ -108,6 +108,11 @@ async function _runBidTransaction(
       if (item.status === EItemStatus.CANCELLED) {
         throw new ForbiddenError('Bidding for this lot has been cancelled');
       }
+      // Guard against the cron's ~59-second close window: reject bids submitted
+      // after the declared endTime even if the status hasn't been updated yet.
+      if (item.endTime && item.endTime <= now) {
+        throw new ForbiddenError('Bidding for this lot has already ended');
+      }
 
       // participationType: CITIZEN_ONLY auctions reject organisational bidders.
       if (
