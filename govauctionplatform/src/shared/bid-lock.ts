@@ -71,3 +71,23 @@ export async function releaseBidLock(itemId: string, token: string): Promise<voi
   `;
   await lockRedis.eval(script, 1, lockKey(itemId), token);
 }
+
+const LOCK_POLL_INTERVAL_MS = 50;
+const MAX_LOCK_WAIT_MS = 4_000;
+
+/**
+ * Poll for the per-item bid lock, waiting up to MAX_LOCK_WAIT_MS before
+ * giving up. Keeps lock-contention retries inside a single BullMQ attempt
+ * rather than burning the attempt budget (reserved for genuine infra failures).
+ *
+ * @returns `true` if the lock was acquired; `false` if timed out.
+ */
+export async function acquireBidLockWithWait(itemId: string, token: string): Promise<boolean> {
+  let waited = 0;
+  while (!(await acquireBidLock(itemId, token))) {
+    if (waited >= MAX_LOCK_WAIT_MS) return false;
+    await new Promise((resolve) => setTimeout(resolve, LOCK_POLL_INTERVAL_MS));
+    waited += LOCK_POLL_INTERVAL_MS;
+  }
+  return true;
+}
