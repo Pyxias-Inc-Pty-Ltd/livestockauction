@@ -26,6 +26,7 @@ export const p = {
   updateAuctionCoordinates: '/updateAuctionCoordinates',
   addInvitedBidders: '/addInvitedBidders',
   removeInvitedBidder: '/removeInvitedBidder',
+  revokeInvitedBidder: '/revokeInvitedBidder',
   getInvitedBidders: '/getInvitedBidders',
   inviteByEmail: '/inviteByEmail',
 } as const;
@@ -527,6 +528,31 @@ router.post(p.removeInvitedBidder, requirePermission(EPermission.AUCTION_UPDATE)
 
     const { auctionId, bidderId } = req.body;
     const auction = await auctionService.removeInvitedBidder(auctionId, bidderId);
+    return res.status(OK).json({ auction });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Revoke an invited bidder from a NOT_BEGUN auction.
+ * Cascades: removes from item.eligibleBidders, creates REFUND for any paid reservations.
+ */
+router.post(p.revokeInvitedBidder, requirePermission(EPermission.AUCTION_UPDATE), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      auctionId: mongoIdValidation.required().messages({
+        'any.required': '"auctionId" is a required field',
+      }),
+      bidderId: mongoIdValidation.required().messages({
+        'any.required': '"bidderId" is a required field',
+      }),
+    }).required();
+
+    Joi.assert(req.body, schema);
+
+    const { auctionId, bidderId } = req.body;
+    const auction = await auctionService.revokeInvitedBidder(auctionId, bidderId);
     return res.status(OK).json({ auction });
   } catch (error) {
     throw error;
