@@ -560,7 +560,9 @@ async function getBids(itemId: string, conditions: Map<string, any>, projection?
         q.sort({ bidTime: conditions.get('sortOrder') });
       }
       if (conditions.get('sortBy') === EBidSortType.AMOUNT) {
-        q.sort({ bidAmount: conditions.get('sortOrder') });
+        // Secondary sort by bidTime ASC: on equal amounts, earliest submission wins.
+        const amountOrder = conditions.get('sortOrder') === ESortOrderType.ASC || conditions.get('sortOrder') === ESortOrderType.asc ? 1 : -1;
+        q.sort({ bidAmount: amountOrder, bidTime: 1 });
       }
     }
 
