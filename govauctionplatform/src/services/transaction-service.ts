@@ -125,7 +125,7 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
 async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: { itemId: string }): Promise<ITransaction> {
   try {
 
-    const [item, token] = await Promise.all([itemService.getById(input.itemId, { reservePrice: 1, sellerId: 1, winningBidder: 1, auctionId: 1 }), tokenService.getActiveToken()]);
+    const [item, token] = await Promise.all([itemService.getById(input.itemId, { reservePrice: 1, sellerId: 1, winningBidder: 1, auctionId: 1, isBidIncrementedManually: 1, isClosedBidding: 1 }), tokenService.getActiveToken()]);
 
     // Check if exists
     if (!item) {
@@ -137,8 +137,14 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
       throw new NotFoundError('Token not found');
     }
 
-    // If winningBidder not yet assigned (cron lag), attempt to assign it now.
+    // If winningBidder not yet assigned, handle based on lot type.
+    // Sealed-bid and livestream lots must wait for the cron/auctioneer to assign the
+    // winner explicitly — auto-selecting here would assign the wrong bidder.
+    // Open-bidding lots can fall back to autoSelectWinner to cover cron lag.
     if (!item.winningBidder) {
+      if (item.isClosedBidding || item.isBidIncrementedManually) {
+        throw new InternalServerError('Winner has not been determined yet — please try again shortly');
+      }
       const resolved = await itemService.autoSelectWinner(input.itemId);
       if (!resolved?.winningBidder) {
         throw new InternalServerError('Winning bidder not found');
