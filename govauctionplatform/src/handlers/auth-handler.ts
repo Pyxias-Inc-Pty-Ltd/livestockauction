@@ -15,6 +15,15 @@ export default {
       return;
     }
 
+    // Integration-test bypass — accepts a pre-seeded bidder ID so tests can
+    // connect without a live Keycloak instance.  Only active when NODE_ENV=test.
+    if (process.env.NODE_ENV === 'test' && socket.handshake.auth.testBidderId) {
+      const user = await userService.getById(socket.handshake.auth.testBidderId);
+      if (!user) throw new UnauthorizedError('Test bidder not found');
+      socket.user = user;
+      return;
+    }
+
     if (!bearerToken) {
       throw new UnauthorizedError('No token supplied');
     }
