@@ -770,4 +770,65 @@ describe('bid-service', () => {
       expect(bids).toHaveLength(2);
     });
   });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // getWinningBid
+  // ───────────────────────────────────────────────────────────────────────────
+
+  describe('getWinningBid', () => {
+    it('returns the bid with the highest amount', async () => {
+      const bidder1 = await seedBidder();
+      const bidder2 = await seedBidder();
+      const item = await seedItem(bidder1._id);
+
+      await Bid.create([
+        { itemId: item._id, userId: bidder1._id, bidAmount: 500, bidTime: new Date(), isRetracted: false },
+        { itemId: item._id, userId: bidder2._id, bidAmount: 800, bidTime: new Date(), isRetracted: false },
+      ]);
+
+      const winner = await bidService.getWinningBid(item._id.toString());
+      expect(winner?.bidAmount).toBe(800);
+      expect(winner?.userId.toString()).toBe(bidder2._id.toString());
+    });
+
+    it('returns null when there are no bids', async () => {
+      const bidder = await seedBidder();
+      const item = await seedItem(bidder._id);
+
+      const winner = await bidService.getWinningBid(item._id.toString());
+      expect(winner).toBeNull();
+    });
+
+    it('ignores retracted bids when finding the winner', async () => {
+      const bidder1 = await seedBidder();
+      const bidder2 = await seedBidder();
+      const item = await seedItem(bidder1._id);
+
+      await Bid.create([
+        { itemId: item._id, userId: bidder1._id, bidAmount: 1000, bidTime: new Date(), isRetracted: true },
+        { itemId: item._id, userId: bidder2._id, bidAmount: 700, bidTime: new Date(), isRetracted: false },
+      ]);
+
+      const winner = await bidService.getWinningBid(item._id.toString());
+      expect(winner?.bidAmount).toBe(700);
+      expect(winner?.userId.toString()).toBe(bidder2._id.toString());
+    });
+
+    it('breaks a tie by earliest bidTime — first bidder wins', async () => {
+      const bidder1 = await seedBidder();
+      const bidder2 = await seedBidder();
+      const item = await seedItem(bidder1._id);
+
+      const earlier = new Date('2025-01-01T10:00:00Z');
+      const later   = new Date('2025-01-01T10:00:01Z');
+
+      await Bid.create([
+        { itemId: item._id, userId: bidder2._id, bidAmount: 500, bidTime: later,   isRetracted: false },
+        { itemId: item._id, userId: bidder1._id, bidAmount: 500, bidTime: earlier, isRetracted: false },
+      ]);
+
+      const winner = await bidService.getWinningBid(item._id.toString());
+      expect(winner?.userId.toString()).toBe(bidder1._id.toString());
+    });
+  });
 });
