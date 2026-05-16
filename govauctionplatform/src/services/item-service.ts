@@ -6,7 +6,8 @@ import { formatBAITSAnimalEID, getAnimalBreedById, getAnimalByEID, isBeforeStart
 import { ForbiddenError, InternalServerError, NotFoundError, BadRequestError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { Schema } from 'mongoose';
-import { EAuctionStatus, EGenderType, EItemSortType, EItemStatus, ESortOrderType, languageType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { EAuctionStatus, EGenderType, EItemSortType, EItemStatus, ESortOrderType, ESocketEventCode, languageType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { socketEmitter } from "../shared/socket-emitter";
 import auctionService from "./auction-service";
 import { ClientSession, startSession } from 'mongoose';
 import bidService from "./bid-service";
@@ -686,11 +687,20 @@ async function trackItemStatus(): Promise<void> {
     if (justEndedItems.length > 0) {
       await Promise.all(
         justEndedItems.map((item) =>
-          autoSelectWinner(item._id.toString()).catch((err: Error) =>
-            console.error(
-              `[item-service] autoSelectWinner failed for item ${item._id}: ${err.message}`,
+          autoSelectWinner(item._id.toString())
+            .then((result) => {
+              if (result?.winningBidder) {
+                const itemId = item._id.toString();
+                socketEmitter
+                  .to(`${itemId}-bid`)
+                  .emit(ESocketEventCode.BROADCAST_REFRESH_AFTER_WINNING, itemId);
+              }
+            })
+            .catch((err: Error) =>
+              console.error(
+                `[item-service] autoSelectWinner failed for item ${item._id}: ${err.message}`,
+              ),
             ),
-          ),
         ),
       );
     }
