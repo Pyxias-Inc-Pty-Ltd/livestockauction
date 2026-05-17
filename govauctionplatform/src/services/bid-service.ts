@@ -260,8 +260,15 @@ async function createOpenBid(currentUser: IBidder, input: IBidInput): Promise<IB
  * the current called price — they cannot name their own price.
  *
  * Validation:
- *  - bidAmount MUST equal item.manualBidAmount exactly.  Any other value means
- *    the client is attempting to bypass the auctioneer's price control.
+ *  - bidAmount must meet or exceed item.manualBidAmount (the auctioneer's
+ *    called price).
+ *
+ * Concurrency: all bidders in a round accept the same called price, so
+ * concurrent bid-document writes do not conflict.  No Redis lock, no MongoDB
+ * transaction, and no item mutation are required.  item.currentBid and
+ * item.manualBidAmount are owned exclusively by the auctioneer via
+ * setNewBidAmountManually; updating them per bid adds no value and caused
+ * the thundering-herd version-conflict loop under high concurrency.
  *
  * Broadcast (caller's responsibility): emit UPDATE_BID_AMOUNT — the auctioneer
  * and all viewers see who is bidding at the called price.
@@ -269,27 +276,87 @@ async function createOpenBid(currentUser: IBidder, input: IBidInput): Promise<IB
  * Retraction: never allowed (handled in retractBid).
  */
 async function createLivestreamBid(currentUser: IBidder, input: IBidInput): Promise<IBid> {
-  return _runBidTransaction(currentUser, input, {
-    validateAmount: (item) => {
-      if (input.bidAmount < (item.manualBidAmount ?? 0)) {
-        throw new ForbiddenError(
-          `Bid amount must be at least the auctioneer's called price of ${item.manualBidAmount}`,
-        );
-      }
-    },
-    // Advance manualBidAmount atomically when the bid is accepted.
-    // This eliminates the pre-flight CREATE_NEW_MANUAL_BID_AMOUNT step on the
-    // client — manualBidAmount can only change via an accepted bid, so a
-    // browser refresh will never leave it stuck at an unconfirmed value.
-    afterItemUpdate: async (item, sess) => {
-      await Item.updateOne(
-        { _id: item._id },
-        { $set: { manualBidAmount: input.bidAmount } },
-        { session: sess },
-      );
-    },
-    enforceOneBidPerBidder: false,
+  // Idempotency — return existing bid if client retransmits same key
+  if (input.idempotencyKey) {
+    const existing = await Bid.findOne({ idempotencyKey: input.idempotencyKey });
+    if (existing) return existing;
+  }
+
+  const now = new Date();
+
+  // Advisory reads — no session/transaction needed (no shared document mutation)
+  const item = await Item.findById(input.itemId);
+  if (!item) throw new NotFoundError('Item not found');
+
+  const auction = await auctionService.getById(item.auctionId, {
+    isInviteOnly: 1,
+    hasRegistrationFee: 1,
+    globallyEligibleBidders: 1,
+    participationType: 1,
+    sectorType: 1,
+    participantsWithBiddingNumbers: 1,
   });
+  if (!auction) throw new NotFoundError('Auction not found');
+
+  // Eligibility
+  const userId = currentUser.id.toString();
+  const inItemEligible = item.eligibleBidders?.includes(userId);
+  const inGlobalEligible = auction.globallyEligibleBidders?.includes(userId);
+
+  if (auction.isInviteOnly && !inItemEligible) {
+    throw new ForbiddenError('You are not eligible to bid on this lot');
+  }
+  if (!inItemEligible && !inGlobalEligible) {
+    throw new ForbiddenError('You must pay the reserve price before bidding');
+  }
+
+  // Status
+  if (item.status === EItemStatus.NOT_BEGUN) throw new ForbiddenError('Bidding for this lot has not begun');
+  if (item.status === EItemStatus.ENDED)     throw new ForbiddenError('Bidding for this lot has already ended');
+  if (item.status === EItemStatus.CANCELLED) throw new ForbiddenError('Bidding for this lot has been cancelled');
+  if (item.endTime && item.endTime <= now)   throw new ForbiddenError('Bidding for this lot has already ended');
+
+  // Participation type
+  if (
+    auction.participationType === EParticipationType.CITIZEN_ONLY &&
+    currentUser.isOrganization
+  ) {
+    throw new ForbiddenError(
+      'This auction is restricted to individual citizens — ' +
+      'organisations are not permitted to bid',
+    );
+  }
+
+  // Identity verification
+  if (
+    currentUser.nationality === LOCAL_NATIONALITY &&
+    currentUser.identityNumberVerificationStatus !== EIdentityNumberVerificationStatus.VERIFIED
+  ) {
+    throw new ForbiddenError(
+      'Your national ID (OMANG) must be verified before you can place a bid',
+    );
+  }
+
+  // Called price — bid must meet or exceed auctioneer's called price
+  if (input.bidAmount < (item.manualBidAmount ?? 0)) {
+    throw new ForbiddenError(
+      `Bid amount must be at least the auctioneer's called price of ${item.manualBidAmount}`,
+    );
+  }
+
+  // Save bid only — no item mutation, no transaction
+  const bid = new Bid({ ...input, userId: currentUser.id, bidTime: now });
+
+  // Stamp bidding number if auction uses assigned numbers
+  if (auction.participantsWithBiddingNumbers?.length > 0) {
+    const entry = (auction.participantsWithBiddingNumbers as string[]).find(
+      (e) => e.startsWith(currentUser.id.toString() + ':'),
+    );
+    if (entry) bid.bidNumber = entry.split(':')[1];
+  }
+
+  await bid.save();
+  return bid;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
