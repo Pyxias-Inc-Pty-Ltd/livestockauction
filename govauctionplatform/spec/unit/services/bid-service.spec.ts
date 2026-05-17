@@ -206,9 +206,10 @@ describe('bid-service', () => {
       ).rejects.toThrow(ForbiddenError);
     });
 
-    it('allows a bidder not in eligibleBidders when auction is not invite-only', async () => {
+    it('allows a bidder who has paid the reserve to bid on a non-invite-only auction', async () => {
       const bidder = await seedBidder();
-      const item = await seedItem(new Types.ObjectId()); // different bidder
+      // seedItem adds bidder._id to eligibleBidders by default (simulates paid reservation)
+      const item = await seedItem(bidder._id);
 
       const bid = await bidService.createOpenBid(bidder as any, {
         itemId: item._id,
@@ -281,7 +282,7 @@ describe('bid-service', () => {
       ).rejects.toThrow(ForbiddenError);
     });
 
-    it('rejects bid amount at or below startingBid', async () => {
+    it('rejects bid amount strictly below startingBid', async () => {
       const bidder = await seedBidder();
       const item = await seedItem(bidder._id, { startingBid: 500 });
 
@@ -289,7 +290,7 @@ describe('bid-service', () => {
         bidService.createOpenBid(bidder as any, {
           itemId: item._id,
           userId: bidder._id,
-          bidAmount: 500,
+          bidAmount: 499,
           bidTime: new Date(),
         }),
       ).rejects.toThrow(ForbiddenError);
@@ -309,16 +310,17 @@ describe('bid-service', () => {
       ).rejects.toThrow(ForbiddenError);
     });
 
-    it('rejects bid that does not meet the minimum increment', async () => {
+    it('rejects bid that does not meet the minimum increment on a consecutive bid', async () => {
       const bidder = await seedBidder();
-      // startingBid=500, bidIncrement=200 → minimum first bid is 700
-      const item = await seedItem(bidder._id, { startingBid: 500, bidIncrement: 200 });
+      // Seed item with currentBid=700 (simulates a prior accepted bid).
+      // Next bid must be at least 700 + 200 = 900, so 800 is rejected.
+      const item = await seedItem(bidder._id, { startingBid: 500, bidIncrement: 200, currentBid: 700 });
 
       await expect(
         bidService.createOpenBid(bidder as any, {
           itemId: item._id,
           userId: bidder._id,
-          bidAmount: 600,
+          bidAmount: 800,
           bidTime: new Date(),
         }),
       ).rejects.toThrow(ForbiddenError);
@@ -381,7 +383,9 @@ describe('bid-service', () => {
   // ───────────────────────────────────────────────────────────────────────────
 
   describe('createLivestreamBid', () => {
-    it('saves bid when amount equals manualBidAmount', async () => {
+    it('saves bid when amount equals manualBidAmount and does NOT mutate the item', async () => {
+      const itemUpdateSpy = jest.spyOn(Item, 'updateOne');
+
       const bidder = await seedBidder();
       const item = await seedItem(bidder._id, {
         isBidIncrementedManually: true,
@@ -397,9 +401,32 @@ describe('bid-service', () => {
       });
 
       expect(bid.bidAmount).toBe(750);
+
+      // The redesigned function saves only a Bid document — item must not be mutated.
+      expect(itemUpdateSpy).not.toHaveBeenCalled();
+
+      itemUpdateSpy.mockRestore();
     });
 
-    it('rejects when amount does not equal manualBidAmount', async () => {
+    it('accepts bid amount above manualBidAmount', async () => {
+      const bidder = await seedBidder();
+      const item = await seedItem(bidder._id, {
+        isBidIncrementedManually: true,
+        bidIncrement: undefined,
+        manualBidAmount: 750,
+      });
+
+      const bid = await bidService.createLivestreamBid(bidder as any, {
+        itemId: item._id,
+        userId: bidder._id,
+        bidAmount: 800,
+        bidTime: new Date(),
+      });
+
+      expect(bid.bidAmount).toBe(800);
+    });
+
+    it('rejects when amount is below manualBidAmount', async () => {
       const bidder = await seedBidder();
       const item = await seedItem(bidder._id, {
         isBidIncrementedManually: true,
@@ -411,10 +438,124 @@ describe('bid-service', () => {
         bidService.createLivestreamBid(bidder as any, {
           itemId: item._id,
           userId: bidder._id,
-          bidAmount: 800,
+          bidAmount: 700,
           bidTime: new Date(),
         }),
       ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('rejects a bidder not eligible for the lot', async () => {
+      mockAuction({ isInviteOnly: true });
+
+      const bidder = await seedBidder();
+      const item = await seedItem(new Types.ObjectId(), { // different bidder in eligibleBidders
+        isBidIncrementedManually: true,
+        bidIncrement: undefined,
+        manualBidAmount: 750,
+      });
+
+      await expect(
+        bidService.createLivestreamBid(bidder as any, {
+          itemId: item._id,
+          userId: bidder._id,
+          bidAmount: 750,
+          bidTime: new Date(),
+        }),
+      ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('rejects when item status is NOT_BEGUN', async () => {
+      const bidder = await seedBidder();
+      const item = await seedItem(bidder._id, {
+        isBidIncrementedManually: true,
+        bidIncrement: undefined,
+        manualBidAmount: 750,
+        status: EItemStatus.NOT_BEGUN,
+      });
+
+      await expect(
+        bidService.createLivestreamBid(bidder as any, {
+          itemId: item._id,
+          userId: bidder._id,
+          bidAmount: 750,
+          bidTime: new Date(),
+        }),
+      ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('rejects when item status is ENDED', async () => {
+      const bidder = await seedBidder();
+      const item = await seedItem(bidder._id, {
+        isBidIncrementedManually: true,
+        bidIncrement: undefined,
+        manualBidAmount: 750,
+        status: EItemStatus.ENDED,
+      });
+
+      await expect(
+        bidService.createLivestreamBid(bidder as any, {
+          itemId: item._id,
+          userId: bidder._id,
+          bidAmount: 750,
+          bidTime: new Date(),
+        }),
+      ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('two concurrent bids for the same lot both resolve (no lock contention)', async () => {
+      const bidder1 = await seedBidder();
+      const bidder2 = await seedBidder();
+      const item = await seedItem(bidder1._id, {
+        isBidIncrementedManually: true,
+        bidIncrement: undefined,
+        manualBidAmount: 750,
+        // Both bidders eligible
+        eligibleBidders: [bidder1._id.toString(), bidder2._id.toString()],
+      });
+
+      const [bid1, bid2] = await Promise.all([
+        bidService.createLivestreamBid(bidder1 as any, {
+          itemId: item._id,
+          userId: bidder1._id,
+          bidAmount: 750,
+          bidTime: new Date(),
+        }),
+        bidService.createLivestreamBid(bidder2 as any, {
+          itemId: item._id,
+          userId: bidder2._id,
+          bidAmount: 750,
+          bidTime: new Date(),
+        }),
+      ]);
+
+      expect(bid1.bidAmount).toBe(750);
+      expect(bid2.bidAmount).toBe(750);
+
+      const count = await Bid.countDocuments({ itemId: item._id, isRetracted: false });
+      expect(count).toBe(2);
+    });
+
+    it('returns existing bid for duplicate idempotency key', async () => {
+      const bidder = await seedBidder();
+      const item = await seedItem(bidder._id, {
+        isBidIncrementedManually: true,
+        bidIncrement: undefined,
+        manualBidAmount: 750,
+      });
+      const idempotencyKey = randomUUID();
+      const input = {
+        itemId: item._id,
+        userId: bidder._id,
+        bidAmount: 750,
+        bidTime: new Date(),
+        idempotencyKey,
+      };
+
+      const first = await bidService.createLivestreamBid(bidder as any, input);
+      const second = await bidService.createLivestreamBid(bidder as any, input);
+
+      expect(second._id.toString()).toBe(first._id.toString());
+      expect(await Bid.countDocuments({ idempotencyKey })).toBe(1);
     });
   });
 
@@ -463,7 +604,7 @@ describe('bid-service', () => {
       ).rejects.toThrow(ForbiddenError);
     });
 
-    it('rejects bid amount at or below startingBid', async () => {
+    it('rejects bid amount strictly below startingBid', async () => {
       const bidder = await seedBidder();
       const item = await seedItem(bidder._id, {
         isClosedBidding: true,
@@ -475,10 +616,28 @@ describe('bid-service', () => {
         bidService.createSealedBid(bidder as any, {
           itemId: item._id,
           userId: bidder._id,
-          bidAmount: 500,
+          bidAmount: 499,
           bidTime: new Date(),
         }),
       ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('allows bid amount equal to startingBid', async () => {
+      const bidder = await seedBidder();
+      const item = await seedItem(bidder._id, {
+        isClosedBidding: true,
+        bidIncrement: undefined,
+        startingBid: 500,
+      });
+
+      const bid = await bidService.createSealedBid(bidder as any, {
+        itemId: item._id,
+        userId: bidder._id,
+        bidAmount: 500,
+        bidTime: new Date(),
+      });
+
+      expect(bid.bidAmountEncrypted).toBeTruthy();
     });
   });
 

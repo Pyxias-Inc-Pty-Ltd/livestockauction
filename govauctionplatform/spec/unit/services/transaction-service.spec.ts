@@ -95,6 +95,8 @@ import auctionService from '../../../src/services/auction-service';
 import tokenService from '../../../src/services/token-service';
 import forumService from '../../../src/services/forum-service';
 import collectionService from '../../../src/services/collection-service';
+import { Item } from '../../../src/models/item-model';
+import { Forum } from '../../../src/models/forum-model';
 import { connectTestDbReplSet, disconnectTestDb, clearTestDb } from '../../helpers/db';
 import { buildBidder } from '../../helpers/factories/user.factory';
 
@@ -202,6 +204,7 @@ describe('transaction-service', () => {
         createdDate: oldDate,
         status: EPaymentStatus.PENDING,
         transactionType: ETransactionType.RESERVATION,
+        metadata: { PAY_REQUEST_ID: 'test-pay-req-id' },
       });
 
       await transactionService.trackTransactionStatus();
@@ -215,6 +218,7 @@ describe('transaction-service', () => {
         createdDate: oldDate,
         status: EPaymentStatus.PENDING,
         transactionType: ETransactionType.PURCHASE,
+        metadata: { PAY_REQUEST_ID: 'test-pay-req-id' },
       });
 
       await transactionService.trackTransactionStatus();
@@ -329,7 +333,7 @@ describe('transaction-service', () => {
       ).rejects.toThrow(ForbiddenError);
     });
 
-    it('throws InternalServerError when PayGate responds with a non-ok status', async () => {
+    it('throws when PayGate responds with a non-ok status', async () => {
       global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 503 }) as any;
       const bidderData = buildBidder();
       const bidder = { ...bidderData, id: bidderData._id!.toString() } as any;
@@ -337,7 +341,7 @@ describe('transaction-service', () => {
         transactionService.initiateItemReservation(bidder, {
           itemId: itemId.toString(),
         })
-      ).rejects.toThrow(InternalServerError);
+      ).rejects.toThrow('PayGate initiate.trans returned HTTP 503');
     });
   });
 
@@ -352,29 +356,26 @@ describe('transaction-service', () => {
       ).rejects.toThrow(NotFoundError);
     });
 
-    it('status "2" (declined) → sets transaction to FAILED and throws', async () => {
+    it('status "2" (declined) → sets transaction to FAILED and returns', async () => {
       const tx = await seedTransaction();
-      await expect(
-        transactionService.processSuccessfulPaymentFromPayGate(makeWebhookInput(tx.id, '2'))
-      ).rejects.toThrow(InternalServerError);
+      const result = await transactionService.processSuccessfulPaymentFromPayGate(makeWebhookInput(tx.id, '2'));
+      expect(result.status).toBe(EPaymentStatus.FAILED);
       const updated = await Transaction.findById(tx._id);
       expect(updated?.status).toBe(EPaymentStatus.FAILED);
     });
 
-    it('status "3" (cancelled) → sets transaction to CANCELLED and throws', async () => {
+    it('status "3" (cancelled) → sets transaction to CANCELLED and returns', async () => {
       const tx = await seedTransaction();
-      await expect(
-        transactionService.processSuccessfulPaymentFromPayGate(makeWebhookInput(tx.id, '3'))
-      ).rejects.toThrow(InternalServerError);
+      const result = await transactionService.processSuccessfulPaymentFromPayGate(makeWebhookInput(tx.id, '3'));
+      expect(result.status).toBe(EPaymentStatus.CANCELLED);
       const updated = await Transaction.findById(tx._id);
       expect(updated?.status).toBe(EPaymentStatus.CANCELLED);
     });
 
-    it('status "0" (not done) → sets transaction to PENDING and throws', async () => {
+    it('status "0" (not done) → sets transaction to PENDING and returns', async () => {
       const tx = await seedTransaction();
-      await expect(
-        transactionService.processSuccessfulPaymentFromPayGate(makeWebhookInput(tx.id, '0'))
-      ).rejects.toThrow(InternalServerError);
+      const result = await transactionService.processSuccessfulPaymentFromPayGate(makeWebhookInput(tx.id, '0'));
+      expect(result.status).toBe(EPaymentStatus.PENDING);
     });
 
     // ─── RESERVATION approved ─────────────────────────────────────────────
@@ -394,16 +395,15 @@ describe('transaction-service', () => {
           transactionType: ETransactionType.RESERVATION,
         });
 
-        mockItem = {
-          _id: new Types.ObjectId(),
-          auctionId,
-          eligibleBidders: [],
-          save: jest.fn().mockResolvedValue(undefined),
-        };
-        mockForum = {
-          participants: [],
-          save: jest.fn().mockResolvedValue(undefined),
-        };
+        const itemId = new Types.ObjectId();
+        const forumId = new Types.ObjectId();
+
+        // Insert real DB documents so Item.updateOne / Forum.updateOne have a target.
+        await Item.collection.insertOne({ _id: itemId, auctionId, eligibleBidders: [] } as any);
+        await Forum.collection.insertOne({ _id: forumId, participants: [] } as any);
+
+        mockItem = { _id: itemId, auctionId };
+        mockForum = { _id: forumId };
         mockAuction = {
           _id: auctionId,
           hasRegistrationFee: false,
@@ -421,14 +421,16 @@ describe('transaction-service', () => {
         await transactionService.processSuccessfulPaymentFromPayGate(
           makeWebhookInput(tx.id, '1')
         );
-        expect(mockItem.eligibleBidders).toContain(buyerId.toString());
+        const updated = await Item.findById(mockItem._id);
+        expect(updated?.eligibleBidders).toContain(buyerId.toString());
       });
 
       it('adds buyer to forum.participants', async () => {
         await transactionService.processSuccessfulPaymentFromPayGate(
           makeWebhookInput(tx.id, '1')
         );
-        expect(mockForum.participants).toContain(buyerId.toString());
+        const updated = await Forum.findById(mockForum._id);
+        expect(updated?.participants).toContain(buyerId.toString());
       });
 
       it('assigns a bidding number in auction.participantsWithBiddingNumbers', async () => {
@@ -465,11 +467,9 @@ describe('transaction-service', () => {
 
       beforeEach(async () => {
         tx = await seedTransaction({ transactionType: ETransactionType.PURCHASE });
-        mockItem = {
-          _id: new Types.ObjectId(),
-          isPurchased: false,
-          save: jest.fn().mockResolvedValue(undefined),
-        };
+        const itemId = new Types.ObjectId();
+        await Item.collection.insertOne({ _id: itemId, isPurchased: false } as any);
+        mockItem = { _id: itemId, isPurchased: false };
         (itemService.getById as jest.Mock).mockResolvedValue(mockItem);
       });
 
@@ -477,7 +477,8 @@ describe('transaction-service', () => {
         await transactionService.processSuccessfulPaymentFromPayGate(
           makeWebhookInput(tx.id, '1')
         );
-        expect(mockItem.isPurchased).toBe(true);
+        const updated = await Item.findById(mockItem._id);
+        expect(updated?.isPurchased).toBe(true);
       });
 
       it('returns the transaction with COMPLETED status', async () => {
@@ -686,6 +687,62 @@ describe('transaction-service', () => {
       );
       expect(results).toHaveLength(1);
       expect(results[0].transactionType).toBe(ETransactionType.PURCHASE);
+    });
+  });
+
+  // ─── initiatePurchaseItemByWinningBidder ───────────────────────────────────
+
+  describe('initiatePurchaseItemByWinningBidder', () => {
+    const mockBidder = buildBidder();
+
+    beforeEach(() => {
+      (tokenService.getActiveToken as jest.Mock).mockResolvedValue({ _id: new Types.ObjectId() });
+    });
+
+    it('throws InternalServerError for a sealed-bid lot when winningBidder is not yet set', async () => {
+      (itemService.getById as jest.Mock).mockResolvedValue({
+        _id: new Types.ObjectId(),
+        isClosedBidding: true,
+        isBidIncrementedManually: false,
+        winningBidder: null,
+        auctionId: new Types.ObjectId(),
+        reservePrice: 0,
+        sellerId: new Types.ObjectId(),
+      });
+
+      await expect(
+        transactionService.initiatePurchaseItemByWinningBidder(mockBidder as any, {
+          itemId: new Types.ObjectId().toString(),
+        }),
+      ).rejects.toThrow('Winner has not been determined yet');
+    });
+
+    it('throws InternalServerError for a livestream lot when winningBidder is not yet set', async () => {
+      (itemService.getById as jest.Mock).mockResolvedValue({
+        _id: new Types.ObjectId(),
+        isClosedBidding: false,
+        isBidIncrementedManually: true,
+        winningBidder: null,
+        auctionId: new Types.ObjectId(),
+        reservePrice: 0,
+        sellerId: new Types.ObjectId(),
+      });
+
+      await expect(
+        transactionService.initiatePurchaseItemByWinningBidder(mockBidder as any, {
+          itemId: new Types.ObjectId().toString(),
+        }),
+      ).rejects.toThrow('Winner has not been determined yet');
+    });
+
+    it('throws NotFoundError for a non-existent item', async () => {
+      (itemService.getById as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        transactionService.initiatePurchaseItemByWinningBidder(mockBidder as any, {
+          itemId: new Types.ObjectId().toString(),
+        }),
+      ).rejects.toThrow(NotFoundError);
     });
   });
 });

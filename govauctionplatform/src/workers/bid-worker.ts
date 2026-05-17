@@ -34,15 +34,10 @@ export function startBidWorker(): Worker<BidJobData, BidJobResult> {
     async (job: Job<BidJobData>): Promise<BidJobResult> => {
       const { socketId, bidderId, input } = job.data;
 
-      // Use job.id as the lock token — unique per BullMQ job.
-      const lockToken = job.id!;
-      const acquired = await acquireBidLock(input.itemId, lockToken);
-
-      if (!acquired) {
-        // Another worker is currently processing a bid for this item.
-        // Throw a plain error so BullMQ retries with back-off.
-        throw new Error(`Bid lock for item ${input.itemId} is held — retrying`);
-      }
+      // lockAcquired tracks whether we successfully took the lock.
+      // The finally block only releases when we actually hold it.
+      let lockToken: string | null = null;
+      let lockAcquired = false;
 
       try {
         // ── Re-fetch bidder ──────────────────────────────────────────────────
@@ -51,13 +46,31 @@ export function startBidWorker(): Worker<BidJobData, BidJobResult> {
 
         // ── Detect auction mode ──────────────────────────────────────────────
         // Advisory read — the service functions enforce authoritative state
-        // inside their own transactions.
+        // inside their own transactions (open/sealed) or via direct checks
+        // (livestream).
         const item = await Item.findById(input.itemId, {
           isBidIncrementedManually: 1,
           isClosedBidding: 1,
           auctionId: 1,
         });
         if (!item) throw new NotFoundError('Item not found');
+
+        // ── Conditionally acquire lock ───────────────────────────────────────
+        // Livestream bids are lock-free: all bidders in a round accept the same
+        // called price — concurrent bid-document writes do not conflict.
+        // Open and sealed modes still require the lock to serialise competing
+        // amounts.
+        const isLivestream = item.isBidIncrementedManually;
+
+        if (!isLivestream) {
+          lockToken = job.id!;
+          lockAcquired = await acquireBidLock(input.itemId, lockToken);
+          if (!lockAcquired) {
+            // Another worker holds the lock — throw a plain error so BullMQ
+            // retries with back-off.
+            throw new Error(`Bid lock for item ${input.itemId} is held — retrying`);
+          }
+        }
 
         const auctionId = item.auctionId;
         let mode: BidJobResult['mode'];
@@ -161,9 +174,9 @@ export function startBidWorker(): Worker<BidJobData, BidJobResult> {
         // We do NOT emit BID_RESULT here; the bidder waits for the next attempt.
         throw error;
       } finally {
-        // Always release the lock — even on error — so the next bid for this
-        // item isn't blocked.  The Lua script ensures we only release OUR lock.
-        await releaseBidLock(input.itemId, lockToken);
+        // Release the lock only when we actually hold it.
+        // The Lua script ensures we only release OUR lock.
+        if (lockAcquired && lockToken) await releaseBidLock(input.itemId, lockToken);
       }
     },
     {
@@ -179,10 +192,13 @@ export function startBidWorker(): Worker<BidJobData, BidJobResult> {
     console.error(
       `[bid-worker] Job ${job.id} failed (attempt ${job.attemptsMade}/${job.opts.attempts ?? '?'}): ${err.message}`,
     );
+    // Only notify the bidder once all retries are genuinely exhausted.
+    // This handler fires after EVERY failed attempt, so guard against
+    // sending "high demand" prematurely while BullMQ is still retrying.
     // UnrecoverableError means the bidder was already notified inside the
-    // processor. For everything else — lock contention or transient infra
-    // failures — notify them now so they are never left without feedback.
-    if (!(err instanceof UnrecoverableError)) {
+    // processor (business logic rejection) — never double-notify.
+    const permanentlyFailed = job.attemptsMade >= (job.opts.attempts ?? 1);
+    if (!(err instanceof UnrecoverableError) && permanentlyFailed) {
       socketEmitter.to(job.data.socketId).emit(ESocketEventCode.BID_RESULT, {
         status: 'rejected',
         error: 'Your bid could not be processed due to high demand. Please try again.',
