@@ -688,4 +688,60 @@ describe('transaction-service', () => {
       expect(results[0].transactionType).toBe(ETransactionType.PURCHASE);
     });
   });
+
+  // ─── initiatePurchaseItemByWinningBidder ───────────────────────────────────
+
+  describe('initiatePurchaseItemByWinningBidder', () => {
+    const mockBidder = buildBidder();
+
+    beforeEach(() => {
+      (tokenService.getActiveToken as jest.Mock).mockResolvedValue({ _id: new Types.ObjectId() });
+    });
+
+    it('throws InternalServerError for a sealed-bid lot when winningBidder is not yet set', async () => {
+      (itemService.getById as jest.Mock).mockResolvedValue({
+        _id: new Types.ObjectId(),
+        isClosedBidding: true,
+        isBidIncrementedManually: false,
+        winningBidder: null,
+        auctionId: new Types.ObjectId(),
+        reservePrice: 0,
+        sellerId: new Types.ObjectId(),
+      });
+
+      await expect(
+        transactionService.initiatePurchaseItemByWinningBidder(mockBidder as any, {
+          itemId: new Types.ObjectId().toString(),
+        }),
+      ).rejects.toThrow('Winner has not been determined yet');
+    });
+
+    it('throws InternalServerError for a livestream lot when winningBidder is not yet set', async () => {
+      (itemService.getById as jest.Mock).mockResolvedValue({
+        _id: new Types.ObjectId(),
+        isClosedBidding: false,
+        isBidIncrementedManually: true,
+        winningBidder: null,
+        auctionId: new Types.ObjectId(),
+        reservePrice: 0,
+        sellerId: new Types.ObjectId(),
+      });
+
+      await expect(
+        transactionService.initiatePurchaseItemByWinningBidder(mockBidder as any, {
+          itemId: new Types.ObjectId().toString(),
+        }),
+      ).rejects.toThrow('Winner has not been determined yet');
+    });
+
+    it('throws NotFoundError for a non-existent item', async () => {
+      (itemService.getById as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        transactionService.initiatePurchaseItemByWinningBidder(mockBidder as any, {
+          itemId: new Types.ObjectId().toString(),
+        }),
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
 });
