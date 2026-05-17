@@ -463,7 +463,7 @@ describe('bid-service', () => {
       ).rejects.toThrow(ForbiddenError);
     });
 
-    it('rejects bid amount at or below startingBid', async () => {
+    it('rejects bid amount strictly below startingBid', async () => {
       const bidder = await seedBidder();
       const item = await seedItem(bidder._id, {
         isClosedBidding: true,
@@ -475,10 +475,28 @@ describe('bid-service', () => {
         bidService.createSealedBid(bidder as any, {
           itemId: item._id,
           userId: bidder._id,
-          bidAmount: 500,
+          bidAmount: 499,
           bidTime: new Date(),
         }),
       ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('allows bid amount equal to startingBid', async () => {
+      const bidder = await seedBidder();
+      const item = await seedItem(bidder._id, {
+        isClosedBidding: true,
+        bidIncrement: undefined,
+        startingBid: 500,
+      });
+
+      const bid = await bidService.createSealedBid(bidder as any, {
+        itemId: item._id,
+        userId: bidder._id,
+        bidAmount: 500,
+        bidTime: new Date(),
+      });
+
+      expect(bid.bidAmountEncrypted).toBeTruthy();
     });
   });
 
