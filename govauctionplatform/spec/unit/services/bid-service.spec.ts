@@ -206,9 +206,10 @@ describe('bid-service', () => {
       ).rejects.toThrow(ForbiddenError);
     });
 
-    it('allows a bidder not in eligibleBidders when auction is not invite-only', async () => {
+    it('allows a bidder who has paid the reserve to bid on a non-invite-only auction', async () => {
       const bidder = await seedBidder();
-      const item = await seedItem(new Types.ObjectId()); // different bidder
+      // seedItem adds bidder._id to eligibleBidders by default (simulates paid reservation)
+      const item = await seedItem(bidder._id);
 
       const bid = await bidService.createOpenBid(bidder as any, {
         itemId: item._id,
@@ -281,7 +282,7 @@ describe('bid-service', () => {
       ).rejects.toThrow(ForbiddenError);
     });
 
-    it('rejects bid amount at or below startingBid', async () => {
+    it('rejects bid amount strictly below startingBid', async () => {
       const bidder = await seedBidder();
       const item = await seedItem(bidder._id, { startingBid: 500 });
 
@@ -289,7 +290,7 @@ describe('bid-service', () => {
         bidService.createOpenBid(bidder as any, {
           itemId: item._id,
           userId: bidder._id,
-          bidAmount: 500,
+          bidAmount: 499,
           bidTime: new Date(),
         }),
       ).rejects.toThrow(ForbiddenError);
@@ -309,16 +310,17 @@ describe('bid-service', () => {
       ).rejects.toThrow(ForbiddenError);
     });
 
-    it('rejects bid that does not meet the minimum increment', async () => {
+    it('rejects bid that does not meet the minimum increment on a consecutive bid', async () => {
       const bidder = await seedBidder();
-      // startingBid=500, bidIncrement=200 → minimum first bid is 700
-      const item = await seedItem(bidder._id, { startingBid: 500, bidIncrement: 200 });
+      // Seed item with currentBid=700 (simulates a prior accepted bid).
+      // Next bid must be at least 700 + 200 = 900, so 800 is rejected.
+      const item = await seedItem(bidder._id, { startingBid: 500, bidIncrement: 200, currentBid: 700 });
 
       await expect(
         bidService.createOpenBid(bidder as any, {
           itemId: item._id,
           userId: bidder._id,
-          bidAmount: 600,
+          bidAmount: 800,
           bidTime: new Date(),
         }),
       ).rejects.toThrow(ForbiddenError);
@@ -399,7 +401,7 @@ describe('bid-service', () => {
       expect(bid.bidAmount).toBe(750);
     });
 
-    it('rejects when amount does not equal manualBidAmount', async () => {
+    it('rejects when amount is below manualBidAmount', async () => {
       const bidder = await seedBidder();
       const item = await seedItem(bidder._id, {
         isBidIncrementedManually: true,
@@ -411,7 +413,7 @@ describe('bid-service', () => {
         bidService.createLivestreamBid(bidder as any, {
           itemId: item._id,
           userId: bidder._id,
-          bidAmount: 800,
+          bidAmount: 700,
           bidTime: new Date(),
         }),
       ).rejects.toThrow(ForbiddenError);
