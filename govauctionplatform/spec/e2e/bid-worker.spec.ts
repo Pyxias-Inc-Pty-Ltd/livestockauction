@@ -292,6 +292,37 @@ describe('bid-worker', () => {
 
       expect(releaseBidLock).toHaveBeenCalledWith(itemId.toHexString(), 'job-e2e-1');
     });
+
+    it('does NOT call acquireBidLock or releaseBidLock for livestream items', async () => {
+      await seedItem({ isBidIncrementedManually: true });
+      const bid = stubBid({ bidAmount: 2000 });
+      (bidService.createLivestreamBid as jest.Mock).mockResolvedValue(bid);
+
+      await runJob(makeJob({ input: { itemId: itemId.toHexString(), bidAmount: 2000 } }));
+
+      expect(acquireBidLock).not.toHaveBeenCalled();
+      expect(releaseBidLock).not.toHaveBeenCalled();
+    });
+
+    it('still acquires and releases the lock for open items', async () => {
+      await seedItem({ isClosedBidding: false, isBidIncrementedManually: false });
+      (bidService.createOpenBid as jest.Mock).mockResolvedValue(stubBid());
+
+      await runJob(makeJob());
+
+      expect(acquireBidLock).toHaveBeenCalledWith(itemId.toHexString(), 'job-e2e-1');
+      expect(releaseBidLock).toHaveBeenCalledWith(itemId.toHexString(), 'job-e2e-1');
+    });
+
+    it('still acquires and releases the lock for sealed items', async () => {
+      await seedItem({ isClosedBidding: true });
+      (bidService.createSealedBid as jest.Mock).mockResolvedValue(stubBid());
+
+      await runJob(makeJob());
+
+      expect(acquireBidLock).toHaveBeenCalledWith(itemId.toHexString(), 'job-e2e-1');
+      expect(releaseBidLock).toHaveBeenCalledWith(itemId.toHexString(), 'job-e2e-1');
+    });
   });
 
   // ─── Business logic errors → UnrecoverableError ───────────────────────────
@@ -362,9 +393,11 @@ describe('bid-worker', () => {
   // ─── worker.on('failed') — bidder notification ────────────────────────────
 
   describe('failed handler', () => {
-    it('emits BID_RESULT rejected to bidder when all BullMQ attempts are exhausted (non-UnrecoverableError)', () => {
+    it('emits BID_RESULT rejected when permanently failed (attemptsMade >= attempts)', () => {
       const transientErr = new Error('MongoNetworkError: connection timed out');
-      workerHandlers['failed'](makeJob(), transientErr);
+      // Simulate all retries exhausted: attemptsMade equals the configured attempts.
+      const exhaustedJob = { ...makeJob(), attemptsMade: 3, opts: { attempts: 3 } };
+      workerHandlers['failed'](exhaustedJob, transientErr);
 
       const emit = emittedEvents().find(
         (e) => e.room === SOCKET_ID && e.event === ESocketEventCode.BID_RESULT,
@@ -376,9 +409,18 @@ describe('bid-worker', () => {
       });
     });
 
+    it('does NOT emit BID_RESULT while retries remain (attemptsMade < attempts)', () => {
+      const transientErr = new Error('MongoNetworkError: connection timed out');
+      // makeJob() has attemptsMade: 1, opts: { attempts: 3 } — not yet exhausted.
+      workerHandlers['failed'](makeJob(), transientErr);
+
+      expect(emittedEvents().filter((e) => e.event === ESocketEventCode.BID_RESULT)).toHaveLength(0);
+    });
+
     it('does NOT double-notify for UnrecoverableError (bidder already notified inside processor)', () => {
       const unrecoverable = new UnrecoverableError('Not eligible to bid on this item');
-      workerHandlers['failed'](makeJob(), unrecoverable);
+      const exhaustedJob = { ...makeJob(), attemptsMade: 3, opts: { attempts: 3 } };
+      workerHandlers['failed'](exhaustedJob, unrecoverable);
 
       expect(emittedEvents().filter((e) => e.event === ESocketEventCode.BID_RESULT)).toHaveLength(0);
     });
