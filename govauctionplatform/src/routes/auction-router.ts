@@ -29,6 +29,7 @@ export const p = {
   revokeInvitedBidder: '/revokeInvitedBidder',
   getInvitedBidders: '/getInvitedBidders',
   inviteByEmail: '/inviteByEmail',
+  setCurrentLot: '/setCurrentLot',
 } as const;
 
 /**
@@ -601,6 +602,28 @@ router.post(p.inviteByEmail, requirePermission(EPermission.AUCTION_UPDATE), asyn
     const { auctionId, email } = req.body;
     const result = await auctionService.inviteByEmail(auctionId, email);
     return res.status(OK).json(result);
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Set the current active lot (seller only — called on lot page mount and reconnect).
+ */
+router.put(p.setCurrentLot, SellerOnly(), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      auctionId: mongoIdValidation.required().messages({
+        'any.required': '"auctionId" is a required field'
+      }),
+      lotId: mongoIdValidation.required().messages({
+        'any.required': '"lotId" is a required field'
+      }),
+    }).required();
+    Joi.assert(req.body, schema);
+    const { auctionId, lotId } = req.body;
+    await auctionService.setCurrentLot(req.user as ISeller, auctionId, lotId);
+    return res.status(OK).json({ message: 'OK' });
   } catch (error) {
     throw error;
   }

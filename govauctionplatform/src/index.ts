@@ -215,22 +215,6 @@ const onConnection = (socket: Socket) => {
       }
     }
   });
-  socket.on(ESocketEventCode.JOIN_AUCTION_ROOM, function (data: any, cb: any) {
-    socket.join(`${data.auctionId}-auction`);
-    cb({ status: OK });
-  });
-
-  socket.on(ESocketEventCode.SET_CURRENT_LOT, function (data: any, cb: any) {
-    try {
-      io.to(`${data.auctionId}-auction`).emit(ESocketEventCode.CURRENT_LOT_UPDATED, {
-        lotId: data.lotId,
-        auctionId: data.auctionId,
-      });
-      cb({ status: OK });
-    } catch (error) {
-      cb({ status: INTERNAL_SERVER_ERROR });
-    }
-  });
 };
 
 // Listen for events

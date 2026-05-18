@@ -861,6 +861,32 @@ async function trackAuctionStatus(): Promise<void> {
   }
 }
 
+/**
+ * Set the current active lot for an auction (seller only).
+ * No runValidators — auction has a 2dsphere index.
+ */
+async function setCurrentLot(seller: ISeller, auctionId: string, lotId: string): Promise<void> {
+  if (!isMongoId(auctionId) || !isMongoId(lotId)) {
+    throw new ForbiddenError('Invalid auctionId or lotId');
+  }
+  const auction = await Auction.findById(auctionId);
+  if (!auction) throw new NotFoundError('Auction not found');
+  if (auction.creatorId.toString() !== seller._id.toString()) {
+    throw new ForbiddenError('You do not own this auction');
+  }
+  await Auction.findByIdAndUpdate(auctionId, { currentLotId: lotId });
+}
+
+/**
+ * Get the current active lot for an auction (public).
+ */
+async function getCurrentLot(auctionId: string): Promise<{ currentLotId: string | null }> {
+  if (!isMongoId(auctionId)) throw new ForbiddenError('Invalid auctionId');
+  const auction = await Auction.findById(auctionId).select('currentLotId');
+  if (!auction) throw new NotFoundError('Auction not found');
+  return { currentLotId: auction.currentLotId?.toString() ?? null };
+}
+
 // Export default
 export default {
   createAuction,
@@ -883,6 +909,8 @@ export default {
   revokeInvitedBidder,
   getInvitedBidders,
   inviteByEmail,
+  setCurrentLot,
+  getCurrentLot,
 } as const;
 
 // ── Invited bidder helpers ─────────────────────────────────────────────────

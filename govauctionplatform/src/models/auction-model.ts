@@ -60,6 +60,7 @@ export interface IAuction extends Document {
   isBeingLivestreamed: boolean;
   isClosedBidding: boolean;
   streamUrl: string;
+  currentLotId?: Schema.Types.ObjectId | null;
   thumbnailUrl: string;
   collectionWindowDays: number;
   collectionStartTime: string;
@@ -187,6 +188,7 @@ const auctionSchema = new Schema<IAuction>({
   participationType: { type: String, default: EParticipationType.EVERYONE, enum: [EParticipationType.CITIZEN_ONLY, EParticipationType.EVERYONE]},
   isBeingLivestreamed: { type: Boolean, required: true , default: false},
   isClosedBidding: { type: Boolean, required: true, default: false },
+  currentLotId: { type: Schema.Types.ObjectId, ref: EModels.ITEM, default: null },
   streamUrl: {type: String, required: function (): boolean {
     return (this as IAuction).isBeingLivestreamed;
   }, validate: {
