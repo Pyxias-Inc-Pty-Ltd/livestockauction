@@ -19,6 +19,7 @@ export const p = {
   getTransactions: '/getTransactions',
   hasCompletedReservation: '/hasCompletedReservation',
   pendingManualRefunds: '/pendingManualRefunds',
+  markManualRefundComplete: '/markManualRefundComplete',
 } as const;
 
 /**
@@ -180,6 +181,28 @@ router.get(p.pendingManualRefunds, requirePermission(EPermission.COLLECTION_REFU
   try {
     const transactions = await transactionService.getPendingManualRefunds();
     return res.status(OK).json({ transactions });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Mark a manual refund as complete. Admin records that they have refunded the buyer
+ * out-of-band (EFT, bank transfer, etc.) and optionally provides a reference note.
+ */
+router.put(p.markManualRefundComplete, requirePermission(EPermission.COLLECTION_REFUND), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      transactionId: mongoIdValidation.required().messages({
+        'any.required': '"transactionId" is a required field'
+      }),
+      note: Joi.string().max(500).optional(),
+    }).required();
+    Joi.assert(req.body, schema);
+
+    const { transactionId, note } = req.body;
+    const transaction = await transactionService.markManualRefundComplete(transactionId, note);
+    return res.status(OK).json({ transaction });
   } catch (error) {
     throw error;
   }
