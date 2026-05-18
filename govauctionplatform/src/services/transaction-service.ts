@@ -1,4 +1,4 @@
-import { IAdmin, IBidder } from "../models/user-model";
+import { Bidder, IAdmin, IBidder } from "../models/user-model";
 import { ForbiddenError, InternalServerError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession } from 'mongoose';
@@ -11,6 +11,8 @@ import { EPaymentStatus, ERefundReason, ESortOrderType, ETransactionSortType, ET
 import bidService from "./bid-service";
 import * as luxon from "luxon";
 import { callPayGateInitiate, prefixWithZero, convertToPaygateFormat } from "../shared/functions";
+import { submitRefundBatch, confirmBatch, BatchLine } from "../shared/paybatch";
+import { RefundBatch } from "../models/refund-batch-model";
 import tokenService from "./token-service";
 import auctionService from "./auction-service";
 import forumService from "./forum-service";
@@ -370,6 +372,7 @@ async function processSuccessfulPaymentFromPayGate(input: {
   TRANSACTION_STATUS: string,
   RESULT_CODE: string,
   RESULT_DESC?: string,
+  VAULT_ID?: string,
 }) {
 
   let sess: ClientSession | null = null;
@@ -394,6 +397,8 @@ async function processSuccessfulPaymentFromPayGate(input: {
     const meta = transaction.metadata as Map<string, string>;
     meta.set('resultCode', input.RESULT_CODE);
     if (input.RESULT_DESC) meta.set('resultDesc', input.RESULT_DESC);
+    // Store the Vault ID (card token) for use by PayBatch when issuing refunds.
+    if (input.VAULT_ID) meta.set('VAULT_ID', input.VAULT_ID);
 
     // Handle transaction status codes
     switch (input.TRANSACTION_STATUS) {
@@ -841,16 +846,49 @@ async function initiateDisputeRefund(purchaseTransactionId: string): Promise<ITr
     const refundTx = new Transaction(refundInput);
     refundTx.status = EPaymentStatus.PENDING;
 
-    // Store the original PAY_REQUEST_ID so the PayGate refund API can reference it.
-    const originalPayRequestId = (purchaseTx.metadata as Map<string, string>).get('PAY_REQUEST_ID');
+    const purchaseMeta = purchaseTx.metadata as Map<string, string>;
+    const originalPayRequestId = purchaseMeta.get('PAY_REQUEST_ID');
     if (originalPayRequestId) {
       (refundTx.metadata as Map<string, string>).set('originalPAY_REQUEST_ID', originalPayRequestId);
     }
 
-    // TODO: Call PayGate refund endpoint here once confirmed.
-    //   const refundResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/refund.trans`, { ... });
+    const savedRefund = await refundTx.save();
 
-    return await refundTx.save();
+    // Attempt automated refund via PayBatch if the buyer has a stored Vault ID.
+    const vaultId = purchaseMeta.get('VAULT_ID');
+    if (vaultId) {
+      const buyer = await Bidder.findById(purchaseTx.buyerId).select('firstName lastName').lean();
+      const cardholderName = buyer ? `${buyer.firstName ?? ''} ${buyer.lastName ?? ''}`.trim() : 'Unknown';
+      const amountCents = Math.round(savedRefund.amount * 100);
+      const batchReference = `DISPUTE-${savedRefund._id}`;
+      const notifyUrl = `${SERVICE_URLS.auctionsGovServerBaseURI}/open/paybatchNotify`;
+
+      try {
+        const { uploadId } = await submitRefundBatch(
+          batchReference,
+          [{ reference: savedRefund._id.toString(), cardholderName, vaultId, amountCents }],
+          notifyUrl,
+        );
+        await confirmBatch(uploadId);
+        await RefundBatch.create({
+          uploadId,
+          batchReference,
+          status: 'CONFIRMED',
+          transactionIds: [savedRefund._id.toString()],
+        });
+        console.info(`[transaction-service] PayBatch dispute refund submitted — uploadId: ${uploadId}`);
+      } catch (err) {
+        console.error('[transaction-service] PayBatch dispute refund failed — flagging for manual refund:', err);
+        (savedRefund.metadata as Map<string, string>).set('needsManualRefund', 'true');
+        await savedRefund.save();
+      }
+    } else {
+      // No Vault ID — flag for manual processing
+      (savedRefund.metadata as Map<string, string>).set('needsManualRefund', 'true');
+      await savedRefund.save();
+    }
+
+    return savedRefund;
   } catch (error) {
     throw error;
   }
@@ -904,33 +942,147 @@ async function initiateNonWinnerReservationRefunds(itemId: string, winningBidder
       const refundTx = new Transaction(refundInput);
       refundTx.status = EPaymentStatus.PENDING;
 
-      const originalPayRequestId = (reservation.metadata as Map<string, string>).get('PAY_REQUEST_ID');
+      const resMeta = reservation.metadata as Map<string, string>;
+      const originalPayRequestId = resMeta.get('PAY_REQUEST_ID');
       if (originalPayRequestId) {
         (refundTx.metadata as Map<string, string>).set('originalPAY_REQUEST_ID', originalPayRequestId);
       }
 
-      // TODO: Call PayGate refund endpoint here once confirmed.
-      //   const refundResponse = await fetch(`${SERVICE_URLS.paygateBaseURI}/refund.trans`, { ... });
-
-      await refundTx.save();
+      const savedRefund = await refundTx.save();
+      return { savedRefund, reservation };
     });
 
-    await Promise.allSettled(refundPromises).then((results) => {
-      const failed = results.filter((r) => r.status === 'rejected');
-      if (failed.length > 0) {
-        console.error(
-          `[transaction-service] ${failed.length} non-winner refund(s) failed to initiate for item ${itemId}`
-        );
+    const settled = await Promise.allSettled(refundPromises);
+    const failedCount = settled.filter((r) => r.status === 'rejected').length;
+    if (failedCount > 0) {
+      console.error(
+        `[transaction-service] ${failedCount} non-winner refund(s) failed to initiate for item ${itemId}`
+      );
+    }
+
+    // Collect results for batch submission
+    const successes: Array<{ savedRefund: ITransaction; reservation: ITransaction }> = [];
+    for (const r of settled) {
+      if (r.status === 'fulfilled' && r.value != null) {
+        successes.push(r.value);
+      }
+    }
+
+    if (successes.length === 0) return;
+
+    // Load buyer names for PayBatch cardholder field
+    const buyerIds = [...new Set(successes.map(s => s.reservation.buyerId.toString()))];
+    type BuyerLean = { _id: unknown; firstName?: string; lastName?: string };
+    const buyersRaw = await Bidder.find({ _id: { $in: buyerIds } }).select('firstName lastName').lean() as BuyerLean[];
+    const buyerMap = new Map(buyersRaw.map((b: BuyerLean) => [String(b._id), `${b.firstName ?? ''} ${b.lastName ?? ''}`.trim()]));
+
+    const batchLines: BatchLine[] = [];
+    const manualRefundIds: string[] = [];
+
+    for (const { savedRefund, reservation } of successes) {
+      const vaultId = (reservation.metadata as Map<string, string>).get('VAULT_ID');
+      if (vaultId) {
+        batchLines.push({
+          reference: String(savedRefund._id),
+          cardholderName: buyerMap.get(String(savedRefund.buyerId)) ?? 'Unknown',
+          vaultId,
+          amountCents: Math.round(savedRefund.amount * 100),
+        });
       } else {
-        console.info(
-          `[transaction-service] Initiated ${losingReservations.length} non-winner refund(s) for item ${itemId}`
+        manualRefundIds.push(String(savedRefund._id));
+      }
+    }
+
+    // Flag manual refunds
+    if (manualRefundIds.length > 0) {
+      await Transaction.updateMany(
+        { _id: { $in: manualRefundIds } },
+        { $set: { 'metadata.needsManualRefund': 'true' } }
+      );
+      console.info(`[transaction-service] ${manualRefundIds.length} non-winner refund(s) flagged for manual processing (no Vault ID)`);
+    }
+
+    // Submit automated PayBatch for those with Vault IDs
+    if (batchLines.length > 0) {
+      const batchReference = `REFUND-ITEM-${itemId}-${Date.now()}`;
+      const notifyUrl = `${SERVICE_URLS.auctionsGovServerBaseURI}/open/paybatchNotify`;
+      try {
+        const { uploadId } = await submitRefundBatch(batchReference, batchLines, notifyUrl);
+        await confirmBatch(uploadId);
+        await RefundBatch.create({
+          uploadId,
+          batchReference,
+          status: 'CONFIRMED',
+          transactionIds: batchLines.map(l => l.reference),
+        });
+        console.info(`[transaction-service] PayBatch non-winner refunds submitted — uploadId: ${uploadId}, count: ${batchLines.length}`);
+      } catch (err) {
+        // PayBatch call failed — flag all intended lines for manual processing
+        console.error('[transaction-service] PayBatch non-winner refund submission failed — flagging for manual refund:', err);
+        await Transaction.updateMany(
+          { _id: { $in: batchLines.map(l => l.reference) } },
+          { $set: { 'metadata.needsManualRefund': 'true' } }
         );
       }
-    });
+    }
+
+    console.info(`[transaction-service] Initiated ${successes.length} non-winner refund(s) for item ${itemId}`);
   } catch (error) {
     console.error('[transaction-service] initiateNonWinnerReservationRefunds error:', error);
     throw error;
   }
+}
+
+/**
+ * Handle PayBatch result webhook.
+ * PayGate POSTs a batch result to /open/paybatchNotify after processing.
+ * Updates matching REFUND transactions to COMPLETED or FAILED.
+ */
+async function processPayBatchNotify(body: Record<string, string>): Promise<void> {
+  const uploadId = body['uploadId'] ?? body['UploadID'];
+  if (!uploadId) {
+    console.error('[transaction-service] processPayBatchNotify: missing uploadId in body', body);
+    return;
+  }
+
+  const batch = await RefundBatch.findOne({ uploadId });
+  if (!batch) {
+    console.error(`[transaction-service] processPayBatchNotify: no RefundBatch found for uploadId ${uploadId}`);
+    return;
+  }
+
+  // PayBatch may send per-line results or a simple status field
+  const batchStatus = body['status'] ?? body['Status'] ?? 'UNKNOWN';
+  const isSuccess = batchStatus.toUpperCase() === 'COMPLETED' || batchStatus === '1';
+
+  if (isSuccess) {
+    await Transaction.updateMany(
+      { _id: { $in: batch.transactionIds } },
+      { $set: { status: EPaymentStatus.COMPLETED } }
+    );
+    batch.status = 'COMPLETED';
+  } else {
+    await Transaction.updateMany(
+      { _id: { $in: batch.transactionIds }, status: { $ne: EPaymentStatus.COMPLETED } },
+      { $set: { status: EPaymentStatus.FAILED, 'metadata.needsManualRefund': 'true' } }
+    );
+    batch.status = 'FAILED';
+  }
+
+  await batch.save();
+  console.info(`[transaction-service] PayBatch notify processed — uploadId: ${uploadId}, status: ${batch.status}`);
+}
+
+/**
+ * Return REFUND transactions that need manual processing (no Vault ID was available).
+ * Used by admin to identify refunds that must be issued through the banking portal.
+ */
+async function getPendingManualRefunds(): Promise<ITransaction[]> {
+  return Transaction.find({
+    transactionType: ETransactionType.REFUND,
+    status: EPaymentStatus.PENDING,
+    'metadata.needsManualRefund': 'true',
+  }).sort({ createdDate: -1 }).lean();
 }
 
 // Export default
@@ -946,4 +1098,6 @@ export default {
   initiateDisputeRefund,
   initiateNonWinnerReservationRefunds,
   createPendingPurchaseForWinner,
+  processPayBatchNotify,
+  getPendingManualRefunds,
 } as const;
