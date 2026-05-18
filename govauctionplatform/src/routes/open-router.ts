@@ -49,6 +49,7 @@ export const p = {
   getAuctionByTitleSlug: '/getAuctionByTitleSlug',
   getCategoryById: '/getCategoryById',
   getBreedById: '/getBreedById',
+  getCurrentLot: '/getCurrentLot',
 } as const;
 
 /**
@@ -670,6 +671,23 @@ router.get(p.getItems, async (req: Request, res: Response) => {
 
     const items = await itemService.getItems(conditions);
     return res.status(OK).json({items});
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Get the current active lot for an auction (public, polled by bidders).
+ */
+router.get(p.getCurrentLot, async (req: Request, res: Response) => {
+  try {
+    const qSchema = Joi.object().keys({
+      auctionId: mongoIdValidation.required()
+    }).required();
+    Joi.assert(req.query, qSchema);
+    const { auctionId } = req.query;
+    const result = await auctionService.getCurrentLot(auctionId as string);
+    return res.status(OK).json(result);
   } catch (error) {
     throw error;
   }
