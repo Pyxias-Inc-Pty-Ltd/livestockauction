@@ -1085,6 +1085,23 @@ async function getPendingManualRefunds(): Promise<ITransaction[]> {
   }).sort({ createdDate: -1 }).lean();
 }
 
+async function markManualRefundComplete(transactionId: string, note?: string): Promise<ITransaction> {
+  if (!isMongoId(transactionId)) throw new ForbiddenError('Invalid transactionId');
+
+  const transaction = await Transaction.findById(transactionId);
+  if (!transaction) throw new NotFoundError('Transaction not found');
+  if (transaction.transactionType !== ETransactionType.REFUND) throw new ForbiddenError('Transaction is not a refund');
+  if (transaction.metadata?.get('needsManualRefund') !== 'true') throw new ForbiddenError('Transaction does not require manual refund');
+
+  transaction.status = EPaymentStatus.COMPLETED;
+  transaction.metadata?.set('needsManualRefund', 'false');
+  transaction.metadata?.set('manualRefundCompletedAt', new Date().toISOString());
+  if (note) transaction.metadata?.set('manualRefundNote', note);
+
+  await transaction.save();
+  return transaction.toObject();
+}
+
 // Export default
 export default {
   initiateItemReservation,
@@ -1100,4 +1117,5 @@ export default {
   createPendingPurchaseForWinner,
   processPayBatchNotify,
   getPendingManualRefunds,
+  markManualRefundComplete,
 } as const;
