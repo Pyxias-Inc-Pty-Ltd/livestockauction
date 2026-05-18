@@ -471,7 +471,8 @@ export enum EModels {
   NOTIFICATION_CHANGE = "NotificationChange",
   NOTIFICATION_TRIGGER= "NotificationTrigger",
   REQUIRED_ATTRIBUTE = "RequiredAttribute",
-  BID_EVENT = "BidEvent"
+  BID_EVENT = "BidEvent",
+  REFUND_BATCH = "RefundBatch",
 }
 
 export enum ESortOrderType {

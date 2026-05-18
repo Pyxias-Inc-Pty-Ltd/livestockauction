@@ -18,6 +18,7 @@ export const p = {
   initiatePurchaseItemUsingBuyoutPrice: '/initiatePurchaseItemUsingBuyoutPrice',
   getTransactions: '/getTransactions',
   hasCompletedReservation: '/hasCompletedReservation',
+  pendingManualRefunds: '/pendingManualRefunds',
 } as const;
 
 /**
@@ -166,6 +167,19 @@ router.get(p.hasCompletedReservation, requirePermission(EPermission.TRANSACTION_
       transactionType: ETransactionType.RESERVATION,
     });
     return res.status(OK).json({ hasReservation });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * List REFUND transactions that need manual processing (no Vault ID available at payment time).
+ * Gated on COLLECTION_REFUND so only admins/approvers with refund permission can access it.
+ */
+router.get(p.pendingManualRefunds, requirePermission(EPermission.COLLECTION_REFUND), async (req: Request, res: Response) => {
+  try {
+    const transactions = await transactionService.getPendingManualRefunds();
+    return res.status(OK).json({ transactions });
   } catch (error) {
     throw error;
   }

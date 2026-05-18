@@ -50,6 +50,7 @@ export const p = {
   getCategoryById: '/getCategoryById',
   getBreedById: '/getBreedById',
   getCurrentLot: '/getCurrentLot',
+  paybatchNotify: '/paybatchNotify',
 } as const;
 
 /**
@@ -348,6 +349,9 @@ router.post(p.processSuccessfulPaymentFromPayGate, async (req: Request, res: Res
       RISK_INDICATOR: Joi.string().allow('').optional(),
       PAY_METHOD: Joi.string().allow('').optional(),
       PAY_METHOD_DETAIL: Joi.string().allow('').optional(),
+      // VAULT_ID is returned when VAULT=1 was sent in the initiate request.
+      // It is a UUID card token used by PayBatch for automated refunds.
+      VAULT_ID: Joi.string().allow('').optional(),
       CHECKSUM: Joi.string().required().messages({
         'any.required': '"CHECKSUM" is a required field',
       }),
@@ -366,7 +370,7 @@ router.post(p.processSuccessfulPaymentFromPayGate, async (req: Request, res: Res
     const paymentDetails = req.body;
     console.log('Payment details:', paymentDetails);
 
-    // Call your service to handle the successful payment
+    // Call your service to handle the successful payment (passes VAULT_ID when present)
     await transactionService.processSuccessfulPaymentFromPayGate(paymentDetails);
 
     // PayGate requires a plain-text "OK" response to confirm receipt before redirecting the browser
@@ -690,6 +694,20 @@ router.get(p.getCurrentLot, async (req: Request, res: Response) => {
     return res.status(OK).json(result);
   } catch (error) {
     throw error;
+  }
+});
+
+/**
+ * PayBatch webhook — PayGate POSTs the batch result here after processing.
+ * Marks the associated refund transactions as COMPLETED or FAILED.
+ */
+router.post(p.paybatchNotify, async (req: Request, res: Response) => {
+  try {
+    await transactionService.processPayBatchNotify(req.body);
+    return res.status(OK).send('OK');
+  } catch (error) {
+    console.error('[paybatchNotify] error:', error);
+    return res.status(OK).send('OK');
   }
 });
 
