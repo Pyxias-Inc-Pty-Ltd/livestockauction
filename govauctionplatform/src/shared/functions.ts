@@ -396,8 +396,13 @@ export function convertToPaygateFormat(
     const amount = Math.round(AMOUNT * 100);
     const transactionDate = luxon.DateTime.fromJSDate(TRANSACTION_DATE).toFormat('yyyy-LL-dd HH:mm:ss');
 
+    // VAULT=1 instructs PayGate to tokenise the card and return VAULT_ID in the
+    // NOTIFY_URL callback. The token is stored in transaction metadata so that
+    // PayBatch can use it for automated refunds later.
+    const VAULT = '1';
+
     // Create the checksum string by concatenating the input values
-    const checksumString = `${PAYGATE_ID}${REFERENCE}${amount}${CURRENCY}${RETURN_URL}${transactionDate}${LOCALE}${COUNTRY}${EMAIL}${NOTIFY_URL}${encryptionKey}`;
+    const checksumString = `${PAYGATE_ID}${REFERENCE}${amount}${CURRENCY}${RETURN_URL}${transactionDate}${LOCALE}${COUNTRY}${EMAIL}${NOTIFY_URL}${VAULT}${encryptionKey}`;
 
     // Calculate the MD5 checksum for the concatenated string
     const CHECKSUM = createHash('md5').update(checksumString).digest('hex');
@@ -414,6 +419,7 @@ export function convertToPaygateFormat(
         COUNTRY,
         EMAIL,
         NOTIFY_URL,
+        VAULT,
         CHECKSUM,
     }).toString();
 
@@ -430,7 +436,7 @@ export function validatePaygateNotifyChecksum(body: Record<string, string>, encr
     'PAYGATE_ID', 'PAY_REQUEST_ID', 'REFERENCE', 'TRANSACTION_STATUS',
     'RESULT_CODE', 'AUTH_CODE', 'CURRENCY', 'AMOUNT', 'RESULT_DESC',
     'TRANSACTION_ID', 'RISK_INDICATOR', 'PAY_METHOD', 'PAY_METHOD_DETAIL',
-    'USER1', 'USER2', 'USER3',
+    'VAULT_ID', 'USER1', 'USER2', 'USER3',
   ];
   const checksumString = NOTIFY_FIELD_ORDER
     .filter(field => body[field] !== undefined && body[field] !== null && body[field] !== '')
