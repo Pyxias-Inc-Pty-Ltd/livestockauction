@@ -540,8 +540,13 @@ export enum ESocketEventCode {
   BROADCAST_NEW_MANUAL_BID_AMOUNT = "e:14",
   REFRESH_AFTER_WINNING = "e:15",
   BROADCAST_REFRESH_AFTER_WINNING = "e:16",
-  MOVE_AUDIENCE_TO_ITEM = "e:17",
-  BROADCAST_MOVE_AUDIENCE_TO_ITEM = "e:18",
+  // Seller announces they've navigated to a lot; server broadcasts to auction room.
+  SET_CURRENT_LOT = "e:22",
+  // Broadcast to all sockets in the auction room when the current lot changes.
+  // Payload: { lotId: string, auctionId: string }
+  CURRENT_LOT_UPDATED = "e:23",
+  // Bidder joins the auction-level room to receive CURRENT_LOT_UPDATED events.
+  JOIN_AUCTION_ROOM = "e:24",
   // Emitted to a sealed-auction room when a new sealed bid is received.
   // Intentionally carries no bid amount or bidder identity — only signals
   // that the field now has N bids so the UI can show a count.
