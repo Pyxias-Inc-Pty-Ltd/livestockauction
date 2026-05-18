@@ -135,7 +135,9 @@ const onConnection = (socket: Socket) => {
   socket.on(ESocketEventCode.REFRESH_AFTER_WINNING, async function (data, cb) {
     try {
       console.log("ESocketEventCode.REFRESH_AFTER_WINNING: ", data);
-      socket.to(`${data.itemId}-bid`).emit(ESocketEventCode.BROADCAST_REFRESH_AFTER_WINNING, data.itemId);
+      // Use io.to() (not socket.to()) so the seller who triggers this also
+      // receives the broadcast and can refresh their own lot state.
+      io.to(`${data.itemId}-bid`).emit(ESocketEventCode.BROADCAST_REFRESH_AFTER_WINNING, data.itemId);
       cb({ status: OK });
     } catch (error) {
       if (error instanceof CustomError) {
@@ -216,7 +218,9 @@ const onConnection = (socket: Socket) => {
   socket.on(ESocketEventCode.MOVE_AUDIENCE_TO_ITEM, async function (data: any, cb: any) {
     try {
       console.log("ESocketEventCode.MOVE_AUDIENCE_TO_ITEM: ", data);
-      socket.to(`${data.currentItemId}-bid`).emit(ESocketEventCode.BROADCAST_MOVE_AUDIENCE_TO_ITEM, data.nextitemId);
+      // Broadcast to all sockets NOT already in the destination lot's room so
+      // bidders on any lot get moved, regardless of which lot they came from.
+      socket.broadcast.except(`${data.nextitemId}-bid`).emit(ESocketEventCode.BROADCAST_MOVE_AUDIENCE_TO_ITEM, data.nextitemId);
       cb({ status: OK });
     } catch (error) {
       if (error instanceof CustomError) {
