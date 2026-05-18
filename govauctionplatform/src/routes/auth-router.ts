@@ -11,10 +11,14 @@ const { OK, UNAUTHORIZED } = StatusCodes;
 // Refresh-token cookie
 // ---------------------------------------------------------------------------
 const COOKIE_NAME = 'rt';
+// The backend is always served over HTTPS (Railway), and the frontend may be
+// on a different origin (localhost in dev, gov.bw in prod). SameSite=None is
+// required for the httpOnly cookie to be sent on cross-origin XHR requests
+// (e.g. POST /auth/refresh). Secure is required whenever SameSite=None is set.
 const cookieOptions = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'strict' as const,
+  secure: true,
+  sameSite: 'none' as const,
   path: '/auth',
   maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
 };
