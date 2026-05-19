@@ -758,7 +758,11 @@ async function trackItemStatus(): Promise<void> {
  */
 async function getItemsWithWinnerForRefund(): Promise<IItem[]> {
   return await Item.find(
-    { status: EItemStatus.ENDED, winningBidder: { $exists: true, $ne: null } },
+    {
+      status: EItemStatus.ENDED,
+      winningBidder: { $exists: true, $ne: null },
+      nonWinnerRefundsInitiated: { $ne: true },
+    },
     { _id: 1, winningBidder: 1 }
   );
 }
