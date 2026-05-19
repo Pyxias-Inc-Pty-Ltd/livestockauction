@@ -94,6 +94,7 @@ export interface IItem extends Document {
   version: number;
   status: itemStatus;
   isPurchased: boolean;
+  nonWinnerRefundsInitiated: boolean;
   createdDate: Date;
   updatedDate: Date;
   metadata: IItemMetadata
@@ -158,6 +159,7 @@ const schema = new Schema<IItem>({
   },
   startingBid: { type: Number, required: true },
   isPurchased: { type: Boolean, default: false, required: true },
+  nonWinnerRefundsInitiated: { type: Boolean, default: false },
   bidIncrement: { type: Number, required: function (): boolean {
     return !(this as IItem).isBidIncrementedManually && !(this as IItem).isClosedBidding;
   } },
