@@ -913,6 +913,7 @@ async function initiateNonWinnerReservationRefunds(itemId: string, winningBidder
     });
 
     if (losingReservations.length === 0) {
+      await Item.findByIdAndUpdate(itemId, { $set: { nonWinnerRefundsInitiated: true } });
       return;
     }
 
@@ -1025,6 +1026,11 @@ async function initiateNonWinnerReservationRefunds(itemId: string, winningBidder
         );
       }
     }
+
+    // Mark the item so the cron skips it from now on. We set this regardless of
+    // whether the PayBatch call succeeded — the refund transactions exist at this
+    // point (auto or flagged for manual) and will be handled from here.
+    await Item.findByIdAndUpdate(itemId, { $set: { nonWinnerRefundsInitiated: true } });
 
     console.info(`[transaction-service] Initiated ${successes.length} non-winner refund(s) for item ${itemId}`);
   } catch (error) {
