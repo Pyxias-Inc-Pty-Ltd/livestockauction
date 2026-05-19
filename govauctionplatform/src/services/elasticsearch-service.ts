@@ -344,6 +344,43 @@ class ElasticsearchService {
     };
   }
 
+  public async ensureIndex(): Promise<void> {
+    const exists = await this.client.indices.exists({ index: this.itemIndex });
+    if (exists.body) return;
+
+    await this.client.indices.create({
+      index: this.itemIndex,
+      body: {
+        mappings: {
+          properties: {
+            'auctionId.auctionCoordinates': { type: 'geo_point' },
+          },
+        },
+      },
+    });
+  }
+
+  public async reindexAll(): Promise<{ indexed: number; failed: number }> {
+    await this.ensureIndex();
+
+    const items = await Item.find({});
+    let indexed = 0;
+    let failed = 0;
+
+    for (const item of items) {
+      try {
+        await this.indexItem(item);
+        indexed++;
+      } catch (err) {
+        failed++;
+        console.error(`[elasticsearch] Failed to index item ${item._id}:`, err);
+      }
+    }
+
+    console.info(`[elasticsearch] reindexAll complete — indexed: ${indexed}, failed: ${failed}`);
+    return { indexed, failed };
+  }
+
   public async search(
     filters: SearchFilters,
     sortOption: ElasticsearchSortOption,
