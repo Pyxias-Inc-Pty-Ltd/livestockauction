@@ -3,9 +3,10 @@ import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isoDateValidation, mongoIdValidation, urlValidation } from '../shared/functions';
-import { requirePermission, SellerOnly, BidderOnly } from '../shared/middleware';
+import { requirePermission, SellerOnly, BidderOnly, SuperAdminOnly } from '../shared/middleware';
 import { IAdmin, IBidder, ISeller } from '../models/user-model';
 import { EItemSortType, EPermission, ESortOrderType, MAX_LIST_LIMIT_NUMBER } from '../globals';
+import { esService } from '../services/elasticsearch-service';
 
 // Constants
 const router = Router();
@@ -25,6 +26,7 @@ export const p = {
   getInvitedBidders: '/getInvitedBidders',
   isInvited: '/isInvited',
   updateItem: '/updateItem',
+  reindexAll: '/reindexAll',
 } as const;
 
 /**
@@ -458,6 +460,19 @@ router.get(p.isInvited, BidderOnly(), async (req: Request, res: Response) => {
     const userId = (req.user as IBidder).id.toString();
     const invited = await itemService.isInvited(itemId as string, userId);
     return res.status(OK).json({ invited });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Re-index all items into Elasticsearch.
+ * Use this to recover from a missing or corrupted index.
+ */
+router.post(p.reindexAll, SuperAdminOnly(), async (req: Request, res: Response) => {
+  try {
+    const result = await esService.reindexAll();
+    return res.status(OK).json(result);
   } catch (error) {
     throw error;
   }
