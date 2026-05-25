@@ -35,7 +35,7 @@ export class ForbiddenError extends CustomError {
 export class RateLimitExceededError extends CustomError {
   public static readonly HttpStatus = HttpStatusCodes.TOO_MANY_REQUESTS;
   constructor(msg: string) {
-    super(msg, ForbiddenError.HttpStatus);
+    super(msg, RateLimitExceededError.HttpStatus);
   }
 }
 
