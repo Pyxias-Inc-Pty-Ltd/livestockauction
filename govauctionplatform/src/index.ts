@@ -84,6 +84,19 @@ const onConnection = (socket: Socket) => {
     }
   });
 
+  // Explicit room leave — used when a client navigates away from a lot without
+  // disconnecting the socket (e.g. browsing to another lot).
+  socket.on('leave_room', async function (data) {
+    try {
+      const room = `${data.lotId}-bid`;
+      socket.leave(room);
+      const sockets = await io.in(room).fetchSockets();
+      io.in(room).emit(ESocketEventCode.AUDIENCE_UPDATED, { count: sockets.length });
+    } catch (error) {
+      console.error('leave_room error:', error);
+    }
+  });
+
   socket.on('disconnecting', async () => {
     for (const room of socket.rooms) {
       if (room.endsWith('-bid')) {
