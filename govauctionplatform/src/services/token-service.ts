@@ -6,7 +6,7 @@ async function getActiveToken(): Promise<IToken | null> {
     return token;
   } catch (error) {
     // Rethrow
-    throw new error;
+    throw error;
   }
 }
 
