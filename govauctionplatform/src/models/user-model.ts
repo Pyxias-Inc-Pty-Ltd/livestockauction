@@ -310,7 +310,7 @@ bidderSchema.post('save', async function (doc, next) {
 
             // Check if the GET request was successful and the response indicates success
             if (getResponse.status === 200 && getResponse.data.success === true) {
-              doc.identityNumberVerificationStatus === "VERIFIED";
+              doc.identityNumberVerificationStatus = "VERIFIED";
               await doc.save();
               // Queue message
               const textContent = companyRegistrationVerificationSuccessTemplate.replace('[UserName]', firstName as string);
@@ -327,7 +327,7 @@ bidderSchema.post('save', async function (doc, next) {
                 }
               });
             } else if (getResponse.status === 200 && getResponse.data.success === false) {
-              doc.identityNumberVerificationStatus === "VERIFICATION_REJECTED";
+              doc.identityNumberVerificationStatus = "VERIFICATION_REJECTED";
               doc.reasonForIdentityNumberVerificationRejection = "Invalid UIN provided";
               await doc.save();
               // Queue message
@@ -393,7 +393,7 @@ bidderSchema.post('save', async function (doc, next) {
               const lowerCaseFirstName = (data[0]['FIRST_NME'] as string).toLowerCase();
               const lowerCaseLastName = (data[0]['SURNME'] as string).toLowerCase();
               if (lowerCaseFirstName.includes(firstName!.toLowerCase()) && lowerCaseLastName.includes(lastName!.toLowerCase())) {
-                doc.identityNumberVerificationStatus === "VERIFIED";
+                doc.identityNumberVerificationStatus = "VERIFIED";
                 await doc.save();
                 // Queue message
                 const textContent = nationalIDVerificationSuccessSMSTemplate.replace('[UserName]', firstName as string);
@@ -410,7 +410,7 @@ bidderSchema.post('save', async function (doc, next) {
                   }
                 });
               } else {
-                doc.identityNumberVerificationStatus === "VERIFICATION_REJECTED";
+                doc.identityNumberVerificationStatus = "VERIFICATION_REJECTED";
                 doc.reasonForIdentityNumberVerificationRejection = "Name mismatch with Omang provided";
                 await doc.save();
                 // Queue message
@@ -429,7 +429,7 @@ bidderSchema.post('save', async function (doc, next) {
                 });
               }
             } else if (getResponse.status === 200 && getResponse.data.success === false) {
-              doc.identityNumberVerificationStatus === "VERIFICATION_REJECTED";
+              doc.identityNumberVerificationStatus = "VERIFICATION_REJECTED";
               doc.reasonForIdentityNumberVerificationRejection = "Invalid Omang provided";
               await doc.save();
               // Queue message
