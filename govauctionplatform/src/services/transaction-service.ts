@@ -11,13 +11,13 @@ import { EPaymentStatus, ERefundReason, ESortOrderType, ETransactionSortType, ET
 import bidService from "./bid-service";
 import * as luxon from "luxon";
 import { callPayGateInitiate, prefixWithZero, convertToPaygateFormat } from "../shared/functions";
-import { submitRefundBatch, confirmBatch, BatchLine } from "../shared/paybatch";
-import { RefundBatch } from "../models/refund-batch-model";
+import { refundRequest } from "../shared/payhost";
 import tokenService from "./token-service";
 import auctionService from "./auction-service";
 import forumService from "./forum-service";
 import { BidderCounter } from "../models/bidder-counter";
 import collectionService from "./collection-service";
+import axios from "axios";
 
 /**
  * Intiates a reservation payment transaction for an item.
@@ -373,6 +373,7 @@ async function processSuccessfulPaymentFromPayGate(input: {
   RESULT_CODE: string,
   RESULT_DESC?: string,
   VAULT_ID?: string,
+  TRANSACTION_ID?: string,
 }) {
 
   let sess: ClientSession | null = null;
@@ -397,8 +398,10 @@ async function processSuccessfulPaymentFromPayGate(input: {
     const meta = transaction.metadata as Map<string, string>;
     meta.set('resultCode', input.RESULT_CODE);
     if (input.RESULT_DESC) meta.set('resultDesc', input.RESULT_DESC);
-    // Store the Vault ID (card token) for use by PayBatch when issuing refunds.
+    // Store the Vault ID (card token) for use by PayHost when issuing refunds.
     if (input.VAULT_ID) meta.set('VAULT_ID', input.VAULT_ID);
+    // Store the PayGate transaction ID — used by PayHost RefundRequest to identify the original transaction.
+    if (input.TRANSACTION_ID) meta.set('TRANSACTION_ID', input.TRANSACTION_ID);
 
     // Handle transaction status codes
     switch (input.TRANSACTION_STATUS) {
@@ -854,36 +857,42 @@ async function initiateDisputeRefund(purchaseTransactionId: string): Promise<ITr
 
     const savedRefund = await refundTx.save();
 
-    // Attempt automated refund via PayBatch if the buyer has a stored Vault ID.
+    // Attempt automated refund via PayHost if we can identify the original transaction.
+    const transactionId = purchaseMeta.get('TRANSACTION_ID');
     const vaultId = purchaseMeta.get('VAULT_ID');
-    if (vaultId) {
-      const buyer = await Bidder.findById(purchaseTx.buyerId).select('firstName lastName').lean();
-      const cardholderName = buyer ? `${buyer.firstName ?? ''} ${buyer.lastName ?? ''}`.trim() : 'Unknown';
+
+    if (transactionId || vaultId) {
       const amountCents = Math.round(savedRefund.amount * 100);
-      const batchReference = `DISPUTE-${savedRefund._id}`;
-      const notifyUrl = `${SERVICE_URLS.auctionsGovServerBaseURI}/open/paybatchNotify`;
 
       try {
-        const { uploadId } = await submitRefundBatch(
-          batchReference,
-          [{ reference: savedRefund._id.toString(), cardholderName, vaultId, amountCents }],
-          notifyUrl,
-        );
-        await confirmBatch(uploadId);
-        await RefundBatch.create({
-          uploadId,
-          batchReference,
-          status: 'CONFIRMED',
-          transactionIds: [savedRefund._id.toString()],
-        });
-        console.info(`[transaction-service] PayBatch dispute refund submitted — uploadId: ${uploadId}`);
+        const { statusName, transactionId: payhostTxId, resultCode, resultDescription } =
+          await refundRequest({
+            merchantOrderId: String(purchaseTx._id),
+            amountCents,
+            reference: String(savedRefund._id),
+          });
+
+        const isCompleted = statusName.toLowerCase() === 'completed';
+        if (isCompleted) {
+          savedRefund.status = EPaymentStatus.COMPLETED;
+          const refundMeta = savedRefund.metadata as Map<string, string>;
+          if (payhostTxId) refundMeta.set('payhostTransactionId', payhostTxId);
+          await savedRefund.save();
+        } else {
+          console.error(
+            `[transaction-service] PayHost dispute refund not completed for ${savedRefund._id}: ` +
+            `status=${statusName}, resultCode=${resultCode}, resultDescription=${resultDescription}`
+          );
+          (savedRefund.metadata as Map<string, string>).set('needsManualRefund', 'true');
+          await savedRefund.save();
+        }
       } catch (err) {
-        console.error('[transaction-service] PayBatch dispute refund failed — flagging for manual refund:', err);
+        console.error('[transaction-service] PayHost dispute refund failed — flagging for manual refund:', err);
         (savedRefund.metadata as Map<string, string>).set('needsManualRefund', 'true');
         await savedRefund.save();
       }
     } else {
-      // No Vault ID — flag for manual processing
+      // Cannot identify original transaction — flag for manual processing
       (savedRefund.metadata as Map<string, string>).set('needsManualRefund', 'true');
       await savedRefund.save();
     }
@@ -896,9 +905,8 @@ async function initiateDisputeRefund(purchaseTransactionId: string): Promise<ITr
 
 /**
  * Initiate reservation refunds for all non-winning bidders after a winner is selected.
- * Creates a REFUND transaction (PENDING) for each losing bidder who paid the reserve price.
- *
- * TODO: Call the PayGate refund API for each refund once the endpoint is confirmed.
+ * Creates a REFUND transaction for each losing bidder who paid the reserve price,
+ * then calls PayHost to process the refund synchronously.
  *
  * @param itemId
  * @param winningBidderId
@@ -917,8 +925,8 @@ async function initiateNonWinnerReservationRefunds(itemId: string, winningBidder
       return;
     }
 
+    // Create REFUND transactions (idempotent — skips if one already exists)
     const refundPromises = losingReservations.map(async (reservation) => {
-      // Skip if a refund already exists for this reservation
       const existingRefund = await Transaction.findOne({
         relatedTransaction: reservation._id,
         transactionType: ETransactionType.REFUND
@@ -961,7 +969,6 @@ async function initiateNonWinnerReservationRefunds(itemId: string, winningBidder
       );
     }
 
-    // Collect results for batch submission
     const successes: Array<{ savedRefund: ITransaction; reservation: ITransaction }> = [];
     for (const r of settled) {
       if (r.status === 'fulfilled' && r.value != null) {
@@ -971,65 +978,46 @@ async function initiateNonWinnerReservationRefunds(itemId: string, winningBidder
 
     if (successes.length === 0) return;
 
-    // Load buyer names for PayBatch cardholder field
-    const buyerIds = [...new Set(successes.map(s => s.reservation.buyerId.toString()))];
-    type BuyerLean = { _id: unknown; firstName?: string; lastName?: string };
-    const buyersRaw = await Bidder.find({ _id: { $in: buyerIds } }).select('firstName lastName').lean() as BuyerLean[];
-    const buyerMap = new Map(buyersRaw.map((b: BuyerLean) => [String(b._id), `${b.firstName ?? ''} ${b.lastName ?? ''}`.trim()]));
-
-    const batchLines: BatchLine[] = [];
-    const manualRefundIds: string[] = [];
-
+    // Enqueue each refund via the queue service for async processing with retry.
+    // PayHost identifies the original transaction by MerchantOrderId (our MongoDB _id,
+    // which was sent as REFERENCE in the original PayWeb3 call).
+    const callbackUrl = `${SERVICE_URLS.auctionsGovServerBaseURI}/open/completeRefund`;
     for (const { savedRefund, reservation } of successes) {
-      const vaultId = (reservation.metadata as Map<string, string>).get('VAULT_ID');
-      if (vaultId) {
-        batchLines.push({
-          reference: String(savedRefund._id),
-          cardholderName: buyerMap.get(String(savedRefund.buyerId)) ?? 'Unknown',
-          vaultId,
-          amountCents: Math.round(savedRefund.amount * 100),
-        });
-      } else {
-        manualRefundIds.push(String(savedRefund._id));
+      const resMeta = reservation.metadata as Map<string, string>;
+      const transactionId = resMeta.get('TRANSACTION_ID');
+      const vaultId = resMeta.get('VAULT_ID');
+
+      // Need at least one identifier for the original transaction.
+      // PayHost accepts MerchantOrderId (always available — it's our _id).
+      // TRANSACTION_ID or VAULT_ID presence confirms card-based payment that can be refunded.
+      if (!transactionId && !vaultId) {
+        (savedRefund.metadata as Map<string, string>).set('needsManualRefund', 'true');
+        await savedRefund.save();
+        continue;
       }
-    }
 
-    // Flag manual refunds
-    if (manualRefundIds.length > 0) {
-      await Transaction.updateMany(
-        { _id: { $in: manualRefundIds } },
-        { $set: { 'metadata.needsManualRefund': 'true' } }
-      );
-      console.info(`[transaction-service] ${manualRefundIds.length} non-winner refund(s) flagged for manual processing (no Vault ID)`);
-    }
-
-    // Submit automated PayBatch for those with Vault IDs
-    if (batchLines.length > 0) {
-      const batchReference = `REFUND-ITEM-${itemId}-${Date.now()}`;
-      const notifyUrl = `${SERVICE_URLS.auctionsGovServerBaseURI}/open/paybatchNotify`;
       try {
-        const { uploadId } = await submitRefundBatch(batchReference, batchLines, notifyUrl);
-        await confirmBatch(uploadId);
-        await RefundBatch.create({
-          uploadId,
-          batchReference,
-          status: 'CONFIRMED',
-          transactionIds: batchLines.map(l => l.reference),
+        const amountCents = Math.round(savedRefund.amount * 100);
+        await axios.post(`${SERVICE_URLS.onlineAuctionQueueURI}/refundQueue/add-job`, {
+          merchantOrderId: String(reservation._id),
+          amountCents,
+          reference: String(savedRefund._id),
+          callbackUrl,
         });
-        console.info(`[transaction-service] PayBatch non-winner refunds submitted — uploadId: ${uploadId}, count: ${batchLines.length}`);
-      } catch (err) {
-        // PayBatch call failed — flag all intended lines for manual processing
-        console.error('[transaction-service] PayBatch non-winner refund submission failed — flagging for manual refund:', err);
-        await Transaction.updateMany(
-          { _id: { $in: batchLines.map(l => l.reference) } },
-          { $set: { 'metadata.needsManualRefund': 'true' } }
+        console.info(
+          `[transaction-service] Enqueued refund job for ${savedRefund._id} (reservation ${reservation._id})`
         );
+      } catch (err) {
+        console.error(
+          `[transaction-service] Failed to enqueue refund for ${savedRefund._id} — flagging for manual refund:`,
+          err
+        );
+        (savedRefund.metadata as Map<string, string>).set('needsManualRefund', 'true');
+        await savedRefund.save();
       }
     }
 
-    // Mark the item so the cron skips it from now on. We set this regardless of
-    // whether the PayBatch call succeeded — the refund transactions exist at this
-    // point (auto or flagged for manual) and will be handled from here.
+    // Mark the item so the cron skips it from now on.
     await Item.findByIdAndUpdate(itemId, { $set: { nonWinnerRefundsInitiated: true } });
 
     console.info(`[transaction-service] Initiated ${successes.length} non-winner refund(s) for item ${itemId}`);
@@ -1040,47 +1028,8 @@ async function initiateNonWinnerReservationRefunds(itemId: string, winningBidder
 }
 
 /**
- * Handle PayBatch result webhook.
- * PayGate POSTs a batch result to /open/paybatchNotify after processing.
- * Updates matching REFUND transactions to COMPLETED or FAILED.
- */
-async function processPayBatchNotify(body: Record<string, string>): Promise<void> {
-  const uploadId = body['uploadId'] ?? body['UploadID'];
-  if (!uploadId) {
-    console.error('[transaction-service] processPayBatchNotify: missing uploadId in body', body);
-    return;
-  }
-
-  const batch = await RefundBatch.findOne({ uploadId });
-  if (!batch) {
-    console.error(`[transaction-service] processPayBatchNotify: no RefundBatch found for uploadId ${uploadId}`);
-    return;
-  }
-
-  // PayBatch may send per-line results or a simple status field
-  const batchStatus = body['status'] ?? body['Status'] ?? 'UNKNOWN';
-  const isSuccess = batchStatus.toUpperCase() === 'COMPLETED' || batchStatus === '1';
-
-  if (isSuccess) {
-    await Transaction.updateMany(
-      { _id: { $in: batch.transactionIds } },
-      { $set: { status: EPaymentStatus.COMPLETED } }
-    );
-    batch.status = 'COMPLETED';
-  } else {
-    await Transaction.updateMany(
-      { _id: { $in: batch.transactionIds }, status: { $ne: EPaymentStatus.COMPLETED } },
-      { $set: { status: EPaymentStatus.FAILED, 'metadata.needsManualRefund': 'true' } }
-    );
-    batch.status = 'FAILED';
-  }
-
-  await batch.save();
-  console.info(`[transaction-service] PayBatch notify processed — uploadId: ${uploadId}, status: ${batch.status}`);
-}
-
-/**
- * Return REFUND transactions that need manual processing (no Vault ID was available).
+ * Return REFUND transactions that need manual processing (no Vault ID / TransactionId
+ * was available on the original transaction, or the PayHost refund call failed).
  * Used by admin to identify refunds that must be issued through the banking portal.
  */
 async function getPendingManualRefunds(): Promise<ITransaction[]> {
@@ -1108,6 +1057,60 @@ async function markManualRefundComplete(transactionId: string, note?: string): P
   return transaction.toObject();
 }
 
+/**
+ * Callback handler for the refund queue worker.
+ * Called by the queue service after PayHost processes a refund.
+ * Updates the refund transaction status based on the PayHost response.
+ *
+ * Idempotent: if the transaction is already COMPLETED, returns it as-is.
+ */
+async function completeRefund(input: {
+  refundTransactionId: string;
+  payhostTransactionId?: string;
+  statusName: string;
+  resultCode: string;
+  resultDescription: string;
+}): Promise<ITransaction> {
+  try {
+    const transaction = await Transaction.findById(input.refundTransactionId);
+    if (!transaction) {
+      throw new NotFoundError('Refund transaction not found');
+    }
+    if (transaction.transactionType !== ETransactionType.REFUND) {
+      throw new ForbiddenError('Transaction is not a refund');
+    }
+
+    // Idempotency guard
+    if (transaction.status === EPaymentStatus.COMPLETED) {
+      return transaction;
+    }
+
+    const meta = transaction.metadata as Map<string, string>;
+
+    const isCompleted = input.statusName.toLowerCase() === 'completed';
+    if (isCompleted) {
+      transaction.status = EPaymentStatus.COMPLETED;
+      if (input.payhostTransactionId) meta.set('payhostTransactionId', input.payhostTransactionId);
+      // Clear the manual flag since automated refund succeeded
+      meta.delete('needsManualRefund');
+    } else {
+      console.error(
+        `[transaction-service] PayHost refund not completed for ${input.refundTransactionId}: ` +
+        `status=${input.statusName}, resultCode=${input.resultCode}, resultDescription=${input.resultDescription}`
+      );
+      meta.set('needsManualRefund', 'true');
+    }
+
+    meta.set('resultCode', input.resultCode);
+    if (input.resultDescription) meta.set('resultDescription', input.resultDescription);
+
+    await transaction.save();
+    return transaction;
+  } catch (error) {
+    throw error;
+  }
+}
+
 // Export default
 export default {
   initiateItemReservation,
@@ -1121,7 +1124,7 @@ export default {
   initiateDisputeRefund,
   initiateNonWinnerReservationRefunds,
   createPendingPurchaseForWinner,
-  processPayBatchNotify,
   getPendingManualRefunds,
   markManualRefundComplete,
+  completeRefund,
 } as const;
