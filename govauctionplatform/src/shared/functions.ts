@@ -398,7 +398,7 @@ export function convertToPaygateFormat(
 
     // VAULT=1 instructs PayGate to tokenise the card and return VAULT_ID in the
     // NOTIFY_URL callback. The token is stored in transaction metadata so that
-    // PayBatch can use it for automated refunds later.
+    // PayHost can use it for automated refunds later.
     const VAULT = '1';
 
     // Create the checksum string by concatenating the input values
