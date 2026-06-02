@@ -37,6 +37,7 @@ const { OK, CREATED } = StatusCodes;
 export const p = {
   createInitAdmin: '/createInitAdmin',
   processSuccessfulPaymentFromPayGate: '/processSuccessfulPaymentFromPayGate',
+  completeRefund: '/completeRefund',
   paygateReturn: '/paygateReturn',
   getItems: '/getItems',
   getAuctions: '/getAuctions',
@@ -50,7 +51,6 @@ export const p = {
   getCategoryById: '/getCategoryById',
   getBreedById: '/getBreedById',
   getCurrentLot: '/getCurrentLot',
-  paybatchNotify: '/paybatchNotify',
 } as const;
 
 /**
@@ -350,7 +350,7 @@ router.post(p.processSuccessfulPaymentFromPayGate, async (req: Request, res: Res
       PAY_METHOD: Joi.string().allow('').optional(),
       PAY_METHOD_DETAIL: Joi.string().allow('').optional(),
       // VAULT_ID is returned when VAULT=1 was sent in the initiate request.
-      // It is a UUID card token used by PayBatch for automated refunds.
+      // It is a UUID card token used by PayHost for automated refunds.
       VAULT_ID: Joi.string().allow('').optional(),
       CHECKSUM: Joi.string().required().messages({
         'any.required': '"CHECKSUM" is a required field',
@@ -379,6 +379,35 @@ router.post(p.processSuccessfulPaymentFromPayGate, async (req: Request, res: Res
     console.error('Error processing PayGate payment:', error);
     // Still respond OK so PayGate proceeds to redirect the browser
     return res.status(OK).send('OK');
+  }
+});
+
+/**
+ * Callback from the refund queue worker after PayHost processes a refund.
+ * Updates the refund transaction status based on the PayHost response.
+ */
+router.post(p.completeRefund, async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      refundTransactionId: Joi.string().required().messages({
+        'any.required': '"refundTransactionId" is a required field',
+      }),
+      payhostTransactionId: Joi.string().allow('').optional(),
+      statusName: Joi.string().required().messages({
+        'any.required': '"statusName" is a required field',
+      }),
+      resultCode: Joi.string().required().messages({
+        'any.required': '"resultCode" is a required field',
+      }),
+      resultDescription: Joi.string().allow('').optional(),
+    });
+
+    Joi.assert(req.body, schema);
+
+    const transaction = await transactionService.completeRefund(req.body);
+    return res.status(OK).json({ transaction });
+  } catch (error) {
+    throw error;
   }
 });
 
@@ -694,20 +723,6 @@ router.get(p.getCurrentLot, async (req: Request, res: Response) => {
     return res.status(OK).json(result);
   } catch (error) {
     throw error;
-  }
-});
-
-/**
- * PayBatch webhook — PayGate POSTs the batch result here after processing.
- * Marks the associated refund transactions as COMPLETED or FAILED.
- */
-router.post(p.paybatchNotify, async (req: Request, res: Response) => {
-  try {
-    await transactionService.processPayBatchNotify(req.body);
-    return res.status(OK).send('OK');
-  } catch (error) {
-    console.error('[paybatchNotify] error:', error);
-    return res.status(OK).send('OK');
   }
 });
 
