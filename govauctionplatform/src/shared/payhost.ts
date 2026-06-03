@@ -10,7 +10,7 @@
  *
  * Auth: PayGateId + Password are passed in the XML body (no HTTP Basic).
  */
-import { PAYGATE_ID, PAYHOST_PASSWORD } from '../globals';
+import { PAYGATE_ID, PAYHOST_ENCRYPTION_KEY } from '../globals';
 
 const PAYHOST_ENDPOINT = 'https://secure.paygate.co.za/payhost/process.trans';
 
@@ -84,7 +84,7 @@ export async function refundRequest(params: RefundRequestParams): Promise<Refund
       <RefundRequest>
         <Account>
           <PayGateId>${PAYGATE_ID}</PayGateId>
-          <Password>${PAYHOST_PASSWORD}</Password>
+          <Password>${PAYHOST_ENCRYPTION_KEY}</Password>
         </Account>
         <MerchantOrderId>${params.merchantOrderId}</MerchantOrderId>
         ${amountXml}
