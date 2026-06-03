@@ -6,7 +6,7 @@
 // Mock globals before the payhost module imports it (Jest hoists these).
 jest.mock('../../../src/globals', () => ({
   PAYGATE_ID: 'test-paygate-id',
-  PAYHOST_PASSWORD: 'test-password',
+  PAYHOST_ENCRYPTION_KEY: 'test-payhost-key',
 }));
 
 import { refundRequest } from '../../../src/shared/payhost';
@@ -101,7 +101,7 @@ describe('payhost refundRequest', () => {
     expect(body).toContain('<RefundRequest>');
     // Account credentials
     expect(body).toContain('<PayGateId>test-paygate-id</PayGateId>');
-    expect(body).toContain('<Password>test-password</Password>');
+    expect(body).toContain('<Password>test-payhost-key</Password>');
     // Transaction identifiers
     expect(body).toContain('<MerchantOrderId>675df518df5dde426982a090</MerchantOrderId>');
     expect(body).toContain('<Amount>3295</Amount>');
