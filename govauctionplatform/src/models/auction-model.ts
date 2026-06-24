@@ -1,6 +1,6 @@
 import { ConflictError, ForbiddenError, InternalServerError, NotFoundError } from '../shared/errors';
 import { Schema, model, Document } from 'mongoose';
-import { EModels, EAuctionStatus, participationType, EParticipationType, sectorType, auctionStatus, ENVIRONMENT_PRODUCTION, publishedStatus, EPublishedStatus, SERVICE_URLS, auctionRejectedEmailTemplate, ID_VERIFICATION_API_KEY, auctionApprovalReminderEmailTemplate, ESectorType } from '../globals';
+import { EModels, EAuctionStatus, participationType, EParticipationType, sectorType, auctionStatus, ENVIRONMENT_PRODUCTION, publishedStatus, EPublishedStatus, SERVICE_URLS, auctionRejectedEmailTemplate, KEY_SECRET, auctionApprovalReminderEmailTemplate, ESectorType } from '../globals';
 import { generateSlug } from '../shared/functions';
 import { isURL } from 'validator';
 import * as axios from 'axios';
@@ -368,7 +368,7 @@ auctionSchema.post('save', async function(doc) {
           }, {
             headers: {
               "Content-Type": "application/json",
-              "x-api-key": ID_VERIFICATION_API_KEY
+              "x-api-key": KEY_SECRET
             }
           });
           break;
@@ -399,7 +399,7 @@ auctionSchema.post('save', async function(doc) {
             }, {
               headers: {
                 "Content-Type": "application/json",
-                "x-api-key": ID_VERIFICATION_API_KEY
+                "x-api-key": KEY_SECRET
               }
             })
           );
