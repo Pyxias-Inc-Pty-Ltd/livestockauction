@@ -53,6 +53,7 @@ export const ID_VERIFICATION_API_KEY = process.env.ID_VERIFICATION_API_KEY as st
 export const PAYGATE_ID = process.env.PAYGATE_ID as string;
 export const PAYGATE_ENCRYPTION_KEY = process.env.PAYGATE_ENCRYPTION_KEY as string;
 export const PAYHOST_ENCRYPTION_KEY = process.env.PAYHOST_ENCRYPTION_KEY as string;
+export const KEY_SECRET = process.env.KEY_SECRET as string;
 export const BAITS_API_TOKEN = process.env.BAITS_API_TOKEN as string;
 export const ELASTICSEARCH_NODE = process.env.ELASTICSEARCH_NODE as string;
 export const ELASTICSEARCH_USERNAME = process.env.ELASTICSEARCH_USERNAME as string;
