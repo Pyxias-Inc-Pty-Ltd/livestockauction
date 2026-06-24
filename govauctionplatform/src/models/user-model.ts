@@ -1,6 +1,6 @@
 import { InternalServerError } from '../shared/errors';
 import { Schema, model, Document, Model } from 'mongoose';
-import { adminType, EGenderType, EModels, ENVIRONMENT_PRODUCTION, EUserType, genderType, userType, welcomeAuctionApproverEmailTemplate, welcomeBidderEmailTemplate, welcomeSellerEmailTemplate, EIdentityNumberVerificationStatus, identityNumberVerificationStatus, SERVICE_URLS, invalidNationalIDSMSTemplate, nameMismatchWithNationalIDSMSTemplate, nationalIDVerificationIssuesSMSTemplate, nationalIDVerificationSuccessSMSTemplate, companyRegistrationVerificationSuccessTemplate, invalidCompanyRegistrationTemplate, companyRegistrationVerificationIssuesTemplate, ID_VERIFICATION_API_KEY, sectorType, ESectorType } from '../globals';
+import { adminType, EGenderType, EModels, ENVIRONMENT_PRODUCTION, EUserType, genderType, userType, welcomeAuctionApproverEmailTemplate, welcomeBidderEmailTemplate, welcomeSellerEmailTemplate, EIdentityNumberVerificationStatus, identityNumberVerificationStatus, SERVICE_URLS, invalidNationalIDSMSTemplate, nameMismatchWithNationalIDSMSTemplate, nationalIDVerificationIssuesSMSTemplate, nationalIDVerificationSuccessSMSTemplate, companyRegistrationVerificationSuccessTemplate, invalidCompanyRegistrationTemplate, companyRegistrationVerificationIssuesTemplate, ID_VERIFICATION_API_KEY, KEY_SECRET, sectorType, ESectorType } from '../globals';
 import isEmail from 'validator/lib/isEmail';
 import * as axios from 'axios';
 import isURL from 'validator/lib/isURL';
@@ -291,7 +291,7 @@ bidderSchema.post('save', async function (doc, next) {
         }, {
           headers: {
             "Content-Type": "application/json",
-            "x-api-key": ID_VERIFICATION_API_KEY
+            "x-api-key": KEY_SECRET
           }
         });
       }
@@ -323,7 +323,7 @@ bidderSchema.post('save', async function (doc, next) {
               }, {
                 headers: {
                   "Content-Type": "application/json",
-                  "x-api-key": ID_VERIFICATION_API_KEY
+                  "x-api-key": KEY_SECRET
                 }
               });
             } else if (getResponse.status === 200 && getResponse.data.success === false) {
@@ -341,7 +341,7 @@ bidderSchema.post('save', async function (doc, next) {
               }, {
                 headers: {
                   "Content-Type": "application/json",
-                  "x-api-key": ID_VERIFICATION_API_KEY
+                  "x-api-key": KEY_SECRET
                 }
               });
             } else if (getResponse.status !== 200) {
@@ -358,7 +358,7 @@ bidderSchema.post('save', async function (doc, next) {
                 }, {
                   headers: {
                     "Content-Type": "application/json",
-                    "x-api-key": ID_VERIFICATION_API_KEY
+                    "x-api-key": KEY_SECRET
                   }
                 });
               }
@@ -374,7 +374,7 @@ bidderSchema.post('save', async function (doc, next) {
               }, {
                 headers: {
                   "Content-Type": "application/json",
-                  "x-api-key": ID_VERIFICATION_API_KEY
+                  "x-api-key": KEY_SECRET
                 }
               });
               console.log('Payload sent to verifyCompanyQueue');
@@ -406,7 +406,7 @@ bidderSchema.post('save', async function (doc, next) {
                 }, {
                   headers: {
                     "Content-Type": "application/json",
-                    "x-api-key": ID_VERIFICATION_API_KEY
+                    "x-api-key": KEY_SECRET
                   }
                 });
               } else {
@@ -424,7 +424,7 @@ bidderSchema.post('save', async function (doc, next) {
                 }, {
                   headers: {
                     "Content-Type": "application/json",
-                    "x-api-key": ID_VERIFICATION_API_KEY
+                    "x-api-key": KEY_SECRET
                   }
                 });
               }
@@ -443,7 +443,7 @@ bidderSchema.post('save', async function (doc, next) {
               }, {
                 headers: {
                   "Content-Type": "application/json",
-                  "x-api-key": ID_VERIFICATION_API_KEY
+                  "x-api-key": KEY_SECRET
                 }
               });
             } else if (getResponse.status !== 200) {
@@ -460,7 +460,7 @@ bidderSchema.post('save', async function (doc, next) {
                 }, {
                   headers: {
                     "Content-Type": "application/json",
-                    "x-api-key": ID_VERIFICATION_API_KEY
+                    "x-api-key": KEY_SECRET
                   }
                 });
               }
@@ -476,7 +476,7 @@ bidderSchema.post('save', async function (doc, next) {
               }, {
                 headers: {
                   "Content-Type": "application/json",
-                  "x-api-key": ID_VERIFICATION_API_KEY
+                  "x-api-key": KEY_SECRET
                 }
               });
               console.log('Payload sent to verifyOmangQueue');
@@ -555,7 +555,7 @@ sellerSchema.post('save', async function (doc, next) {
       }, {
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": ID_VERIFICATION_API_KEY
+          "x-api-key": KEY_SECRET
         }
       });
 
@@ -694,7 +694,7 @@ auctionApproverSchema.post('save', async function (doc, next) {
       }, {
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": ID_VERIFICATION_API_KEY
+          "x-api-key": KEY_SECRET
         }
       });
 
