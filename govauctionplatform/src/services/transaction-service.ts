@@ -859,9 +859,8 @@ async function initiateDisputeRefund(purchaseTransactionId: string): Promise<ITr
 
     // Attempt automated refund via PayHost if we can identify the original transaction.
     const transactionId = purchaseMeta.get('TRANSACTION_ID');
-    const vaultId = purchaseMeta.get('VAULT_ID');
 
-    if (transactionId || vaultId) {
+    if (transactionId) {
       const amountCents = Math.round(savedRefund.amount * 100);
 
       try {
@@ -985,12 +984,10 @@ async function initiateNonWinnerReservationRefunds(itemId: string, winningBidder
     for (const { savedRefund, reservation } of successes) {
       const resMeta = reservation.metadata as Map<string, string>;
       const transactionId = resMeta.get('TRANSACTION_ID');
-      const vaultId = resMeta.get('VAULT_ID');
 
-      // Need at least one identifier for the original transaction.
-      // PayHost accepts MerchantOrderId (always available — it's our _id).
-      // TRANSACTION_ID or VAULT_ID presence confirms card-based payment that can be refunded.
-      if (!transactionId && !vaultId) {
+      // Need the PayGate transaction ID to confirm card-based payment that can be refunded.
+      // PayHost identifies the original transaction by MerchantOrderId (always available — it's our _id).
+      if (!transactionId) {
         (savedRefund.metadata as Map<string, string>).set('needsManualRefund', 'true');
         await savedRefund.save();
         continue;
