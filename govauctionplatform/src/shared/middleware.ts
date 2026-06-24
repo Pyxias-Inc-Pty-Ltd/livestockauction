@@ -1,6 +1,6 @@
 import { UnauthorizedError } from '../shared/errors';
 import { NextFunction, Request, Response } from 'express';
-import { EUserType, EAdminType, KEYCLOAK_CLIENT_ID } from '../globals';
+import { EUserType, EAdminType, KEYCLOAK_CLIENT_ID, KEY_SECRET } from '../globals';
 import { IAdmin, IUser } from '../models/user-model';
 import { jwtVerify } from 'jose';
 import { JWKS, KEYCLOAK_ISSUER } from './keycloak';
@@ -190,3 +190,21 @@ export function AnyAdminMiddleware(errorMessage?: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Queue service auth
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate x-api-key header against KEY_SECRET for queue service calls.
+ * Rejects requests that present an x-api-key header with the wrong value.
+ * If no x-api-key header is present, passes through (for normal JWT auth).
+ */
+export function requireQueueApiKey(req: Request, res: Response, next: NextFunction): void {
+  const apiKey = req.headers['x-api-key'];
+  if (apiKey === undefined) {
+    return next(); // no header — fall through to JWT
+  }
+  if (apiKey !== KEY_SECRET) {
+    throw new UnauthorizedError('Invalid x-api-key');
+  }
+  next();
+}
