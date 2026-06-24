@@ -1,5 +1,5 @@
 import { Schema, model, Document } from 'mongoose';
-import { addedToForumTemplate, EModels, EPushMessageReason, EUserType, ID_VERIFICATION_API_KEY, SERVICE_URLS } from '../globals';
+import { addedToForumTemplate, EModels, EPushMessageReason, EUserType, KEY_SECRET, SERVICE_URLS } from '../globals';
 import { IAuction } from './auction-model';
 import { firebase } from '../index';
 import { InternalServerError, NotFoundError } from '../shared/errors';
@@ -164,7 +164,7 @@ forumSchema.post('save', async function(doc) {
           }, {
             headers: {
               "Content-Type": "application/json",
-              "x-api-key": ID_VERIFICATION_API_KEY
+              "x-api-key": KEY_SECRET
             }
           });
 

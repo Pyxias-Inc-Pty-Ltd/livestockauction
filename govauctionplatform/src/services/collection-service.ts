@@ -2,7 +2,7 @@ import { Schema, startSession, ClientSession } from 'mongoose';
 import { createHash, randomInt } from 'crypto';
 import { ForbiddenError, NotFoundError } from '../shared/errors';
 import { isMongoId } from 'validator';
-import { collectionOtpEmailTemplate, ECollectionStatus, EPushMessageReason, ERefundReason, ID_VERIFICATION_API_KEY, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, ESortOrderType, SERVICE_URLS } from '../globals';
+import { collectionOtpEmailTemplate, ECollectionStatus, EPushMessageReason, ERefundReason, KEY_SECRET, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, ESortOrderType, SERVICE_URLS } from '../globals';
 import { Collection, ICollection, ICollectionInput } from '../models/collection-model';
 import { Bidder, IAdmin, IBidder, ISeller, IUser } from '../models/user-model';
 import { IItem } from '../models/item-model';
@@ -163,7 +163,7 @@ async function sendCollectionOtp(
     {
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': ID_VERIFICATION_API_KEY
+        'x-api-key': KEY_SECRET
       }
     }
   );

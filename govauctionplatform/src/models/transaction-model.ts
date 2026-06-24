@@ -1,5 +1,5 @@
 import { Schema, model, Document } from 'mongoose';
-import { EModels, EPaymentStatus, EPushMessageReason, ETransactionType, ID_VERIFICATION_API_KEY, paymentStatus, purchasePaymentFailedTemplate, purchasePaymentTemplate, refundFailedTemplate, refundTemplate, reservePricePaymentFailedTemplate, reservePricePaymentTemplate, SERVICE_URLS, transactionType } from '../globals';
+import { EModels, EPaymentStatus, EPushMessageReason, ETransactionType, KEY_SECRET, paymentStatus, purchasePaymentFailedTemplate, purchasePaymentTemplate, refundFailedTemplate, refundTemplate, reservePricePaymentFailedTemplate, reservePricePaymentTemplate, SERVICE_URLS, transactionType } from '../globals';
 import { firebase } from '../index';
 import { InternalServerError, NotFoundError } from '../shared/errors';
 import { IItem } from './item-model';
@@ -164,7 +164,7 @@ schema.post('save', async function (doc) {
       }, {
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": ID_VERIFICATION_API_KEY
+          "x-api-key": KEY_SECRET
         }
       });
 

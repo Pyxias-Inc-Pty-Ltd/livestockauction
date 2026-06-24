@@ -3,6 +3,7 @@ import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isoAlpha2CountryValidation, isStringNumberLike, mongoIdValidation, phoneValidation, validatePaygateNotifyChecksum } from '../shared/functions';
+import { requireQueueApiKey } from '../shared/middleware';
 import transactionService from '../services/transaction-service';
 import { Transaction } from '../models/transaction-model';
 import auctionService from '../services/auction-service';
@@ -38,6 +39,8 @@ export const p = {
   createInitAdmin: '/createInitAdmin',
   processSuccessfulPaymentFromPayGate: '/processSuccessfulPaymentFromPayGate',
   completeRefund: '/completeRefund',
+  verifyIdentityNumber: '/verifyIdentityNumber',
+  verifyCompany: '/verifyCompany',
   paygateReturn: '/paygateReturn',
   getItems: '/getItems',
   getAuctions: '/getAuctions',
@@ -406,6 +409,46 @@ router.post(p.completeRefund, async (req: Request, res: Response) => {
 
     const transaction = await transactionService.completeRefund(req.body);
     return res.status(OK).json({ transaction });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Queue service callback: retry identity number verification (Omang).
+ * Requires a valid x-api-key header; no JWT needed.
+ */
+router.post(p.verifyIdentityNumber, requireQueueApiKey, async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      userId: mongoIdValidation.required().messages({
+        'any.required': '"userId" is a required field',
+      }),
+    });
+    Joi.assert(req.body, schema);
+
+    await userService.verifyIdentityNumber(req.body.userId);
+    return res.status(OK).json({ message: 'ok' });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Queue service callback: retry company registration number verification.
+ * Requires a valid x-api-key header; no JWT needed.
+ */
+router.post(p.verifyCompany, requireQueueApiKey, async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      userId: mongoIdValidation.required().messages({
+        'any.required': '"userId" is a required field',
+      }),
+    });
+    Joi.assert(req.body, schema);
+
+    await userService.verifyIdentityNumber(req.body.userId);
+    return res.status(OK).json({ message: 'ok' });
   } catch (error) {
     throw error;
   }
