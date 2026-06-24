@@ -1,7 +1,7 @@
 import { ConflictError, ForbiddenError, NotFoundError } from "../shared/errors";
 import { Auction } from "../models/auction-model";
 import { IAdmin, IUser, User, IAdminInput, Admin, IBidder, IBidderInput, Bidder, ISeller, ISellerInput, Seller, AuctionApprover, IAuctionApprover, IAuctionApproverInput } from "../models/user-model";
-import { companyRegistrationVerificationIssuesTemplate, companyRegistrationVerificationSuccessTemplate, EAdminType, ESortOrderType, EUserSortType, EUserType, ID_VERIFICATION_API_KEY, invalidCompanyRegistrationTemplate, invalidNationalIDSMSTemplate, keeperIDVerificationTemplate, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, nameMismatchWithNationalIDSMSTemplate, nationalIDVerificationIssuesSMSTemplate, nationalIDVerificationSuccessSMSTemplate, SERVICE_URLS } from "../globals";
+import { companyRegistrationVerificationIssuesTemplate, companyRegistrationVerificationSuccessTemplate, EAdminType, ESortOrderType, EUserSortType, EUserType, ID_VERIFICATION_API_KEY, KEY_SECRET, invalidCompanyRegistrationTemplate, invalidNationalIDSMSTemplate, keeperIDVerificationTemplate, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, nameMismatchWithNationalIDSMSTemplate, nationalIDVerificationIssuesSMSTemplate, nationalIDVerificationSuccessSMSTemplate, SERVICE_URLS } from "../globals";
 import { generateOTP, generateRandomPassword, getFarmerByKeeperId, getKeeperByRegNumber, hashOTP, normalizeAndCompareNames, verifyOTP } from "../shared/functions";
 import { Schema } from "mongoose";
 import * as axios from "axios";
@@ -194,7 +194,7 @@ async function verifyIdentityNumber(userId: string): Promise<void> {
             }, {
               headers: {
                 "Content-Type": "application/json",
-                "x-api-key": ID_VERIFICATION_API_KEY
+                "x-api-key": KEY_SECRET
               }
             });
           } else if (getResponse.status === 200 && getResponse.data.success === false) {
@@ -212,7 +212,7 @@ async function verifyIdentityNumber(userId: string): Promise<void> {
             }, {
               headers: {
                 "Content-Type": "application/json",
-                "x-api-key": ID_VERIFICATION_API_KEY
+                "x-api-key": KEY_SECRET
               }
             });
           } else if (getResponse.status !== 200) {
@@ -229,7 +229,7 @@ async function verifyIdentityNumber(userId: string): Promise<void> {
               }, {
                 headers: {
                   "Content-Type": "application/json",
-                  "x-api-key": ID_VERIFICATION_API_KEY
+                  "x-api-key": KEY_SECRET
                 }
               });
             }
@@ -245,7 +245,7 @@ async function verifyIdentityNumber(userId: string): Promise<void> {
             }, {
               headers: {
                 "Content-Type": "application/json",
-                "x-api-key": ID_VERIFICATION_API_KEY
+                "x-api-key": KEY_SECRET
               }
             });
             console.log('Payload sent to verifyCompanyQueue');
@@ -278,7 +278,7 @@ async function verifyIdentityNumber(userId: string): Promise<void> {
               }, {
                 headers: {
                   "Content-Type": "application/json",
-                  "x-api-key": ID_VERIFICATION_API_KEY
+                  "x-api-key": KEY_SECRET
                 }
               });
             } else {
@@ -296,7 +296,7 @@ async function verifyIdentityNumber(userId: string): Promise<void> {
               }, {
                 headers: {
                   "Content-Type": "application/json",
-                  "x-api-key": ID_VERIFICATION_API_KEY
+                  "x-api-key": KEY_SECRET
                 }
               });
             }
@@ -315,7 +315,7 @@ async function verifyIdentityNumber(userId: string): Promise<void> {
             }, {
               headers: {
                 "Content-Type": "application/json",
-                "x-api-key": ID_VERIFICATION_API_KEY
+                "x-api-key": KEY_SECRET
               }
             });
           } else if (getResponse.status !== 200) {
@@ -332,7 +332,7 @@ async function verifyIdentityNumber(userId: string): Promise<void> {
               }, {
                 headers: {
                   "Content-Type": "application/json",
-                  "x-api-key": ID_VERIFICATION_API_KEY
+                  "x-api-key": KEY_SECRET
                 }
               });
             }
@@ -348,7 +348,7 @@ async function verifyIdentityNumber(userId: string): Promise<void> {
             }, {
               headers: {
                 "Content-Type": "application/json",
-                "x-api-key": ID_VERIFICATION_API_KEY
+                "x-api-key": KEY_SECRET
               }
             });
             console.log('Payload sent to verifyOmangQueue');
@@ -611,7 +611,7 @@ async function beginBAITSKeeperIDVerification(currentUser: IBidder, keeperId: st
       }, {
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": ID_VERIFICATION_API_KEY
+          "x-api-key": KEY_SECRET
         }
       });
     }
