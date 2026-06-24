@@ -3,7 +3,7 @@ import { generateAuctionNumber, isBeforeStartDate, isStartDateBeforeEndDate } fr
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession, Types } from 'mongoose';
-import { MAX_GEO_DISTANCE_AUCTION, EAuctionSortType, EAuctionStatus, EItemStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, languageType, SERVICE_URLS, ID_VERIFICATION_API_KEY, auctionInviteEmailTemplate, ETransactionType, EPaymentStatus } from "../globals";
+import { MAX_GEO_DISTANCE_AUCTION, EAuctionSortType, EAuctionStatus, EItemStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, languageType, SERVICE_URLS, KEY_SECRET, auctionInviteEmailTemplate, ETransactionType, EPaymentStatus } from "../globals";
 import { Auction, IAuction, IAuctionInput, IRequiredAttribute, IRequiredAttributeInput, RequiredAttribute } from "../models/auction-model";
 import * as axios from "axios";
 import categoryService from "./category-service";
@@ -1068,7 +1068,7 @@ async function inviteByEmail(auctionId: string, email: string): Promise<{ resolv
   }, {
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': ID_VERIFICATION_API_KEY,
+      'x-api-key': KEY_SECRET,
     },
   });
 
