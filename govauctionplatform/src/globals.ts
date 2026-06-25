@@ -77,7 +77,7 @@ export const SERVICE_URLS: {[key: string]: string} = {
   baits3URICore: "http://bifrost-baits3.gov.bw:90/api/core/v1/api",
   animalhealthURI: "https://lmsserv.auctiondev.xyz",
   idVerificationURI: "http://idverification-acc.gov.bw:8081/api/v1",
-  onlineAuctionQueueURI: "http://localhost:8822",
+  onlineAuctionQueueURI: process.env.QUEUE_SERVICE_URL || "http://localhost:8822",
   auctionsGovServerBaseURI: process.env.SERVER_BASE_URI || "https://onlineauction-uat.gov.bw",
 }
 
