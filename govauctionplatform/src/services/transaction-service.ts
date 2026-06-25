@@ -7,7 +7,7 @@ import { Item } from "../models/item-model";
 import { Forum } from "../models/forum-model";
 import { Auction } from "../models/auction-model";
 import itemService from "./item-service";
-import { EPaymentStatus, ERefundReason, ESortOrderType, ETransactionSortType, ETransactionType, LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, MAX_LIST_LIMIT_NUMBER, PAYGATE_ENCRYPTION_KEY, PAYGATE_ID, SERVICE_URLS, transactionType, LOCAL_CURRENCY, DEFAULT_LANG, DEFAULT_PAYMENT_EMAIL, LOCALY_COUNTRY_ALPHA_3_CODE } from "../globals";
+import { EPaymentStatus, ERefundReason, ESortOrderType, ETransactionSortType, ETransactionType, LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, MAX_LIST_LIMIT_NUMBER, PAYGATE_ENCRYPTION_KEY, PAYGATE_ID, SERVICE_URLS, transactionType, LOCAL_CURRENCY, DEFAULT_LANG, DEFAULT_PAYMENT_EMAIL, LOCALY_COUNTRY_ALPHA_3_CODE, KEY_SECRET } from "../globals";
 import bidService from "./bid-service";
 import * as luxon from "luxon";
 import { callPayGateInitiate, prefixWithZero, convertToPaygateFormat } from "../shared/functions";
@@ -1000,6 +1000,11 @@ async function initiateNonWinnerReservationRefunds(itemId: string, winningBidder
           amountCents,
           reference: String(savedRefund._id),
           callbackUrl,
+        }, {
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": KEY_SECRET
+          }
         });
         console.info(
           `[transaction-service] Enqueued refund job for ${savedRefund._id} (reservation ${reservation._id})`
