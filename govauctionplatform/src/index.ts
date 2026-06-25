@@ -66,7 +66,7 @@ io.use(async (socket: any, next: any) => {
 
 const onConnection = (socket: Socket) => {
   console.log('a user connected: ', socket.id);
-  socket.on(ESocketEventCode.JOIN_BIDDING_ROOM, async function (data, cb) {
+  socket.on(ESocketEventCode.JOIN_BIDDING_ROOM, async function (data, cb = () => {}) {
     try {
       console.log("ESocketEventCode.JOIN_BIDDING_ROOM: ", data);
       bidHandler.joinBiddingRoom(socket, data);
@@ -106,7 +106,7 @@ const onConnection = (socket: Socket) => {
       }
     }
   });
-  socket.on(ESocketEventCode.POLL_PAID_TRANSACTION, async function (data, cb) {
+  socket.on(ESocketEventCode.POLL_PAID_TRANSACTION, async function (data, cb = () => {}) {
     try {
       console.log("ESocketEventCode.POLL_PAID_TRANSACTION: ", data);
       const result = await transactionHandler.pollPaidTransaction(socket, data);
@@ -119,7 +119,7 @@ const onConnection = (socket: Socket) => {
       }
     }
   });
-  socket.on(ESocketEventCode.JOIN_BIDDING_ROOM_CHAT, function (data, cb) {
+  socket.on(ESocketEventCode.JOIN_BIDDING_ROOM_CHAT, function (data, cb = () => {}) {
     try {
       bidHandler.joinBiddingRoomChat(socket, data);
       cb({ status: OK });
@@ -131,7 +131,7 @@ const onConnection = (socket: Socket) => {
       }
     }
   });
-  socket.on(ESocketEventCode.CREATE_NEW_MANUAL_BID_AMOUNT, async function (data, cb) {
+  socket.on(ESocketEventCode.CREATE_NEW_MANUAL_BID_AMOUNT, async function (data, cb = () => {}) {
     try {
       console.log("ESocketEventCode.CREATE_NEW_MANUAL_BID_AMOUNT: ", data);
       const item = await itemHandler.setNewBidAmountManually(socket, data);
@@ -145,7 +145,7 @@ const onConnection = (socket: Socket) => {
       }
     }
   });
-  socket.on(ESocketEventCode.REFRESH_AFTER_WINNING, async function (data, cb) {
+  socket.on(ESocketEventCode.REFRESH_AFTER_WINNING, async function (data, cb = () => {}) {
     try {
       console.log("ESocketEventCode.REFRESH_AFTER_WINNING: ", data);
       // Use io.to() (not socket.to()) so the seller who triggers this also
@@ -160,7 +160,7 @@ const onConnection = (socket: Socket) => {
       }
     }
   });
-  socket.on(ESocketEventCode.CREATE_CHAT_MESSAGE, async function (data, cb) {
+  socket.on(ESocketEventCode.CREATE_CHAT_MESSAGE, async function (data, cb = () => {}) {
     try {
       console.log("ESocketEventCode.CREATE_CHAT_MESSAGE: ", data);
       const message = await messageHandler.createChatMessage(socket, data);
@@ -174,7 +174,7 @@ const onConnection = (socket: Socket) => {
       }
     }
   });
-  socket.on(ESocketEventCode.CREATE_FORUM_COMMENT, async function (data, cb) {
+  socket.on(ESocketEventCode.CREATE_FORUM_COMMENT, async function (data, cb = () => {}) {
     try {
       console.log("ESocketEventCode.CREATE_FORUM_COMMENT: ", data);
       const comment = await messageHandler.createForumComment(socket, data);
@@ -188,7 +188,7 @@ const onConnection = (socket: Socket) => {
       }
     }
   });
-  socket.on(ESocketEventCode.CREATE_BID, async function (data: any, cb: any) {
+  socket.on(ESocketEventCode.CREATE_BID, async function (data: any, cb: any = () => {}) {
     try {
       const bidder = (socket as any).user as IBidder;
 
@@ -213,7 +213,7 @@ const onConnection = (socket: Socket) => {
       }
     }
   });
-  socket.on(ESocketEventCode.RETRACT_BID, async function (data: any, cb: any) {
+  socket.on(ESocketEventCode.RETRACT_BID, async function (data: any, cb: any = () => {}) {
     try {
       const bid = await bidHandler.retractBid(socket, data);
       console.log("ESocketEventCode.RETRACT_BID: ", data);
