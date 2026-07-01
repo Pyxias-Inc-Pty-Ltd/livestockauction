@@ -82,6 +82,22 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
       ? (auction.registrationFee || 0)
       : item.reservePrice;
 
+    // Dedup: if the bidder already has a pending or completed reservation for this
+    // item, don't create a duplicate. Return the pending one so the frontend can
+    // re-use its payment link; throw on completed (frontend shouldn't be calling this).
+    const existingReservation = await Transaction.findOne({
+      itemId: item._id,
+      buyerId: currentUser.id,
+      transactionType: ETransactionType.RESERVATION,
+      status: { $in: [EPaymentStatus.PENDING, EPaymentStatus.COMPLETED] },
+    });
+    if (existingReservation) {
+      if (existingReservation.status === EPaymentStatus.COMPLETED) {
+        throw new InternalServerError('You have already reserved this item');
+      }
+      return existingReservation;
+    }
+
     // Create payment transaction
     const paymentInput: ITransactionInput = {
       auctionId: item.auctionId,
