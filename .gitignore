@@ -1,3 +1,7 @@
+*/.DS_Store
+govauctionplatform/docs/*
+govauctionplatform/.DS_Store
+
 # Logs
 logs
 *.log

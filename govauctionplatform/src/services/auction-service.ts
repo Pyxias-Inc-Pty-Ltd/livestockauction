@@ -976,44 +976,68 @@ async function revokeInvitedBidder(auctionId: string, bidderId: string): Promise
     status: EPaymentStatus.COMPLETED,
   });
 
-  if (reservations.length > 0) {
-    const refundPromises = reservations.map(async (reservation) => {
-      const existingRefund = await Transaction.findOne({
-        relatedTransaction: reservation._id,
-        transactionType: ETransactionType.REFUND,
-      });
+  const callbackUrl = `${SERVICE_URLS.auctionsGovServerBaseURI}/open/completeRefund`;
 
-      if (existingRefund) return;
-
-      const refundInput: ITransactionInput = {
-        auctionId: reservation.auctionId,
-        itemId: reservation.itemId,
-        buyerId: reservation.buyerId,
-        sellerId: reservation.sellerId,
-        currency: reservation.currency,
-        amount: reservation.amount,
-        transactionType: ETransactionType.REFUND,
-        relatedTransaction: reservation._id,
-        metadata: {},
-      };
-
-      const refundTx = new Transaction(refundInput);
-      refundTx.status = EPaymentStatus.PENDING;
-
-      const originalPayRequestId = (reservation.metadata as Map<string, string>).get('PAY_REQUEST_ID');
-      if (originalPayRequestId) {
-        (refundTx.metadata as Map<string, string>).set('originalPAY_REQUEST_ID', originalPayRequestId);
-      }
-
-      await refundTx.save();
+  for (const reservation of reservations) {
+    const existingRefund = await Transaction.findOne({
+      relatedTransaction: reservation._id,
+      transactionType: ETransactionType.REFUND,
     });
 
-    await Promise.allSettled(refundPromises).then((results) => {
-      const failed = results.filter((r) => r.status === 'rejected');
-      if (failed.length > 0) {
-        console.error(`[auction-service] ${failed.length} revoke refund(s) failed for bidder ${bidderId} in auction ${auctionId}`);
+    if (existingRefund) continue;
+
+    const refundInput: ITransactionInput = {
+      auctionId: reservation.auctionId,
+      itemId: reservation.itemId,
+      buyerId: reservation.buyerId,
+      sellerId: reservation.sellerId,
+      currency: reservation.currency,
+      amount: reservation.amount,
+      transactionType: ETransactionType.REFUND,
+      relatedTransaction: reservation._id,
+      metadata: {},
+    };
+
+    const refundTx = new Transaction(refundInput);
+    refundTx.status = EPaymentStatus.PENDING;
+
+    const resMeta = reservation.metadata as Map<string, string>;
+    const originalPayRequestId = resMeta.get('PAY_REQUEST_ID');
+    if (originalPayRequestId) {
+      (refundTx.metadata as Map<string, string>).set('originalPAY_REQUEST_ID', originalPayRequestId);
+    }
+
+    const transactionId = resMeta.get('TRANSACTION_ID');
+    if (!transactionId) {
+      (refundTx.metadata as Map<string, string>).set('needsManualRefund', 'true');
+    }
+
+    await refundTx.save();
+
+    // Enqueue via the queue service for async PayHost SOAP processing with retry.
+    // PayHost identifies the original transaction by MerchantOrderId (our MongoDB _id,
+    // which was sent as REFERENCE in the original PayWeb3 call).
+    if (transactionId) {
+      try {
+        const amountCents = Math.round(refundTx.amount * 100);
+        await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/refundQueue/add-job`, {
+          merchantOrderId: String(reservation._id),
+          amountCents,
+          reference: String(refundTx._id),
+          callbackUrl,
+        }, {
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": KEY_SECRET
+          }
+        });
+        console.info(`[auction-service] Enqueued revoke refund job for ${refundTx._id} (reservation ${reservation._id})`);
+      } catch (err) {
+        console.error(`[auction-service] Failed to enqueue revoke refund for ${refundTx._id} — flagging for manual refund:`, err);
+        (refundTx.metadata as Map<string, string>).set('needsManualRefund', 'true');
+        await refundTx.save();
       }
-    });
+    }
   }
 
   return savedAuction;
