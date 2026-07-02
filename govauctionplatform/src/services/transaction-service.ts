@@ -7,7 +7,7 @@ import { Item } from "../models/item-model";
 import { Forum } from "../models/forum-model";
 import { Auction } from "../models/auction-model";
 import itemService from "./item-service";
-import { EPaymentStatus, ERefundReason, ESortOrderType, ETransactionSortType, ETransactionType, LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, MAX_LIST_LIMIT_NUMBER, PAYGATE_ENCRYPTION_KEY, PAYGATE_ID, SERVICE_URLS, transactionType, LOCAL_CURRENCY, DEFAULT_LANG, DEFAULT_PAYMENT_EMAIL, LOCALY_COUNTRY_ALPHA_3_CODE, KEY_SECRET } from "../globals";
+import { EPaymentStatus, EItemStatus, ERefundReason, ESortOrderType, ETransactionSortType, ETransactionType, LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, MAX_LIST_LIMIT_NUMBER, PAYGATE_ENCRYPTION_KEY, PAYGATE_ID, SERVICE_URLS, transactionType, LOCAL_CURRENCY, DEFAULT_LANG, DEFAULT_PAYMENT_EMAIL, LOCALY_COUNTRY_ALPHA_3_CODE, KEY_SECRET } from "../globals";
 import bidService from "./bid-service";
 import * as luxon from "luxon";
 import { callPayGateInitiate, prefixWithZero, convertToPaygateFormat } from "../shared/functions";
@@ -281,9 +281,7 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
 async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input: { itemId: string }): Promise<ITransaction> {
   try {
 
-    // TODO: Make sure bidder can not purchase once bidding has begun
-
-    const [item, token] = await Promise.all([itemService.getById(input.itemId, { buyoutPrice: 1, sellerId: 1, auctionId: 1 }), tokenService.getActiveToken()]);
+    const [item, token] = await Promise.all([itemService.getById(input.itemId, { buyoutPrice: 1, sellerId: 1, auctionId: 1, status: 1 }), tokenService.getActiveToken()]);
 
     // Check if exists
     if (!item) {
@@ -301,6 +299,12 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
     // Check if exists
     if (!auction) {
       throw new NotFoundError('Auction not found');
+    }
+
+    // Buyout is only available before bidding starts — once the lot is ACTIVE,
+    // bidders must compete through the bidding process.
+    if (item.status !== 'NOT_BEGUN') {
+      throw new ForbiddenError('Buyout is only available before bidding begins');
     }
 
     // Check participation type
@@ -328,7 +332,7 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
       amount: item.buyoutPrice,
       buyerId: currentUser.id,
       sellerId: item.sellerId,
-      metadata: {}
+      metadata: { isBuyout: 'true' }
     };
 
     const newPurchase = new Transaction(paymentInput);
@@ -336,8 +340,8 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
     // Save payment transaction
     const savedPurchase = await newPurchase.save();
 
-    // Generate payment link using PayGate
-    const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), item.buyoutPrice, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/paygateReturn?auctionId=${item.auctionId.toString()}&itemId=${item._id.toString()}&type=purchase`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
+    // Generate payment link using PayGate — type=buyout so RETURN_URL can distinguish it
+    const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), item.buyoutPrice, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/paygateReturn?auctionId=${item.auctionId.toString()}&itemId=${item._id.toString()}&type=buyout`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
 
     const { paymentLink, payRequestId } = await callPayGateInitiate(formattedString);
 
@@ -540,11 +544,33 @@ async function processSuccessfulPaymentFromPayGate(input: {
       await transaction.save({ session: sess });
 
     } else if (transaction.transactionType === 'PURCHASE') {
-      // Save transaction status and mark item as purchased.
-      // Use findByIdAndUpdate to bypass full-document validation (legacy items
-      // may be missing required fields added after creation).
+      const meta = transaction.metadata as Map<string, string>;
+      const isBuyout = meta.get('isBuyout') === 'true';
+
       await transaction.save();
-      await Item.findByIdAndUpdate(item._id, { $set: { isPurchased: true } });
+
+      if (isBuyout) {
+        // Buyout: bidder paid the full buyoutPrice — set them as winner, end the item,
+        // and refund all prior reservations since the lot was bought before bidding started.
+        await Item.findByIdAndUpdate(item._id, {
+          $set: {
+            isPurchased: true,
+            winningBidder: transaction.buyerId,
+            status: EItemStatus.ENDED,
+          },
+        });
+
+        // Refund all prior reservations — fire-and-forget so refund failures
+        // don't block the payment confirmation.
+        initiateCancellationRefunds(item._id.toString())
+          .catch((err: Error) => {
+            console.error(
+              `[transaction-service] Buyout refunds failed for item ${item._id.toString()}: ${err.message}`
+            );
+          });
+      } else {
+        await Item.findByIdAndUpdate(item._id, { $set: { isPurchased: true } });
+      }
 
       // Create collection record — done outside the ACID transaction so that
       // a collection-creation failure does not roll back the payment itself.
