@@ -1046,6 +1046,137 @@ async function initiateNonWinnerReservationRefunds(itemId: string, winningBidder
 }
 
 /**
+ * Refund ALL completed reservation transactions for a cancelled lot.
+ * Unlike initiateNonWinnerReservationRefunds, there is no winning-bidder
+ * exclusion — every bidder who paid the reserve gets refunded.
+ *
+ * Uses the same queue-based PayHost pattern: creates REFUND transactions,
+ * enqueues them via the queue service, and flags `needsManualRefund` if
+ * the original transaction lacks a TRANSACTION_ID.
+ *
+ * Idempotent — if REFUND transactions already exist for any reservation,
+ * they are skipped. Marks the item with `cancellationRefundsInitiated: true`
+ * so the cron won't re-process it.
+ *
+ * @param itemId
+ */
+async function initiateCancellationRefunds(itemId: string): Promise<void> {
+  try {
+    const reservations = await Transaction.find({
+      itemId,
+      transactionType: ETransactionType.RESERVATION,
+      status: EPaymentStatus.COMPLETED,
+    });
+
+    if (reservations.length === 0) {
+      await Item.findByIdAndUpdate(itemId, { $set: { cancellationRefundsInitiated: true } });
+      return;
+    }
+
+    // Create REFUND transactions (idempotent — skips if one already exists)
+    const refundPromises = reservations.map(async (reservation) => {
+      const existingRefund = await Transaction.findOne({
+        relatedTransaction: reservation._id,
+        transactionType: ETransactionType.REFUND,
+      });
+
+      if (existingRefund) {
+        return;
+      }
+
+      const refundInput: ITransactionInput = {
+        auctionId: reservation.auctionId,
+        itemId: reservation.itemId,
+        buyerId: reservation.buyerId,
+        sellerId: reservation.sellerId,
+        currency: reservation.currency,
+        amount: reservation.amount,
+        transactionType: ETransactionType.REFUND,
+        relatedTransaction: reservation._id,
+        metadata: {},
+      };
+
+      const refundTx = new Transaction(refundInput);
+      refundTx.status = EPaymentStatus.PENDING;
+
+      const resMeta = reservation.metadata as Map<string, string>;
+      const originalPayRequestId = resMeta.get('PAY_REQUEST_ID');
+      if (originalPayRequestId) {
+        (refundTx.metadata as Map<string, string>).set('originalPAY_REQUEST_ID', originalPayRequestId);
+      }
+
+      const savedRefund = await refundTx.save();
+      return { savedRefund, reservation };
+    });
+
+    const settled = await Promise.allSettled(refundPromises);
+    const failedCount = settled.filter((r) => r.status === 'rejected').length;
+    if (failedCount > 0) {
+      console.error(
+        `[transaction-service] ${failedCount} cancellation refund(s) failed to initiate for item ${itemId}`,
+      );
+    }
+
+    const successes: Array<{ savedRefund: ITransaction; reservation: ITransaction }> = [];
+    for (const r of settled) {
+      if (r.status === 'fulfilled' && r.value != null) {
+        successes.push(r.value);
+      }
+    }
+
+    if (successes.length === 0) {
+      await Item.findByIdAndUpdate(itemId, { $set: { cancellationRefundsInitiated: true } });
+      return;
+    }
+
+    const callbackUrl = `${SERVICE_URLS.auctionsGovServerBaseURI}/open/completeRefund`;
+    for (const { savedRefund, reservation } of successes) {
+      const resMeta = reservation.metadata as Map<string, string>;
+      const transactionId = resMeta.get('TRANSACTION_ID');
+
+      if (!transactionId) {
+        (savedRefund.metadata as Map<string, string>).set('needsManualRefund', 'true');
+        await savedRefund.save();
+        continue;
+      }
+
+      try {
+        const amountCents = Math.round(savedRefund.amount * 100);
+        await axios.post(`${SERVICE_URLS.onlineAuctionQueueURI}/refundQueue/add-job`, {
+          merchantOrderId: String(reservation._id),
+          amountCents,
+          reference: String(savedRefund._id),
+          callbackUrl,
+        }, {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': KEY_SECRET,
+          },
+        });
+        console.info(
+          `[transaction-service] Enqueued cancellation refund job for ${savedRefund._id} (reservation ${reservation._id})`,
+        );
+      } catch (err) {
+        console.error(
+          `[transaction-service] Failed to enqueue cancellation refund for ${savedRefund._id} — flagging for manual refund:`,
+          err,
+        );
+        (savedRefund.metadata as Map<string, string>).set('needsManualRefund', 'true');
+        await savedRefund.save();
+      }
+    }
+
+    // Mark the item so we don't re-process.
+    await Item.findByIdAndUpdate(itemId, { $set: { cancellationRefundsInitiated: true } });
+
+    console.info(`[transaction-service] Initiated ${successes.length} cancellation refund(s) for item ${itemId}`);
+  } catch (error) {
+    console.error('[transaction-service] initiateCancellationRefunds error:', error);
+    throw error;
+  }
+}
+
+/**
  * Return REFUND transactions that need manual processing (no Vault ID / TransactionId
  * was available on the original transaction, or the PayHost refund call failed).
  * Used by admin to identify refunds that must be issued through the banking portal.
@@ -1141,6 +1272,7 @@ export default {
   getById,
   initiateDisputeRefund,
   initiateNonWinnerReservationRefunds,
+  initiateCancellationRefunds,
   createPendingPurchaseForWinner,
   getPendingManualRefunds,
   markManualRefundComplete,

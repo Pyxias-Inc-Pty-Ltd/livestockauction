@@ -95,6 +95,10 @@ export interface IItem extends Document {
   status: itemStatus;
   isPurchased: boolean;
   nonWinnerRefundsInitiated: boolean;
+  cancelledBy?: Schema.Types.ObjectId;
+  cancelReason?: string;
+  cancelledAt?: Date;
+  cancellationRefundsInitiated: boolean;
   createdDate: Date;
   updatedDate: Date;
   metadata: IItemMetadata
@@ -160,6 +164,10 @@ const schema = new Schema<IItem>({
   startingBid: { type: Number, required: true },
   isPurchased: { type: Boolean, default: false, required: true },
   nonWinnerRefundsInitiated: { type: Boolean, default: false },
+  cancelledBy: { type: Schema.Types.ObjectId, ref: EModels.USER },
+  cancelReason: { type: String, trim: true },
+  cancelledAt: { type: Date },
+  cancellationRefundsInitiated: { type: Boolean, default: false },
   bidIncrement: { type: Number, required: function (): boolean {
     return !(this as IItem).isBidIncrementedManually && !(this as IItem).isClosedBidding;
   } },
