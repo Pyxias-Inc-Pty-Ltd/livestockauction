@@ -3,9 +3,9 @@ import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isoDateValidation, mongoIdValidation, urlValidation } from '../shared/functions';
-import { requirePermission, SellerOnly, BidderOnly, SuperAdminOnly } from '../shared/middleware';
+import { requirePermission, requireAnyRole, SellerOnly, BidderOnly, SuperAdminOnly } from '../shared/middleware';
 import { IAdmin, IBidder, ISeller } from '../models/user-model';
-import { EItemSortType, EPermission, ESortOrderType, MAX_LIST_LIMIT_NUMBER } from '../globals';
+import { EItemSortType, EPermission, ESortOrderType, EUserType, MAX_LIST_LIMIT_NUMBER } from '../globals';
 import { esService } from '../services/elasticsearch-service';
 
 // Constants
@@ -17,6 +17,7 @@ export const p = {
   createItem: '/createItem',
   setWinningBidder: '/setWinningBidder',
   deleteItem: '/deleteItem',
+  cancelItem: '/cancelItem',
   setNewBidAmountManually: '/setNewBidAmountManually',
   getManualBidAmount: '/getManualBidAmount',
   getItemsWon: '/getItemsWon',
@@ -297,6 +298,33 @@ router.delete(p.deleteItem, requirePermission(EPermission.LOT_MANAGE), async (re
     await itemService.deleteItem(req.user as IAdmin, itemId as string);
 
     return res.status(OK).json({"message": "OK"});
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Cancel a lot. Seller must own the lot; admin is gated by requireAnyRole.
+ * Sets status to CANCELLED, records audit trail, and initiates refunds for all
+ * completed reservation transactions.
+ */
+router.put(p.cancelItem, requireAnyRole([EUserType.SELLER, EUserType.ADMIN]), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      itemId: mongoIdValidation.required().messages({
+        'any.required': '"itemId" is a required field',
+      }),
+      reason: Joi.string().max(500).required().messages({
+        'any.required': '"reason" is a required field',
+      }),
+    }).required();
+
+    Joi.assert(req.body, schema);
+
+    const { itemId, reason } = req.body;
+
+    const item = await itemService.cancelItem(req.user as ISeller | IAdmin, itemId, reason);
+    return res.status(OK).json({ item });
   } catch (error) {
     throw error;
   }
