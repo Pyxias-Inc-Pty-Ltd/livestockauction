@@ -1,4 +1,4 @@
-import { Bidder, IAdmin, IBidder, ISeller } from "../models/user-model";
+import { Bidder, IAdmin, IBidder, ISeller, IUser } from "../models/user-model";
 import { IEligibleBidder, IItem, IItemInput, Item } from "../models/item-model";
 import { Bid } from "../models/bid-model";
 import { Auction } from "../models/auction-model";
@@ -6,9 +6,10 @@ import { formatBAITSAnimalEID, getAnimalBreedById, getAnimalByEID, isBeforeStart
 import { ForbiddenError, InternalServerError, NotFoundError, BadRequestError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { Schema } from 'mongoose';
-import { EAuctionStatus, EGenderType, EItemSortType, EItemStatus, ESortOrderType, ESocketEventCode, languageType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { EAuctionStatus, EGenderType, EItemSortType, EItemStatus, ESortOrderType, ESocketEventCode, EUserType, languageType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
 import { socketEmitter } from "../shared/socket-emitter";
 import auctionService from "./auction-service";
+import transactionService from "./transaction-service";
 import { ClientSession, startSession } from 'mongoose';
 import bidService from "./bid-service";
 import categoryService from "./category-service";
@@ -138,6 +139,59 @@ async function deleteItem(currentUser: IAdmin, itemId: string | Schema.Types.Obj
     // Rethrow error
     throw error;
   }
+}
+
+/**
+ * Cancel a lot. Only allowed when status is NOT_BEGUN or ACTIVE.
+ * Seller must own the lot; admin needs LOT_MANAGE permission (checked in route).
+ * Sets status to CANCELLED, records audit trail, and initiates refunds for all
+ * completed reservation transactions on the lot.
+ *
+ * @param currentUser
+ * @param itemId
+ * @param reason  Why the lot is being cancelled (audit trail).
+ */
+async function cancelItem(currentUser: IUser, itemId: string, reason: string): Promise<IItem> {
+  const item = await getById(itemId);
+  if (!item) {
+    throw new NotFoundError('Item not found');
+  }
+
+  // Only NOT_BEGUN and ACTIVE lots can be cancelled.
+  if (item.status !== EItemStatus.NOT_BEGUN && item.status !== EItemStatus.ACTIVE) {
+    throw new ForbiddenError('Only lots that have not ended can be cancelled');
+  }
+
+  // Seller must own the lot; admin is allowed via LOT_MANAGE (checked in route).
+  if (currentUser.userType === EUserType.SELLER) {
+    if ((item.sellerId as Schema.Types.ObjectId).toString() !== currentUser.id.toString()) {
+      throw new ForbiddenError('You do not have permission to cancel this lot');
+    }
+  }
+
+  item.status = EItemStatus.CANCELLED;
+  item.cancelledBy = currentUser.id as any;
+  item.cancelReason = reason;
+  item.cancelledAt = new Date();
+
+  const saved = await item.save();
+
+  // Initiate refunds for all completed reservations (fire-and-forget the async
+  // queue processing — the function logs its own errors).
+  transactionService.initiateCancellationRefunds(itemId).catch((err: Error) =>
+    console.error(`[item-service] Cancellation refunds failed for item ${itemId}: ${err.message}`),
+  );
+
+  // Notify connected clients in the lot room.
+  socketEmitter
+    .to(`${itemId}-bid`)
+    .emit(ESocketEventCode.LOT_CANCELLED, {
+      itemId,
+      reason,
+      cancelledAt: item.cancelledAt.toISOString(),
+    });
+
+  return saved;
 }
 
 /**
@@ -778,6 +832,7 @@ export default {
   setNewBidAmountManually,
   getEligibleBidders,
   deleteItem,
+  cancelItem,
   trackItemStatus,
   getByTitleSlug,
   getById,
