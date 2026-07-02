@@ -551,7 +551,10 @@ export enum ESocketEventCode {
   BID_RESULT = "e:20",
   // Emitted to everyone in a bid room when a bidder joins or leaves.
   // Payload: { count: number } — the current number of connected bidders.
-  AUDIENCE_UPDATED = "e:21"
+  AUDIENCE_UPDATED = "e:21",
+  // Emitted to the lot room when a lot is cancelled.
+  // Payload: { itemId: string, reason: string, cancelledAt: string }
+  LOT_CANCELLED = "e:22"
 }
 
 export enum EProductStatus {
