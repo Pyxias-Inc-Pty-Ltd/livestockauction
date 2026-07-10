@@ -18,6 +18,8 @@ export interface IUser extends Document {
   firebaseTokenId: string;
   password?: string;
   keycloakId: string;
+  strikes: Array<{ auctionId: string; itemId: string; reason: string; createdAt: Date }>;
+  blacklisted: boolean;
   createdDate: any;
   updatedDate: any;
 }
@@ -174,7 +176,9 @@ const userSchema = new Schema<IUser>({
       }
     }
   },
-  firebaseTokenId: {type: String, trim: true}
+  firebaseTokenId: {type: String, trim: true},
+  strikes: { type: [{ auctionId: { type: String, required: true }, itemId: { type: String, required: true }, reason: { type: String, required: true }, createdAt: { type: Date, default: Date.now } }], default: [] },
+  blacklisted: { type: Boolean, default: false }
 }, {
   timestamps: {
     createdAt: "createdDate",
