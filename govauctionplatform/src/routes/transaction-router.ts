@@ -1,11 +1,11 @@
-import { IAdmin, IBidder } from '../models/user-model';
+import { IAdmin, IBidder, IUser } from '../models/user-model';
 import transactionService from '../services/transaction-service';
-import { requirePermission } from '../shared/middleware';
+import { requireAnyRole, requirePermission } from '../shared/middleware';
 import * as Joi from 'joi';
 import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import { isStringNumberLike, mongoIdValidation } from '../shared/functions';
-import { EPaymentStatus, EPermission, ESortOrderType, ETransactionSortType, ETransactionType } from '../globals';
+import { EPaymentStatus, EPermission, ESortOrderType, ETransactionSortType, ETransactionType, EUserType } from '../globals';
 
 // Constants
 const router = Router();
@@ -20,6 +20,7 @@ export const p = {
   hasCompletedReservation: '/hasCompletedReservation',
   pendingManualRefunds: '/pendingManualRefunds',
   markManualRefundComplete: '/markManualRefundComplete',
+  initiatePaymentForUser: '/initiatePaymentForUser',
 } as const;
 
 /**
@@ -203,6 +204,31 @@ router.put(p.markManualRefundComplete, requirePermission(EPermission.COLLECTION_
     const { transactionId, note } = req.body;
     const transaction = await transactionService.markManualRefundComplete(transactionId, note);
     return res.status(OK).json({ transaction });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Initiate payment on behalf of a floor bid winner after reassignment.
+ * Clerk/Admin only.
+ */
+router.post(p.initiatePaymentForUser, requireAnyRole([EUserType.SELLER, EUserType.ADMIN]), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      itemId: mongoIdValidation.required().messages({
+        'any.required': '"itemId" is a required field',
+      }),
+      buyerId: mongoIdValidation.required().messages({
+        'any.required': '"buyerId" is a required field',
+      }),
+    }).required();
+
+    Joi.assert(req.body, schema);
+
+    const { itemId, buyerId } = req.body;
+    const transaction = await transactionService.initiatePaymentForUser(req.user as IUser, { itemId, buyerId });
+    return res.status(CREATED).json({ transaction });
   } catch (error) {
     throw error;
   }

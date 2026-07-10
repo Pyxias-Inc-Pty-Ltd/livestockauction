@@ -1,4 +1,4 @@
-import { Bidder, IAdmin, IBidder } from "../models/user-model";
+import { Bidder, IAdmin, IBidder, IUser } from "../models/user-model";
 import { ForbiddenError, InternalServerError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession } from 'mongoose';
@@ -9,6 +9,7 @@ import { Auction } from "../models/auction-model";
 import itemService from "./item-service";
 import { EPaymentStatus, EItemStatus, ERefundReason, ESortOrderType, ETransactionSortType, ETransactionType, LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, MAX_LIST_LIMIT_NUMBER, PAYGATE_ENCRYPTION_KEY, PAYGATE_ID, SERVICE_URLS, transactionType, LOCAL_CURRENCY, DEFAULT_LANG, DEFAULT_PAYMENT_EMAIL, LOCALY_COUNTRY_ALPHA_3_CODE, KEY_SECRET } from "../globals";
 import bidService from "./bid-service";
+import userService from "./user-service";
 import * as luxon from "luxon";
 import { callPayGateInitiate, prefixWithZero, convertToPaygateFormat } from "../shared/functions";
 import { refundRequest } from "../shared/payhost";
@@ -47,6 +48,12 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
     // Check if exists
     if (!auction) {
       throw new NotFoundError('Auction not found');
+    }
+
+    // Blacklist check — suspended users cannot reserve or bid.
+    const blacklisted = await userService.isBlacklisted(currentUser.id.toString());
+    if (blacklisted) {
+      throw new ForbiddenError('Your account has been suspended. Please contact support.');
     }
 
     // Check participation type
@@ -1287,11 +1294,129 @@ async function completeRefund(input: {
 }
 
 // Export default
+// ── Hybrid floor + online bidding — pay-for-user ────────────────────────────
+
+/**
+ * Initiate a PayGate payment on behalf of a floor bid winner after reassignment.
+ *
+ * The clerk uses this after reassigning a winning floor bid to a registered
+ * bidder.  Mirrors `initiatePurchaseItemByWinningBidder` but accepts the buyer
+ * ID from the caller rather than deriving it from the authenticated user.
+ */
+async function initiatePaymentForUser(
+  caller: IUser,
+  input: { itemId: string; buyerId: string },
+): Promise<ITransaction> {
+  const item = await itemService.getById(input.itemId);
+  if (!item) throw new NotFoundError('Item not found');
+
+  if (!item.winningBidder || item.winningBidder.toString() !== input.buyerId) {
+    throw new ForbiddenError('The supplied buyer is not the winning bidder for this lot');
+  }
+
+  const auction = await auctionService.getById(item.auctionId, {
+    hasRegistrationFee: 1,
+  });
+  if (!auction) throw new NotFoundError('Auction not found');
+
+  // Find the winning bidder's completed RESERVATION transaction
+  const reservation = await Transaction.findOne({
+    buyerId: input.buyerId,
+    itemId: input.itemId,
+    transactionType: ETransactionType.RESERVATION,
+    status: EPaymentStatus.COMPLETED,
+  });
+  if (!reservation) {
+    throw new ForbiddenError('Winning bidder must have a completed reservation to purchase');
+  }
+
+  // Dedup: if a COMPLETED purchase already exists, reject
+  const existingCompleted = await Transaction.findOne({
+    buyerId: input.buyerId,
+    itemId: input.itemId,
+    transactionType: ETransactionType.PURCHASE,
+    status: EPaymentStatus.COMPLETED,
+  });
+  if (existingCompleted) throw new ForbiddenError('Purchase already completed for this lot');
+
+  const winningBid = await bidService.getWinningBid(input.itemId);
+  if (!winningBid) throw new NotFoundError('No winning bid found');
+
+  // Calculate amount — same logic as initiatePurchaseItemByWinningBidder
+  let amount: number;
+  if (auction.hasRegistrationFee) {
+    const existingPurchase = await Transaction.findOne({
+      buyerId: input.buyerId,
+      auctionId: item.auctionId,
+      transactionType: ETransactionType.PURCHASE,
+      status: EPaymentStatus.COMPLETED,
+    });
+    if (existingPurchase) {
+      amount = winningBid.bidAmount;
+    } else {
+      amount = winningBid.bidAmount - item.reservePrice;
+    }
+  } else {
+    amount = winningBid.bidAmount - item.reservePrice;
+  }
+
+  // Reuse a stale unsubmitted session if available
+  let transaction = await Transaction.findOne({
+    buyerId: input.buyerId,
+    itemId: input.itemId,
+    transactionType: ETransactionType.PURCHASE,
+    status: { $in: [EPaymentStatus.PENDING, EPaymentStatus.FAILED, EPaymentStatus.CANCELLED] },
+  });
+  const hadPriorAttempt = !!transaction;
+  if (!transaction) {
+    transaction = new Transaction({
+      auctionId: item.auctionId,
+      itemId: input.itemId,
+      buyerId: input.buyerId,
+      sellerId: item.sellerId,
+      amount,
+      transactionType: ETransactionType.PURCHASE,
+      currency: LOCAL_CURRENCY,
+    });
+  }
+
+  // Initiate PayGate session
+  const formattedString = convertToPaygateFormat(
+    PAYGATE_ID,
+    transaction.id.toString(),
+    amount,
+    LOCAL_CURRENCY,
+    `${SERVICE_URLS.auctionsGovServerBaseURI}/open/paygateReturn?auctionId=${item.auctionId.toString()}&itemId=${item._id.toString()}&type=purchase`,
+    transaction.createdDate ?? new Date(),
+    DEFAULT_LANG,
+    LOCALY_COUNTRY_ALPHA_3_CODE,
+    DEFAULT_PAYMENT_EMAIL,
+    `${SERVICE_URLS.auctionsGovServerBaseURI}/open/processSuccessfulPaymentFromPayGate`,
+    PAYGATE_ENCRYPTION_KEY,
+  );
+
+  const { paymentLink, payRequestId } = await callPayGateInitiate(formattedString);
+
+  // Ensure metadata map exists for backward-compatible .set() access
+  if (!transaction.metadata) {
+    transaction.metadata = new Map();
+  }
+  (transaction.metadata as Map<string, string>).set('paymentLink', paymentLink);
+  (transaction.metadata as Map<string, string>).set('PAY_REQUEST_ID', payRequestId);
+  (transaction.metadata as Map<string, string>).set('initiatedForUser', input.buyerId);
+  (transaction.metadata as Map<string, string>).set('initiatedBy', caller.id);
+  transaction.status = EPaymentStatus.PENDING;
+  await transaction.save();
+
+  return transaction;
+}
+
 export default {
   initiateItemReservation,
   pollPaidTransaction,
   processSuccessfulPaymentFromPayGate,
   initiatePurchaseItemByWinningBidder,
+  initiatePaymentForUser,
   initiatePurchaseItemUsingBuyoutPrice,
   getTransactions,
   trackTransactionStatus,

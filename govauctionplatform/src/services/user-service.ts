@@ -844,6 +844,47 @@ async function deleteUser(userId: string): Promise<void> {
 }
 
 // Export default
+// ── Hybrid floor + online bidding — strike & blacklist helpers ──────────────
+
+/**
+ * Add a strike to a user.  Three strikes trigger automatic blacklisting.
+ */
+async function addStrike(
+  userId: string,
+  auctionId: string,
+  itemId: string,
+  reason: string,
+): Promise<IUser | null> {
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { $push: { strikes: { auctionId, itemId, reason, createdAt: new Date() } } },
+    { new: true },
+  );
+  if (!user) throw new NotFoundError('User not found');
+
+  if (user.strikes.length >= 3 && !user.blacklisted) {
+    user.blacklisted = true;
+    await user.save();
+  }
+
+  return user;
+}
+
+/**
+ * Remove the blacklist flag from a user (admin action).
+ */
+async function removeBlacklist(userId: string): Promise<IUser | null> {
+  return User.findByIdAndUpdate(userId, { $set: { blacklisted: false } }, { new: true });
+}
+
+/**
+ * Check whether a user is blacklisted.
+ */
+async function isBlacklisted(userId: string): Promise<boolean> {
+  const user = await User.findById(userId, { blacklisted: 1 });
+  return user?.blacklisted === true;
+}
+
 export default {
   getUserReport,
   getAdmins,
@@ -868,4 +909,7 @@ export default {
   deleteUser,
   searchBidders,
   updateSellerAllowedAttributes,
+  addStrike,
+  removeBlacklist,
+  isBlacklisted,
 } as const;

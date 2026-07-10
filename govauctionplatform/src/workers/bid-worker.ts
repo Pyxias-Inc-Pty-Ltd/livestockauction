@@ -4,6 +4,7 @@ import { acquireBidLock, releaseBidLock } from '../shared/bid-lock';
 import { socketEmitter } from '../shared/socket-emitter';
 import { BidJobData, BidJobResult, BID_QUEUE_NAME } from '../queues/bid-queue';
 import bidService from '../services/bid-service';
+import userService from '../services/user-service';
 import { Item } from '../models/item-model';
 import { Bidder } from '../models/user-model';
 import { BidEvent } from '../models/bid-event-model';
@@ -43,6 +44,10 @@ export function startBidWorker(): Worker<BidJobData, BidJobResult> {
         // ── Re-fetch bidder ──────────────────────────────────────────────────
         const bidder = await Bidder.findById(bidderId);
         if (!bidder) throw new NotFoundError('Bidder not found');
+
+        // ── Blacklist check ──────────────────────────────────────────────────
+        const blacklisted = await userService.isBlacklisted(bidderId);
+        if (blacklisted) throw new ForbiddenError('Your account has been suspended. Please contact support.');
 
         // ── Detect auction mode ──────────────────────────────────────────────
         // Advisory read — the service functions enforce authoritative state

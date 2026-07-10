@@ -6,7 +6,7 @@ import { encryptBidAmount, decryptBidAmount } from "../shared/bid-crypto";
 import itemService from "./item-service";
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { ClientSession, Schema, startSession } from 'mongoose';
-import { EBidSortType, ESortOrderType, EItemStatus, EParticipationType, EIdentityNumberVerificationStatus, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, LOCAL_NATIONALITY } from "../globals";
+import { EBidSortType, ESortOrderType, EItemStatus, EParticipationType, EIdentityNumberVerificationStatus, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, FLOOR_BID_USER_ID } from "../globals";
 import { isMongoId } from "validator";
 import auctionService from "./auction-service";
 
@@ -686,12 +686,59 @@ async function getById(id: string | Schema.Types.ObjectId, projection?: any): Pr
   }
 }
 
+/**
+ * Record a floor bid during a livestream auction.
+ *
+ * The clerk clicks "Floor Bid" to indicate that the current called price was
+ * accepted by a physical bidder on the auction floor.  The bid is recorded
+ * under the FLOOR_BID_USER_ID sentinel.  Idempotent: a second click on the
+ * same call price is a no-op.
+ *
+ * @param clerkUser  The admin/seller operating the clerk panel.
+ * @param input      itemId and bidAmount (should match current manualBidAmount).
+ * @returns          The created bid, or null if a floor bid at this price already exists.
+ */
+async function createFloorBid(
+  clerkUser: IBidder,
+  input: { itemId: string; bidAmount: number },
+): Promise<IBid | null> {
+  const item = await Item.findById(input.itemId);
+  if (!item) throw new NotFoundError('Item not found');
+
+  if (!item.isBidIncrementedManually) {
+    throw new ForbiddenError('Floor bids are only supported in livestream auctions');
+  }
+  if (item.status !== EItemStatus.ACTIVE) {
+    throw new ForbiddenError('Bidding for this lot is not active');
+  }
+
+  // Idempotency — same floor bid at same call price is a no-op
+  const existing = await Bid.findOne({
+    userId: FLOOR_BID_USER_ID,
+    itemId: input.itemId,
+    bidAmount: input.bidAmount,
+    isRetracted: false,
+  });
+  if (existing) return null;
+
+  const now = new Date();
+  const bid = new Bid({
+    itemId: input.itemId,
+    userId: FLOOR_BID_USER_ID,
+    bidAmount: input.bidAmount,
+    bidTime: now,
+  });
+  await bid.save();
+  return bid;
+}
+
 // Export default
 export default {
   getById,
   createOpenBid,
   createLivestreamBid,
   createSealedBid,
+  createFloorBid,
   decryptSealedBids,
   getBids,
   getWinningBid,
