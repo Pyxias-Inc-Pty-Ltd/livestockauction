@@ -5,7 +5,7 @@ import { connect } from 'mongoose';
 import { createServer } from 'http';
 import { Server, Socket } from "socket.io";
 import StatusCodes from 'http-status-codes';
-import { ESocketEventCode, SERVICE_URLS, FIREBASE_SERVICE_ACCOUNT_CREDENTIALS } from './globals';
+import { ESocketEventCode, SERVICE_URLS, FIREBASE_SERVICE_ACCOUNT_CREDENTIALS, FLOOR_BID_USER_ID, EUserType } from './globals';
 import bidHandler from './handlers/bid-handler';
 import transactionHandler from './handlers/transaction-handler';
 import messageHandler from './handlers/message-handler';
@@ -19,7 +19,8 @@ import { bidQueue } from './queues/bid-queue';
 import { startBidWorker } from './workers/bid-worker';
 import { startCloseLotWorker } from './workers/close-lot-worker';
 import { startCronJobs } from './cron';
-import { IBidder } from './models/user-model';
+import { IBidder, User } from './models/user-model';
+import bidService from './services/bid-service';
 
 const { OK, INTERNAL_SERVER_ERROR, CREATED, ACCEPTED } = StatusCodes;
 
@@ -145,6 +146,31 @@ const onConnection = (socket: Socket) => {
       }
     }
   });
+  socket.on(ESocketEventCode.CREATE_FLOOR_BID, async function (data, cb = () => {}) {
+    try {
+      console.log("ESocketEventCode.CREATE_FLOOR_BID: ", data);
+      const authorizedUser = await User.findById(socket.data.userId).lean() as unknown as IBidder;
+      if (!authorizedUser) {
+        cb({ status: 401, msg: 'Unauthorized' });
+        return;
+      }
+      const bid = await bidService.createFloorBid(authorizedUser, {
+        itemId: data.itemId,
+        bidAmount: data.amount,
+      });
+      if (bid) {
+        // Broadcast to everyone in the item room (including the seller who sent it)
+        io.to(`${data.itemId}-bid`).emit(ESocketEventCode.BROADCAST_FLOOR_BID, bid.toJSON());
+      }
+      cb({ status: CREATED });
+    } catch (error) {
+      if (error instanceof CustomError) {
+        cb({ status: error.HttpStatus, msg: error.message });
+      } else {
+        cb({ status: INTERNAL_SERVER_ERROR });
+      }
+    }
+  });
   socket.on(ESocketEventCode.REFRESH_AFTER_WINNING, async function (data, cb = () => {}) {
     try {
       console.log("ESocketEventCode.REFRESH_AFTER_WINNING: ", data);
@@ -250,6 +276,25 @@ httpServer.listen(port, async () => {
     logger.info(SERVICE_URLS.mongoDBURI);
     await connect(SERVICE_URLS.mongoDBURI);
     logger.info('Connection to mongodb established');
+
+    // Seed the Floor Bid placeholder user (hybrid floor + online bidding)
+    await User.findOneAndUpdate(
+      { _id: FLOOR_BID_USER_ID },
+      { $setOnInsert: {
+        _id: FLOOR_BID_USER_ID,
+        userType: EUserType.BIDDER,
+        isOrganization: true,
+        name: 'Floor Bid',
+        identityNumber: 'FLOOR_BID_000000000',
+        nationality: 'BW',
+        physicalAddress: 'Auction Floor',
+        postalAddress: 'Auction Floor',
+        tz: 'Africa/Gaborone',
+        locale: 'en-gb'
+      } },
+      { upsert: true, new: true }
+    );
+    logger.info('Floor Bid placeholder user seeded');
 
     // Start the bid worker.
     // Injecting `io` here avoids a circular import and ensures the worker
