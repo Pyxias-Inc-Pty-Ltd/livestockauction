@@ -99,6 +99,9 @@ export interface IItem extends Document {
   cancelReason?: string;
   cancelledAt?: Date;
   cancellationRefundsInitiated: boolean;
+  floorBidReassignedTo?: Schema.Types.ObjectId;
+  floorBidReassignedBy?: Schema.Types.ObjectId;
+  floorBidReassignedAt?: Date;
   createdDate: Date;
   updatedDate: Date;
   metadata: IItemMetadata
@@ -168,6 +171,9 @@ const schema = new Schema<IItem>({
   cancelReason: { type: String, trim: true },
   cancelledAt: { type: Date },
   cancellationRefundsInitiated: { type: Boolean, default: false },
+  floorBidReassignedTo: { type: Schema.Types.ObjectId, ref: EModels.USER },
+  floorBidReassignedBy: { type: Schema.Types.ObjectId, ref: EModels.USER },
+  floorBidReassignedAt: { type: Date },
   bidIncrement: { type: Number, required: function (): boolean {
     return !(this as IItem).isBidIncrementedManually && !(this as IItem).isClosedBidding;
   } },
@@ -181,7 +187,7 @@ const schema = new Schema<IItem>({
   gallery: { type: [String], required: true },
   startTime: { type: Date, required: true },
   endTime: { type: Date, required: true },
-  status: { type: String, enum: [EItemStatus.NOT_BEGUN, EItemStatus.ACTIVE, EItemStatus.CANCELLED, EItemStatus.ENDED]},
+  status: { type: String, enum: [EItemStatus.NOT_BEGUN, EItemStatus.ACTIVE, EItemStatus.CANCELLED, EItemStatus.ENDED, EItemStatus.AWAITING_FLOOR_REASSIGNMENT]},
   eligibleBidders: [String],
   invitedBidders: [String],
   version: { type: Number, default: 0 },
