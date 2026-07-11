@@ -6,10 +6,11 @@ import { formatBAITSAnimalEID, getAnimalBreedById, getAnimalByEID, isBeforeStart
 import { ForbiddenError, InternalServerError, NotFoundError, BadRequestError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { Schema } from 'mongoose';
-import { EAuctionStatus, EGenderType, EItemSortType, EItemStatus, ESortOrderType, ESocketEventCode, EUserType, languageType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER } from "../globals";
+import { EAuctionStatus, EGenderType, EItemSortType, EItemStatus, ESortOrderType, ESocketEventCode, EUserType, languageType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, FLOOR_BID_USER_ID } from "../globals";
 import { socketEmitter } from "../shared/socket-emitter";
 import auctionService from "./auction-service";
 import transactionService from "./transaction-service";
+import userService from "./user-service";
 import { ClientSession, startSession } from 'mongoose';
 import bidService from "./bid-service";
 import categoryService from "./category-service";
@@ -157,8 +158,12 @@ async function cancelItem(currentUser: IUser, itemId: string, reason: string): P
     throw new NotFoundError('Item not found');
   }
 
-  // Only NOT_BEGUN and ACTIVE lots can be cancelled.
-  if (item.status !== EItemStatus.NOT_BEGUN && item.status !== EItemStatus.ACTIVE) {
+  // Only NOT_BEGUN, ACTIVE, and AWAITING_FLOOR_REASSIGNMENT lots can be cancelled.
+  if (
+    item.status !== EItemStatus.NOT_BEGUN &&
+    item.status !== EItemStatus.ACTIVE &&
+    item.status !== EItemStatus.AWAITING_FLOOR_REASSIGNMENT
+  ) {
     throw new ForbiddenError('Only lots that have not ended can be cancelled');
   }
 
@@ -169,12 +174,25 @@ async function cancelItem(currentUser: IUser, itemId: string, reason: string): P
     }
   }
 
+  // If cancelling from AWAITING_FLOOR_REASSIGNMENT after a floor bid was
+  // reassigned but the winner never paid, strike the non-paying bidder.
+  // Check before mutating status.
+  const wasAwaitingReassignment = item.status === EItemStatus.AWAITING_FLOOR_REASSIGNMENT;
+  const reassignedToId = item.floorBidReassignedTo?.toString();
+
   item.status = EItemStatus.CANCELLED;
   item.cancelledBy = currentUser.id as any;
   item.cancelReason = reason;
   item.cancelledAt = new Date();
 
   const saved = await item.save();
+
+  if (wasAwaitingReassignment && reassignedToId) {
+    userService.addStrike(reassignedToId, item.auctionId.toString(), itemId, 'NON_PAYMENT')
+      .catch((err: Error) =>
+        console.error(`[item-service] Failed to add strike to user ${reassignedToId}: ${err.message}`),
+      );
+  }
 
   // Initiate refunds for all completed reservations (fire-and-forget the async
   // queue processing — the function logs its own errors).
@@ -410,8 +428,12 @@ async function setWinningBidder(
     throw new ForbiddenError('Winner can only be set after the lot has ended');
   }
 
-  if (item.eligibleBidders.indexOf(input.bidderId.toString()) === -1) {
-    throw new ForbiddenError('Bidder must be in the list of eligible bidders');
+  // Skip eligibleBidders check for floor bid sentinel — it will never be in
+  // the eligible list because it's not a real registered bidder.
+  if (input.bidderId.toString() !== FLOOR_BID_USER_ID) {
+    if (item.eligibleBidders.indexOf(input.bidderId.toString()) === -1) {
+      throw new ForbiddenError('Bidder must be in the list of eligible bidders');
+    }
   }
 
   // Acquire the per-item bid lock before reading the winning bid.
@@ -448,9 +470,13 @@ async function setWinningBidder(
 
     // For manual-bid (livestream) lots, awarding the winner also ends the lot.
     // Timed lots are already ENDED by the cron before this point.
+    // If the winning bidder is the floor bid sentinel, the lot goes to
+    // AWAITING_FLOOR_REASSIGNMENT instead of ENDED pending clerk reassignment.
     const update: any = { winningBidder: input.bidderId };
     if (item.isBidIncrementedManually) {
-      update.status = EItemStatus.ENDED;
+      update.status = input.bidderId.toString() === FLOOR_BID_USER_ID
+        ? EItemStatus.AWAITING_FLOOR_REASSIGNMENT
+        : EItemStatus.ENDED;
     }
 
     return await Item.findByIdAndUpdate(
@@ -503,11 +529,19 @@ async function autoSelectWinner(itemId: string): Promise<IItem | null> {
     return item;
   }
 
+  // If the winning bid is from the floor bid sentinel in a livestream auction,
+  // transition to AWAITING_FLOOR_REASSIGNMENT instead of keeping ENDED.
+  const isFloorWinner = winningBid.userId.toString() === FLOOR_BID_USER_ID;
+  const winnerUpdate: any = { winningBidder: winningBid.userId };
+  if (isFloorWinner && item.isBidIncrementedManually) {
+    winnerUpdate.status = EItemStatus.AWAITING_FLOOR_REASSIGNMENT;
+  }
+
   // Use findByIdAndUpdate to bypass full-document validation — items created
   // before required fields were added (e.g. bidIncrement) would fail item.save().
   return await Item.findByIdAndUpdate(
     item._id,
-    { $set: { winningBidder: winningBid.userId } },
+    { $set: winnerUpdate },
     { new: true },
   );
 }
@@ -589,7 +623,7 @@ async function getItems(conditions: Map<string, any>, projection?: any): Promise
     if (conditions.get('status')) {
       q.where({status: conditions.get('status')});
     } else {
-      q.or([{status: EItemStatus.ACTIVE}, {status: EItemStatus.NOT_BEGUN}, {status: EItemStatus.ENDED}, {status: EItemStatus.CANCELLED}]);
+      q.or([{status: EItemStatus.ACTIVE}, {status: EItemStatus.NOT_BEGUN}, {status: EItemStatus.ENDED}, {status: EItemStatus.CANCELLED}, {status: EItemStatus.AWAITING_FLOOR_REASSIGNMENT}]);
     }
 
     // Range
@@ -822,6 +856,70 @@ async function getItemsWithWinnerForRefund(): Promise<IItem[]> {
 }
 
 // Export default
+// ── Hybrid floor + online bidding — reassignFloorBid ────────────────────────
+
+/**
+ * Reassign a winning floor bid to a registered bidder after auction close.
+ *
+ * Called by the clerk/admin when the highest bid at auction close belongs to
+ * the Floor Bid sentinel.  The winning bid is mutated with audit fields and
+ * the item transitions from AWAITING_FLOOR_REASSIGNMENT to ENDED, unblocking
+ * the payment/collection workflow.
+ */
+async function reassignFloorBid(
+  clerk: IUser,
+  input: { itemId: string | Schema.Types.ObjectId; bidderId: string | Schema.Types.ObjectId; bidId: string | Schema.Types.ObjectId },
+): Promise<IItem> {
+  const item = await getById(input.itemId);
+  if (!item) throw new NotFoundError('Item not found');
+
+  if (item.status !== EItemStatus.AWAITING_FLOOR_REASSIGNMENT) {
+    throw new ForbiddenError('This lot is not awaiting floor bid reassignment');
+  }
+
+  const winningBid = await Bid.findById(input.bidId);
+  if (!winningBid) throw new NotFoundError('Bid not found');
+
+  if (winningBid.userId.toString() !== FLOOR_BID_USER_ID) {
+    throw new ForbiddenError('This bid does not belong to the floor bid sentinel');
+  }
+
+  const now = new Date();
+  const clerkId = clerk.id;
+
+  // Mutate the winning bid with reassignment audit fields
+  winningBid.reassignedFrom = FLOOR_BID_USER_ID as any;
+  winningBid.reassignedTo = input.bidderId as any;
+  winningBid.reassignedBy = clerkId as any;
+  winningBid.reassignedAt = now;
+  winningBid.userId = input.bidderId as any;
+  await winningBid.save();
+
+  // Update the item — set real winner, audit fields, and transition to ENDED
+  const updated = await Item.findByIdAndUpdate(
+    item._id,
+    { $set: {
+      winningBidder: input.bidderId,
+      floorBidReassignedTo: input.bidderId,
+      floorBidReassignedBy: clerkId,
+      floorBidReassignedAt: now,
+      status: EItemStatus.ENDED,
+    } },
+    { new: true },
+  ) as IItem;
+
+  // Notify connected clients
+  socketEmitter
+    .to(`${input.itemId}-bid`)
+    .emit(ESocketEventCode.BROADCAST_FLOOR_REASSIGNMENT, {
+      itemId: input.itemId,
+      reassignedTo: input.bidderId,
+      reassignedAt: now.toISOString(),
+    });
+
+  return updated;
+}
+
 export default {
   createItem,
   updateItem,
@@ -833,6 +931,7 @@ export default {
   getEligibleBidders,
   deleteItem,
   cancelItem,
+  reassignFloorBid,
   trackItemStatus,
   getByTitleSlug,
   getById,

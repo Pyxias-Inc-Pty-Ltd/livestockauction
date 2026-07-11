@@ -1,4 +1,4 @@
-import { Bidder, IBidder, IAdmin, IAuctionApprover, ISeller } from "../models/user-model";
+import { Bidder, IBidder, IAdmin, IAuctionApprover, ISeller, User } from "../models/user-model";
 import { generateAuctionNumber, isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
@@ -1019,12 +1019,23 @@ async function revokeInvitedBidder(auctionId: string, bidderId: string): Promise
     // which was sent as REFERENCE in the original PayWeb3 call).
     if (transactionId) {
       try {
+        // Resolve per-seller PayGate credentials; fall back to global if seller has none.
+        let paygateId: string | undefined;
+        let payhostEncryptionKey: string | undefined;
+        try {
+          const seller = await User.findById(reservation.sellerId, { paygateId: 1, payhostEncryptionKey: 1 }) as ISeller | null;
+          paygateId = seller?.paygateId;
+          payhostEncryptionKey = seller?.payhostEncryptionKey || undefined;
+        } catch {}
+
         const amountCents = Math.round(refundTx.amount * 100);
         await axios.default.post(`${SERVICE_URLS.onlineAuctionQueueURI}/refundQueue/add-job`, {
           merchantOrderId: String(reservation._id),
           amountCents,
           reference: String(refundTx._id),
           callbackUrl,
+          ...(paygateId && { paygateId }),
+          ...(payhostEncryptionKey && { payhostEncryptionKey }),
         }, {
           headers: {
             "Content-Type": "application/json",

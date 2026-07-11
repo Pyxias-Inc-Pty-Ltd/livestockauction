@@ -45,6 +45,31 @@ jest.mock('../../../src/services/category-service', () => ({
   default: { getById: jest.fn() },
 }));
 
+jest.mock('../../../src/services/transaction-service', () => ({
+  __esModule: true,
+  default: {
+    initiateItemReservation: jest.fn(),
+    initiatePurchaseItemByWinningBidder: jest.fn(),
+    initiatePaymentForUser: jest.fn(),
+  },
+}));
+
+jest.mock('../../../src/services/user-service', () => {
+  const { NotFoundError } = jest.requireActual('../../../src/shared/errors');
+  return {
+    __esModule: true,
+    default: {
+      addStrike: jest.fn().mockResolvedValue(undefined),
+      removeBlacklist: jest.fn().mockResolvedValue(undefined),
+      isBlacklisted: jest.fn().mockResolvedValue(false),
+      NotFoundError,
+    },
+    addStrike: jest.fn().mockResolvedValue(undefined),
+    removeBlacklist: jest.fn().mockResolvedValue(undefined),
+    isBlacklisted: jest.fn().mockResolvedValue(false),
+  };
+});
+
 jest.mock('../../../src/queues/close-lot-queue', () => ({
   scheduleCloseLot: jest.fn().mockResolvedValue(undefined),
 }));
@@ -72,11 +97,12 @@ jest.mock('../../../src/shared/socket-emitter', () => {
 
 import { Types } from 'mongoose';
 import { Item, IItem, IItemInput } from '../../../src/models/item-model';
+import { Bid } from '../../../src/models/bid-model';
 import '../../../src/models/form-model';    // register Form model so populate doesn't throw
 import '../../../src/models/user-model';   // register Bidder model for getEligibleBidders
 import '../../../src/models/auction-model'; // register Auction model (item pre-save hook queries it)
 import { ForbiddenError, InternalServerError, NotFoundError } from '../../../src/shared/errors';
-import { EItemStatus, EPublishedStatus, ESocketEventCode } from '../../../src/globals';
+import { EItemStatus, EPublishedStatus, ESocketEventCode, FLOOR_BID_USER_ID } from '../../../src/globals';
 import itemService from '../../../src/services/item-service';
 import auctionService from '../../../src/services/auction-service';
 import bidService from '../../../src/services/bid-service';
@@ -778,6 +804,119 @@ describe('item-service', () => {
     it('throws NotFoundError when the item does not exist', async () => {
       const fakeId = new Types.ObjectId().toString();
       await expect(itemService.isInvited(fakeId, bidderId.toString())).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // reassignFloorBid — hybrid floor + online bidding
+  // ───────────────────────────────────────────────────────────────────────────
+
+  describe('reassignFloorBid', () => {
+    it('reassigns the winning floor bid to a real bidder and transitions item to ENDED', async () => {
+      const realBidderId = new Types.ObjectId();
+      const clerkUser = { id: new Types.ObjectId().toString() } as any;
+      const item = await seedItem({
+        status: EItemStatus.AWAITING_FLOOR_REASSIGNMENT,
+        isBidIncrementedManually: true,
+      });
+      const floorBid = await Bid.create({
+        itemId: item._id,
+        userId: FLOOR_BID_USER_ID,
+        bidAmount: 800,
+        bidTime: new Date(),
+        isRetracted: false,
+      });
+
+      // Reset socket events before the call
+      (socketEmitter as any)._reset();
+
+      const updated = await itemService.reassignFloorBid(clerkUser, {
+        itemId: item._id.toString(),
+        bidderId: realBidderId.toString(),
+        bidId: floorBid._id.toString(),
+      });
+
+      // Item transitions from AWAITING_FLOOR_REASSIGNMENT to ENDED
+      expect(updated.status).toBe(EItemStatus.ENDED);
+      expect(updated.winningBidder?.toString()).toBe(realBidderId.toString());
+      expect(updated.floorBidReassignedTo?.toString()).toBe(realBidderId.toString());
+      expect(updated.floorBidReassignedBy?.toString()).toBe(clerkUser.id.toString());
+      expect(updated.floorBidReassignedAt).toBeDefined();
+
+      // Bid is mutated with audit fields and reassigned userId
+      const mutatedBid = await Bid.findById(floorBid._id);
+      expect(mutatedBid!.userId.toString()).toBe(realBidderId.toString());
+      expect(mutatedBid!.reassignedFrom!.toString()).toBe(FLOOR_BID_USER_ID);
+      expect(mutatedBid!.reassignedTo!.toString()).toBe(realBidderId.toString());
+      expect(mutatedBid!.reassignedBy!.toString()).toBe(clerkUser.id.toString());
+      expect(mutatedBid!.reassignedAt).toBeDefined();
+
+      // Socket event was emitted
+      expect((socketEmitter as any)._emittedEvents).toContainEqual(
+        expect.objectContaining({
+          room: `${item._id.toString()}-bid`,
+          event: ESocketEventCode.BROADCAST_FLOOR_REASSIGNMENT,
+        }),
+      );
+    });
+
+    it('throws ForbiddenError if item status is NOT AWAITING_FLOOR_REASSIGNMENT', async () => {
+      const item = await seedItem({ status: EItemStatus.ACTIVE });
+      const clerkUser = { id: new Types.ObjectId().toString() } as any;
+
+      await expect(
+        itemService.reassignFloorBid(clerkUser, {
+          itemId: item._id.toString(),
+          bidderId: new Types.ObjectId().toString(),
+          bidId: new Types.ObjectId().toString(),
+        }),
+      ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('throws ForbiddenError if the bid does not belong to the floor bid sentinel', async () => {
+      const realUserId = new Types.ObjectId();
+      const item = await seedItem({ status: EItemStatus.AWAITING_FLOOR_REASSIGNMENT });
+      const normalBid = await Bid.create({
+        itemId: item._id,
+        userId: realUserId,
+        bidAmount: 900,
+        bidTime: new Date(),
+        isRetracted: false,
+      });
+      const clerkUser = { id: new Types.ObjectId().toString() } as any;
+
+      await expect(
+        itemService.reassignFloorBid(clerkUser, {
+          itemId: item._id.toString(),
+          bidderId: new Types.ObjectId().toString(),
+          bidId: normalBid._id.toString(),
+        }),
+      ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('throws NotFoundError when item does not exist', async () => {
+      const clerkUser = { id: new Types.ObjectId().toString() } as any;
+
+      await expect(
+        itemService.reassignFloorBid(clerkUser, {
+          itemId: new Types.ObjectId().toString(),
+          bidderId: new Types.ObjectId().toString(),
+          bidId: new Types.ObjectId().toString(),
+        }),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('throws NotFoundError when bid does not exist', async () => {
+      const item = await seedItem({ status: EItemStatus.AWAITING_FLOOR_REASSIGNMENT });
+      const clerkUser = { id: new Types.ObjectId().toString() } as any;
+
+      await expect(
+        itemService.reassignFloorBid(clerkUser, {
+          itemId: item._id.toString(),
+          bidderId: new Types.ObjectId().toString(),
+          bidId: new Types.ObjectId().toString(),
+        }),
+      ).rejects.toThrow(NotFoundError);
     });
   });
 });

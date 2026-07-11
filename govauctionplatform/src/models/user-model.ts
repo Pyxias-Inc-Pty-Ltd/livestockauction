@@ -18,6 +18,8 @@ export interface IUser extends Document {
   firebaseTokenId: string;
   password?: string;
   keycloakId: string;
+  strikes: Array<{ auctionId: string; itemId: string; reason: string; createdAt: Date }>;
+  blacklisted: boolean;
   createdDate: any;
   updatedDate: any;
 }
@@ -26,6 +28,8 @@ export interface ISeller extends IUser {
   sectorType: sectorType;
   name: string;
   allowedRequiredAttributes: Schema.Types.ObjectId[];
+  paygateId?: string;
+  payhostEncryptionKey?: string;
 }
 
 export interface ISellerInput {
@@ -174,7 +178,9 @@ const userSchema = new Schema<IUser>({
       }
     }
   },
-  firebaseTokenId: {type: String, trim: true}
+  firebaseTokenId: {type: String, trim: true},
+  strikes: { type: [{ auctionId: { type: String, required: true }, itemId: { type: String, required: true }, reason: { type: String, required: true }, createdAt: { type: Date, default: Date.now } }], default: [] },
+  blacklisted: { type: Boolean, default: false }
 }, {
   timestamps: {
     createdAt: "createdDate",
@@ -499,6 +505,8 @@ const sellerSchema = new Schema<ISeller>({
   keycloakId: {type: String, trim: true, unique: true, sparse: true},
   sectorType: { type: String, default: ESectorType.GOVERNMENT, enum: [ESectorType.PRIVATE, ESectorType.GOVERNMENT], required: true },
   allowedRequiredAttributes: { type: [{ type: Schema.Types.ObjectId, ref: EModels.REQUIRED_ATTRIBUTE }], default: [] },
+  paygateId: { type: String, trim: true },
+  payhostEncryptionKey: { type: String, trim: true },
   email: {type: String, unique: true, required: true, validate: {
     msg: 'Valid email must be supplied.',
       validator: function (v: string): boolean {

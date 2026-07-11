@@ -643,4 +643,120 @@ describe('user-service', () => {
       expect(found).toBeNull();
     });
   });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // addStrike / removeBlacklist / isBlacklisted — hybrid floor bidding
+  // ───────────────────────────────────────────────────────────────────────────
+
+  describe('addStrike', () => {
+    const auctionId = new Types.ObjectId().toString();
+    const itemId = new Types.ObjectId().toString();
+
+    it('adds a strike to a user with zero existing strikes', async () => {
+      const bidder = await seedBidder({ strikes: [], blacklisted: false });
+
+      const updated = await userService.addStrike(bidder.id, auctionId, itemId, 'NON_PAYMENT');
+
+      expect(updated!.strikes).toHaveLength(1);
+      expect(updated!.strikes[0].auctionId).toBe(auctionId);
+      expect(updated!.strikes[0].itemId).toBe(itemId);
+      expect(updated!.strikes[0].reason).toBe('NON_PAYMENT');
+      expect(updated!.blacklisted).toBe(false);
+    });
+
+    it('adds a second strike without blacklisting', async () => {
+      const bidder = await seedBidder({
+        strikes: [{ auctionId: 'a1', itemId: 'i1', reason: 'NON_PAYMENT', createdAt: new Date() }],
+        blacklisted: false,
+      });
+
+      const updated = await userService.addStrike(bidder.id, auctionId, itemId, 'NON_PAYMENT');
+
+      expect(updated!.strikes).toHaveLength(2);
+      expect(updated!.blacklisted).toBe(false);
+    });
+
+    it('auto-blacklists when the third strike is added', async () => {
+      const bidder = await seedBidder({
+        strikes: [
+          { auctionId: 'a1', itemId: 'i1', reason: 'NON_PAYMENT', createdAt: new Date() },
+          { auctionId: 'a2', itemId: 'i2', reason: 'NON_PAYMENT', createdAt: new Date() },
+        ],
+        blacklisted: false,
+      });
+
+      const updated = await userService.addStrike(bidder.id, auctionId, itemId, 'NON_PAYMENT');
+
+      expect(updated!.strikes).toHaveLength(3);
+      expect(updated!.blacklisted).toBe(true);
+    });
+
+    it('does not re-save blacklisted when already blacklisted', async () => {
+      const bidder = await seedBidder({
+        strikes: [
+          { auctionId: 'a1', itemId: 'i1', reason: 'NON_PAYMENT', createdAt: new Date() },
+          { auctionId: 'a2', itemId: 'i2', reason: 'NON_PAYMENT', createdAt: new Date() },
+          { auctionId: 'a3', itemId: 'i3', reason: 'NON_PAYMENT', createdAt: new Date() },
+        ],
+        blacklisted: true,
+      });
+
+      const updated = await userService.addStrike(bidder.id, auctionId, itemId, 'NON_PAYMENT');
+
+      expect(updated!.strikes).toHaveLength(4);
+      expect(updated!.blacklisted).toBe(true); // still blacklisted
+    });
+
+    it('throws NotFoundError when user does not exist', async () => {
+      await expect(
+        userService.addStrike(new Types.ObjectId().toString(), auctionId, itemId, 'NON_PAYMENT'),
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe('removeBlacklist', () => {
+    it('sets blacklisted to false for a blacklisted user', async () => {
+      const bidder = await seedBidder({ blacklisted: true });
+
+      const updated = await userService.removeBlacklist(bidder.id);
+
+      expect(updated!.blacklisted).toBe(false);
+    });
+
+    it('is a no-op for an already non-blacklisted user', async () => {
+      const bidder = await seedBidder({ blacklisted: false });
+
+      const updated = await userService.removeBlacklist(bidder.id);
+
+      expect(updated!.blacklisted).toBe(false);
+    });
+
+    it('returns null for a nonexistent user', async () => {
+      const result = await userService.removeBlacklist(new Types.ObjectId().toString());
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('isBlacklisted', () => {
+    it('returns true when user is blacklisted', async () => {
+      const bidder = await seedBidder({ blacklisted: true });
+
+      const result = await userService.isBlacklisted(bidder.id);
+
+      expect(result).toBe(true);
+    });
+
+    it('returns false when user is not blacklisted', async () => {
+      const bidder = await seedBidder({ blacklisted: false });
+
+      const result = await userService.isBlacklisted(bidder.id);
+
+      expect(result).toBe(false);
+    });
+
+    it('returns false when user does not exist', async () => {
+      const result = await userService.isBlacklisted(new Types.ObjectId().toString());
+      expect(result).toBe(false);
+    });
+  });
 });

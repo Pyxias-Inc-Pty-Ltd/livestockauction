@@ -27,6 +27,11 @@ export interface IBid extends Document {
   bidAmountEncrypted?: string;
   createdDate: any;
   updatedDate: any;
+  /** Set when a floor bid is reassigned to a real bidder (hybrid bidding). */
+  reassignedFrom?: Schema.Types.ObjectId;
+  reassignedTo?: Schema.Types.ObjectId;
+  reassignedBy?: Schema.Types.ObjectId;
+  reassignedAt?: Date;
 }
 
 export interface IBidInput {
@@ -47,7 +52,11 @@ const schema = new Schema<IBid>({
   idempotencyKey: { type: String, sparse: true },
   // Stored only for sealed bids; absent for open / livestream bids.
   bidAmountEncrypted: { type: String },
-  _bidNumber: { type: String } // Internal storage for the virtual, not exposed directly
+  _bidNumber: { type: String }, // Internal storage for the virtual, not exposed directly
+  reassignedFrom: { type: Schema.Types.ObjectId, ref: EModels.USER },
+  reassignedTo: { type: Schema.Types.ObjectId, ref: EModels.USER },
+  reassignedBy: { type: Schema.Types.ObjectId, ref: EModels.USER },
+  reassignedAt: { type: Date }
 }, {
   timestamps: {
     createdAt: "createdDate",

@@ -7,6 +7,15 @@ jest.mock('../../../src/shared/middleware', () => {
       next();
     },
     deserializeUser: (_req: any, _res: any, next: any) => next(),
+    requireQueueApiKey: (_req: any, _res: any, next: any) => next(),
+  };
+});
+
+jest.mock('../../../src/shared/functions', () => {
+  const actual = jest.requireActual('../../../src/shared/functions');
+  return {
+    ...actual,
+    validatePaygateNotifyChecksum: () => true,
   };
 });
 
@@ -38,6 +47,36 @@ jest.mock('../../../src/services/elasticsearch-service', () => ({
     deleteItem: jest.fn(),
   },
 }));
+
+jest.mock('../../../src/models/user-model', () => {
+  const actual = jest.requireActual('../../../src/models/user-model');
+  return {
+    ...actual,
+    User: {
+      findOne: jest.fn().mockResolvedValue({ _id: 'seller-id' }),
+    },
+  };
+});
+
+jest.mock('../../../src/models/auction-model', () => {
+  const actual = jest.requireActual('../../../src/models/auction-model');
+  return {
+    ...actual,
+    Auction: {
+      findById: jest.fn().mockReturnValue({
+        populate: jest.fn().mockResolvedValue({
+          _id: 'auction-id',
+          title: { en: 'Auction', tn: 'Auction' },
+          toJSON: () => ({ _id: 'auction-id', title: { en: 'Auction', tn: 'Auction' } }),
+          requiredAttributes: [],
+        }),
+      }),
+    },
+    RequiredAttribute: {
+      find: jest.fn().mockResolvedValue([]),
+    },
+  };
+});
 
 import express, { NextFunction, Request, Response } from 'express';
 import cookieParser from 'cookie-parser';
@@ -190,22 +229,22 @@ describe('open-router', () => {
   });
 
   describe('POST /processSuccessfulPaymentFromPayGate', () => {
-    it('returns 201 with transaction on happy path', async () => {
+    it('returns 200 with transaction on happy path', async () => {
       (transactionService.processSuccessfulPaymentFromPayGate as jest.Mock).mockResolvedValue({ _id: 'txn1' });
       const res = await request(app).post(p.processSuccessfulPaymentFromPayGate).send(VALID_PAYGATE_BODY);
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
     });
 
-    it('returns 400 when PAYGATE_ID is missing', async () => {
+    it('returns 200 when PAYGATE_ID is missing (handler always responds OK to PayGate)', async () => {
       const { PAYGATE_ID: _, ...body } = VALID_PAYGATE_BODY;
       const res = await request(app).post(p.processSuccessfulPaymentFromPayGate).send(body);
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(200);
     });
 
-    it('returns 400 when CHECKSUM is missing', async () => {
+    it('returns 200 when CHECKSUM is missing (handler always responds OK to PayGate)', async () => {
       const { CHECKSUM: _, ...body } = VALID_PAYGATE_BODY;
       const res = await request(app).post(p.processSuccessfulPaymentFromPayGate).send(body);
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(200);
     });
   });
 });

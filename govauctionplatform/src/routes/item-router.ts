@@ -18,6 +18,7 @@ export const p = {
   setWinningBidder: '/setWinningBidder',
   deleteItem: '/deleteItem',
   cancelItem: '/cancelItem',
+  reassignFloorBid: '/reassignFloorBid',
   setNewBidAmountManually: '/setNewBidAmountManually',
   getManualBidAmount: '/getManualBidAmount',
   getItemsWon: '/getItemsWon',
@@ -324,6 +325,34 @@ router.put(p.cancelItem, requireAnyRole([EUserType.SELLER, EUserType.ADMIN]), as
     const { itemId, reason } = req.body;
 
     const item = await itemService.cancelItem(req.user as ISeller | IAdmin, itemId, reason);
+    return res.status(OK).json({ item });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Reassign winning floor bid to a registered bidder after auction close.
+ */
+router.put(p.reassignFloorBid, requireAnyRole([EUserType.SELLER, EUserType.ADMIN]), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      itemId: mongoIdValidation.required().messages({
+        'any.required': '"itemId" is a required field',
+      }),
+      bidderId: mongoIdValidation.required().messages({
+        'any.required': '"bidderId" is a required field',
+      }),
+      bidId: mongoIdValidation.required().messages({
+        'any.required': '"bidId" is a required field',
+      }),
+    }).required();
+
+    Joi.assert(req.body, schema);
+
+    const { itemId, bidderId, bidId } = req.body;
+
+    const item = await itemService.reassignFloorBid(req.user as ISeller | IAdmin, { itemId, bidderId, bidId });
     return res.status(OK).json({ item });
   } catch (error) {
     throw error;

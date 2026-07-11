@@ -68,6 +68,7 @@ import {
   EItemStatus,
   EIdentityNumberVerificationStatus,
   EParticipationType,
+  FLOOR_BID_USER_ID,
 } from '../../../src/globals';
 import { ForbiddenError, NotFoundError } from '../../../src/shared/errors';
 import { encryptBidAmount } from '../../../src/shared/bid-crypto';
@@ -1007,6 +1008,114 @@ describe('bid-service', () => {
 
       const winner = await bidService.getWinningBid(item._id.toString());
       expect(winner?.userId.toString()).toBe(bidder1._id.toString());
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // createFloorBid — Floor bid (hybrid floor + online bidding)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  describe('createFloorBid', () => {
+    it('saves a floor bid under the FLOOR_BID_USER_ID sentinel', async () => {
+      const item = await seedItem(new Types.ObjectId(), {
+        isBidIncrementedManually: true,
+        manualBidAmount: 500,
+      });
+
+      const result = await bidService.createFloorBid(
+        { id: 'clerk-id' } as any,
+        { itemId: item._id.toString(), bidAmount: 500 },
+      );
+
+      expect(result).not.toBeNull();
+      expect(result!.userId.toString()).toBe(FLOOR_BID_USER_ID);
+      expect(result!.bidAmount).toBe(500);
+      expect(result!.isRetracted).toBe(false);
+    });
+
+    it('is idempotent — second call at same price returns null', async () => {
+      const item = await seedItem(new Types.ObjectId(), {
+        isBidIncrementedManually: true,
+        manualBidAmount: 700,
+      });
+      const input = { itemId: item._id.toString(), bidAmount: 700 };
+
+      const first = await bidService.createFloorBid({ id: 'clerk' } as any, input);
+      const second = await bidService.createFloorBid({ id: 'clerk' } as any, input);
+
+      expect(first).not.toBeNull();
+      expect(second).toBeNull();
+      // Only one floor bid document persisted
+      const count = await Bid.countDocuments({
+        userId: FLOOR_BID_USER_ID,
+        itemId: item._id,
+        bidAmount: 700,
+      });
+      expect(count).toBe(1);
+    });
+
+    it('rejects when the auction is NOT livestream (isBidIncrementedManually=false)', async () => {
+      const item = await seedItem(new Types.ObjectId(), {
+        isBidIncrementedManually: false,
+      });
+
+      await expect(
+        bidService.createFloorBid(
+          { id: 'clerk' } as any,
+          { itemId: item._id.toString(), bidAmount: 500 },
+        ),
+      ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('rejects when item status is NOT_BEGUN', async () => {
+      const item = await seedItem(new Types.ObjectId(), {
+        isBidIncrementedManually: true,
+        status: EItemStatus.NOT_BEGUN,
+      });
+
+      await expect(
+        bidService.createFloorBid(
+          { id: 'clerk' } as any,
+          { itemId: item._id.toString(), bidAmount: 500 },
+        ),
+      ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('rejects when item status is ENDED', async () => {
+      const item = await seedItem(new Types.ObjectId(), {
+        isBidIncrementedManually: true,
+        status: EItemStatus.ENDED,
+      });
+
+      await expect(
+        bidService.createFloorBid(
+          { id: 'clerk' } as any,
+          { itemId: item._id.toString(), bidAmount: 500 },
+        ),
+      ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('rejects when item status is CANCELLED', async () => {
+      const item = await seedItem(new Types.ObjectId(), {
+        isBidIncrementedManually: true,
+        status: EItemStatus.CANCELLED,
+      });
+
+      await expect(
+        bidService.createFloorBid(
+          { id: 'clerk' } as any,
+          { itemId: item._id.toString(), bidAmount: 500 },
+        ),
+      ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('throws NotFoundError for a nonexistent itemId', async () => {
+      await expect(
+        bidService.createFloorBid(
+          { id: 'clerk' } as any,
+          { itemId: new Types.ObjectId().toString(), bidAmount: 500 },
+        ),
+      ).rejects.toThrow(NotFoundError);
     });
   });
 });

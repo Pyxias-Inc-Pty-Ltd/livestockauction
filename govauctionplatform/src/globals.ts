@@ -1,7 +1,14 @@
 export type userType = "BIDDER" | "ADMIN" | "SELLER" | "AUCTION_APPROVER";
 export type adminType = "SUPER";
 export type transactionType = "REFUND" | "PURCHASE" | "RESERVATION";
-export type itemStatus = "NOT_BEGUN" | "ACTIVE" | "ENDED" | "CANCELLED";
+export type itemStatus = "NOT_BEGUN" | "ACTIVE" | "ENDED" | "CANCELLED" | "AWAITING_FLOOR_REASSIGNMENT";
+export type strikeReason = "NON_PAYMENT";
+export interface IStrike {
+  auctionId: string;
+  itemId: string;
+  reason: strikeReason;
+  createdAt: Date;
+}
 export type auctionStatus = "NOT_BEGUN" | "ACTIVE" | "ENDED" | "CANCELLED";
 export type animalSpecies = "BOVINE" | "EQUINE" | "CAPRINE" | "OVINE" | "PORCINE";
 export type paymentStatus = "PENDING" | "FAILED" | "COMPLETED" | "CANCELLED";
@@ -50,6 +57,7 @@ export const BOTSWANA_COAT_OF_ARMS = "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0
 
 export const FIREBASE_SERVICE_ACCOUNT_CREDENTIALS = process.env.FIREBASE_SERVICE_ACCOUNT_CREDENTIALS as string;
 export const ID_VERIFICATION_API_KEY = process.env.ID_VERIFICATION_API_KEY as string;
+// PAYGATE_ID is now per-seller; the global is a fallback only.
 export const PAYGATE_ID = process.env.PAYGATE_ID as string;
 export const PAYGATE_ENCRYPTION_KEY = process.env.PAYGATE_ENCRYPTION_KEY as string;
 export const PAYHOST_ENCRYPTION_KEY = process.env.PAYHOST_ENCRYPTION_KEY as string;
@@ -345,7 +353,8 @@ export enum EItemStatus {
   NOT_BEGUN = "NOT_BEGUN",
   ACTIVE = "ACTIVE",
   ENDED = "ENDED",
-  CANCELLED = "CANCELLED"
+  CANCELLED = "CANCELLED",
+  AWAITING_FLOOR_REASSIGNMENT = "AWAITING_FLOOR_REASSIGNMENT"
 }
 
 export enum EUserType {
@@ -474,6 +483,7 @@ export enum EModels {
   NOTIFICATION_TRIGGER= "NotificationTrigger",
   REQUIRED_ATTRIBUTE = "RequiredAttribute",
   BID_EVENT = "BidEvent",
+  GABS_ACCOUNT = "GabsAccount",
 }
 
 export enum ESortOrderType {
@@ -554,8 +564,15 @@ export enum ESocketEventCode {
   AUDIENCE_UPDATED = "e:21",
   // Emitted to the lot room when a lot is cancelled.
   // Payload: { itemId: string, reason: string, cancelledAt: string }
-  LOT_CANCELLED = "e:22"
+  LOT_CANCELLED = "e:22",
+  // Floor bid events (hybrid floor + online bidding)
+  CREATE_FLOOR_BID = "e:23",
+  BROADCAST_FLOOR_BID = "e:24",
+  BROADCAST_FLOOR_REASSIGNMENT = "e:26"
 }
+
+/** Sentinel ObjectId for the Floor Bid placeholder user document. */
+export const FLOOR_BID_USER_ID = "000000000000000000000000";
 
 export enum EProductStatus {
   DRAFT = "DRAFT",

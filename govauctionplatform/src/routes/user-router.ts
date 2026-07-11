@@ -4,7 +4,7 @@ import * as Joi from 'joi';
 import StatusCodes from 'http-status-codes';
 import { isStringNumberLike, mongoIdValidation, phoneValidation } from '../shared/functions';
 import userService from '../services/user-service';
-import { IAdmin, IBidder, ISeller, IUser } from '../models/user-model';
+import { IAdmin, IBidder, ISeller, IUser, User } from '../models/user-model';
 import { InternalServerError } from '../shared/errors';
 import { EPermission, ESortOrderType, EUserSortType, EUserType } from '../globals';
 import { resetKeycloakUserPassword } from '../shared/keycloak';
@@ -37,6 +37,9 @@ export const p = {
   updateAuctionApproverStatus: '/updateAuctionApproverStatus',
   getAuctionApproverById: '/getAuctionApproverById',
   updateSellerAttributes: '/updateSellerAttributes',
+  removeBlacklist: '/removeBlacklist',
+  getBlacklistedUsers: '/getBlacklistedUsers',
+  updateSellerPaygateConfig: '/updateSellerPaygateConfig',
 } as const;
 
 /**
@@ -481,6 +484,79 @@ router.put(p.updateSellerAttributes, requirePermission(EPermission.USER_MANAGE),
 
     const { sellerId, allowedRequiredAttributes } = req.body;
     const seller = await userService.updateSellerAllowedAttributes(sellerId, allowedRequiredAttributes);
+    return res.status(OK).json({ seller });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Remove blacklist flag from a user (admin only).
+ */
+router.put(p.removeBlacklist, requirePermission(EPermission.USER_MANAGE), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      userId: mongoIdValidation.required().messages({
+        'any.required': '"userId" is a required field',
+      }),
+    }).required();
+
+    Joi.assert(req.body, schema);
+
+    const { userId } = req.body;
+    const user = await userService.removeBlacklist(userId);
+    return res.status(OK).json({ user });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Get all blacklisted users (admin only).
+ */
+router.get(p.getBlacklistedUsers, requirePermission(EPermission.USER_READ), async (req: Request, res: Response) => {
+  try {
+    const users = await User.find({ blacklisted: true });
+    return res.status(OK).json({ users });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Update a seller's PayGate configuration (admin only).
+ */
+router.put(p.updateSellerPaygateConfig, requirePermission(EPermission.USER_MANAGE), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      sellerId: mongoIdValidation.required().messages({
+        'any.required': '"sellerId" is a required field',
+      }),
+      paygateId: Joi.string().required().messages({
+        'any.required': '"paygateId" is a required field',
+      }),
+      payhostEncryptionKey: Joi.string().allow('').optional(),
+    }).required();
+
+    Joi.assert(req.body, schema);
+
+    const { sellerId, paygateId, payhostEncryptionKey } = req.body;
+
+    const setFields: Record<string, string> = { paygateId };
+    if (payhostEncryptionKey !== undefined) {
+      setFields.payhostEncryptionKey = payhostEncryptionKey;
+    }
+
+    const seller = await User.findOneAndUpdate(
+      { _id: sellerId, userType: 'SELLER' },
+      { $set: setFields },
+      { new: true }
+    );
+
+    if (!seller) {
+      return res.status(StatusCodes.NOT_FOUND).json({ message: 'Seller not found' });
+    }
+
     return res.status(OK).json({ seller });
   } catch (error) {
     throw error;
