@@ -12,6 +12,7 @@ import itemService from '../services/item-service';
 import collectionService from '../services/collection-service';
 import { esService } from '../services/elasticsearch-service';
 import { Auction, RequiredAttribute } from '../models/auction-model';
+import { User } from '../models/user-model';
 import {
   ESortOrderType,
   EAuctionSortType,
@@ -27,7 +28,7 @@ import {
   ELanguageType,
   languageType,
   SERVICE_URLS,
-  PAYGATE_ENCRYPTION_KEY
+  PAYGATE_ENCRYPTION_KEY,
 } from '../globals';
 
 // Constants
@@ -363,7 +364,14 @@ router.post(p.processSuccessfulPaymentFromPayGate, async (req: Request, res: Res
     // Validate schema against input
     Joi.assert(req.body, schema);
 
-    // Verify the notification came from PayGate
+    // Verify the PAYGATE_ID belongs to a known seller
+    const seller = await User.findOne({ paygateId: req.body.PAYGATE_ID, userType: 'SELLER' }, { _id: 1 }) as { _id?: string } | null;
+    if (!seller) {
+      console.error('PayGate NOTIFY_URL: no seller found for PAYGATE_ID', req.body.PAYGATE_ID);
+      return res.status(OK).send('OK');
+    }
+
+    // Verify the notification came from PayGate using the global encryption key
     if (!validatePaygateNotifyChecksum(req.body, PAYGATE_ENCRYPTION_KEY)) {
       console.error('PayGate NOTIFY_URL: checksum validation failed', req.body);
       return res.status(OK).send('OK'); // Still respond OK to avoid retries on tampered requests
