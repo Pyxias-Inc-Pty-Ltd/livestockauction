@@ -20,7 +20,7 @@ process.env.KEYCLOAK_ADMIN_CLIENT_SECRET = 'test-admin-secret';
 process.env.SEALED_BID_ENCRYPTION_KEY =
   '0000000000000000000000000000000000000000000000000000000000000000';
 
-// PayGate — mocked in tests
+// PayGate — now per-seller; global env vars kept for backward compatibility only
 process.env.PAYGATE_ID = 'test-paygate-id';
 process.env.PAYGATE_ENCRYPTION_KEY = 'test-paygate-key';
 
