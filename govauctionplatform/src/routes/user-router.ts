@@ -535,15 +535,21 @@ router.put(p.updateSellerPaygateConfig, requirePermission(EPermission.USER_MANAG
       paygateId: Joi.string().required().messages({
         'any.required': '"paygateId" is a required field',
       }),
+      payhostEncryptionKey: Joi.string().allow('').optional(),
     }).required();
 
     Joi.assert(req.body, schema);
 
-    const { sellerId, paygateId } = req.body;
+    const { sellerId, paygateId, payhostEncryptionKey } = req.body;
+
+    const setFields: Record<string, string> = { paygateId };
+    if (payhostEncryptionKey !== undefined) {
+      setFields.payhostEncryptionKey = payhostEncryptionKey;
+    }
 
     const seller = await User.findOneAndUpdate(
       { _id: sellerId, userType: 'SELLER' },
-      { $set: { paygateId } },
+      { $set: setFields },
       { new: true }
     );
 
