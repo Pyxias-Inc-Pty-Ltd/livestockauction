@@ -386,10 +386,10 @@ export function convertToPaygateFormat(
     encryptionKey: string
 ): string {
     if (!PAYGATE_ID) {
-        throw new Error('PAYGATE_ID is not configured — add it to your .env file');
+        throw new Error('PAYGATE_ID is required');
     }
     if (!encryptionKey) {
-        throw new Error('PAYGATE_ENCRYPTION_KEY is not configured — add it to your .env file');
+        throw new Error('encryptionKey is required');
     }
     // Convert to cents (integer) — Math.round avoids floating-point issues
     // e.g., 100.55 * 100 = 10055.000000000002 → Math.round → 10055

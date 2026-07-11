@@ -57,6 +57,7 @@ export const BOTSWANA_COAT_OF_ARMS = "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0
 
 export const FIREBASE_SERVICE_ACCOUNT_CREDENTIALS = process.env.FIREBASE_SERVICE_ACCOUNT_CREDENTIALS as string;
 export const ID_VERIFICATION_API_KEY = process.env.ID_VERIFICATION_API_KEY as string;
+// PAYGATE_ID is now per-seller; the global is a fallback only.
 export const PAYGATE_ID = process.env.PAYGATE_ID as string;
 export const PAYGATE_ENCRYPTION_KEY = process.env.PAYGATE_ENCRYPTION_KEY as string;
 export const PAYHOST_ENCRYPTION_KEY = process.env.PAYHOST_ENCRYPTION_KEY as string;
@@ -482,6 +483,7 @@ export enum EModels {
   NOTIFICATION_TRIGGER= "NotificationTrigger",
   REQUIRED_ATTRIBUTE = "RequiredAttribute",
   BID_EVENT = "BidEvent",
+  GABS_ACCOUNT = "GabsAccount",
 }
 
 export enum ESortOrderType {
