@@ -1019,11 +1019,13 @@ async function revokeInvitedBidder(auctionId: string, bidderId: string): Promise
     // which was sent as REFERENCE in the original PayWeb3 call).
     if (transactionId) {
       try {
-        // Resolve per-seller paygateId; fall back to global if seller has none.
+        // Resolve per-seller PayGate credentials; fall back to global if seller has none.
         let paygateId: string | undefined;
+        let payhostEncryptionKey: string | undefined;
         try {
-          const seller = await User.findById(reservation.sellerId, { paygateId: 1 }) as ISeller | null;
+          const seller = await User.findById(reservation.sellerId, { paygateId: 1, payhostEncryptionKey: 1 }) as ISeller | null;
           paygateId = seller?.paygateId;
+          payhostEncryptionKey = seller?.payhostEncryptionKey || undefined;
         } catch {}
 
         const amountCents = Math.round(refundTx.amount * 100);
@@ -1033,6 +1035,7 @@ async function revokeInvitedBidder(auctionId: string, bidderId: string): Promise
           reference: String(refundTx._id),
           callbackUrl,
           ...(paygateId && { paygateId }),
+          ...(payhostEncryptionKey && { payhostEncryptionKey }),
         }, {
           headers: {
             "Content-Type": "application/json",

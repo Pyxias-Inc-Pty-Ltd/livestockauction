@@ -23,12 +23,12 @@ import axios from "axios";
 /**
  * Resolve a seller's PayGate credentials from their seller record.
  */
-async function getSellerPayGateCredentials(sellerId: string): Promise<{ paygateId: string }> {
-  const seller = await User.findById(sellerId, { paygateId: 1 }) as ISeller | null;
+async function getSellerPayGateCredentials(sellerId: string): Promise<{ paygateId: string; payhostEncryptionKey: string }> {
+  const seller = await User.findById(sellerId, { paygateId: 1, payhostEncryptionKey: 1 }) as ISeller | null;
   if (!seller?.paygateId) {
     throw new Error(`Seller ${sellerId} has no PayGate configuration`);
   }
-  return { paygateId: seller.paygateId };
+  return { paygateId: seller.paygateId, payhostEncryptionKey: seller.payhostEncryptionKey || '' };
 }
 
 /**
@@ -1069,11 +1069,13 @@ async function initiateNonWinnerReservationRefunds(itemId: string, winningBidder
       }
 
       try {
-        // Resolve per-seller paygateId; fall back to global if seller has none.
+        // Resolve per-seller PayGate credentials; fall back to global if seller has none.
         let paygateId: string | undefined;
+        let payhostEncryptionKey: string | undefined;
         try {
           const creds = await getSellerPayGateCredentials(reservation.sellerId.toString());
           paygateId = creds.paygateId;
+          payhostEncryptionKey = creds.payhostEncryptionKey || undefined;
         } catch {}
 
         const amountCents = Math.round(savedRefund.amount * 100);
@@ -1083,6 +1085,7 @@ async function initiateNonWinnerReservationRefunds(itemId: string, winningBidder
           reference: String(savedRefund._id),
           callbackUrl,
           ...(paygateId && { paygateId }),
+          ...(payhostEncryptionKey && { payhostEncryptionKey }),
         }, {
           headers: {
             "Content-Type": "application/json",
@@ -1208,11 +1211,13 @@ async function initiateCancellationRefunds(itemId: string): Promise<void> {
       }
 
       try {
-        // Resolve per-seller paygateId; fall back to global if seller has none.
+        // Resolve per-seller PayGate credentials; fall back to global if seller has none.
         let paygateId: string | undefined;
+        let payhostEncryptionKey: string | undefined;
         try {
           const creds = await getSellerPayGateCredentials(reservation.sellerId.toString());
           paygateId = creds.paygateId;
+          payhostEncryptionKey = creds.payhostEncryptionKey || undefined;
         } catch {}
 
         const amountCents = Math.round(savedRefund.amount * 100);
@@ -1222,6 +1227,7 @@ async function initiateCancellationRefunds(itemId: string): Promise<void> {
           reference: String(savedRefund._id),
           callbackUrl,
           ...(paygateId && { paygateId }),
+          ...(payhostEncryptionKey && { payhostEncryptionKey }),
         }, {
           headers: {
             'Content-Type': 'application/json',
