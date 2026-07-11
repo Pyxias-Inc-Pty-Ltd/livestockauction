@@ -3,13 +3,15 @@
  * Mocks fetch to verify SOAP envelope construction and response parsing.
  */
 
-// Mock globals before the payhost module imports it (Jest hoists these).
 jest.mock('../../../src/globals', () => ({
-  PAYGATE_ID: 'test-paygate-id',
+  ...jest.requireActual('../../../src/globals'),
   PAYHOST_ENCRYPTION_KEY: 'test-payhost-key',
 }));
 
 import { refundRequest } from '../../../src/shared/payhost';
+
+const PAYGATE_ID = 'test-paygate-id';
+const PAYHOST_KEY = 'test-payhost-key';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -88,6 +90,7 @@ describe('payhost refundRequest', () => {
       merchantOrderId: '675df518df5dde426982a090',
       amountCents: 3295,
       reference: 'refund-ref-abc',
+      paygateId: PAYGATE_ID,
     });
 
     const body: string = fetchFn.mock.calls[0]![1]!.body! as string;
@@ -100,8 +103,8 @@ describe('payhost refundRequest', () => {
     expect(body).toContain('<SingleFollowUpRequest');
     expect(body).toContain('<RefundRequest>');
     // Account credentials
-    expect(body).toContain('<PayGateId>test-paygate-id</PayGateId>');
-    expect(body).toContain('<Password>test-payhost-key</Password>');
+    expect(body).toContain(`<PayGateId>${PAYGATE_ID}</PayGateId>`);
+    expect(body).toContain(`<Password>${PAYHOST_KEY}</Password>`);
     // Transaction identifiers
     expect(body).toContain('<MerchantOrderId>675df518df5dde426982a090</MerchantOrderId>');
     expect(body).toContain('<Amount>3295</Amount>');
@@ -111,7 +114,7 @@ describe('payhost refundRequest', () => {
   it('omits Amount and Reference elements when not provided', async () => {
     const fetchFn = mockFetch(successResponse());
 
-    await refundRequest({ merchantOrderId: 'order-1' });
+    await refundRequest({ merchantOrderId: 'order-1', paygateId: PAYGATE_ID });
 
     const body: string = fetchFn.mock.calls[0]![1]!.body! as string;
     expect(body).not.toContain('<Amount>');
@@ -121,7 +124,7 @@ describe('payhost refundRequest', () => {
   it('includes Amount when amountCents is zero', async () => {
     const fetchFn = mockFetch(successResponse());
 
-    await refundRequest({ merchantOrderId: 'order-1', amountCents: 0 });
+    await refundRequest({ merchantOrderId: 'order-1', amountCents: 0, paygateId: PAYGATE_ID });
 
     const body: string = fetchFn.mock.calls[0]![1]!.body! as string;
     expect(body).toContain('<Amount>0</Amount>');
@@ -130,7 +133,7 @@ describe('payhost refundRequest', () => {
   it('sends the request to the PayHost endpoint', async () => {
     const fetchFn = mockFetch(successResponse());
 
-    await refundRequest({ merchantOrderId: 'order-1' });
+    await refundRequest({ merchantOrderId: 'order-1', paygateId: PAYGATE_ID });
 
     const url = fetchFn.mock.calls[0]![0];
     expect(url).toBe('https://secure.paygate.co.za/payhost/process.trans');
@@ -139,7 +142,7 @@ describe('payhost refundRequest', () => {
   it('sets correct SOAP headers', async () => {
     const fetchFn = mockFetch(successResponse());
 
-    await refundRequest({ merchantOrderId: 'order-1' });
+    await refundRequest({ merchantOrderId: 'order-1', paygateId: PAYGATE_ID });
 
     const init = fetchFn.mock.calls[0]![1]!;
     expect(init.method).toBe('POST');
@@ -155,7 +158,7 @@ describe('payhost refundRequest', () => {
       resultDescription: 'Approved',
     }));
 
-    const result = await refundRequest({ merchantOrderId: 'order-1' });
+    const result = await refundRequest({ merchantOrderId: 'order-1', paygateId: PAYGATE_ID });
 
     expect(result).toEqual({
       transactionId: 'payhost-tx-999',
@@ -168,7 +171,7 @@ describe('payhost refundRequest', () => {
   it('parses an error response correctly', async () => {
     mockFetch(errorResponse('Insufficient funds'));
 
-    const result = await refundRequest({ merchantOrderId: 'order-1' });
+    const result = await refundRequest({ merchantOrderId: 'order-1', paygateId: PAYGATE_ID });
 
     expect(result.statusName).toBe('Error');
     expect(result.resultDescription).toBe('Insufficient funds');
@@ -182,7 +185,7 @@ describe('payhost refundRequest', () => {
       resultDescription: '',
     }));
 
-    const result = await refundRequest({ merchantOrderId: 'order-1' });
+    const result = await refundRequest({ merchantOrderId: 'order-1', paygateId: PAYGATE_ID });
 
     expect(result.statusName).toBe('Pending');
     expect(result.transactionId).toBe('');
@@ -192,7 +195,7 @@ describe('payhost refundRequest', () => {
     mockFetch('<html>502 Bad Gateway</html>', false, 502);
 
     await expect(
-      refundRequest({ merchantOrderId: 'order-1' })
+      refundRequest({ merchantOrderId: 'order-1', paygateId: PAYGATE_ID })
     ).rejects.toThrow('PayHost HTTP 502');
   });
 });
