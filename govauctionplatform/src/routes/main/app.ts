@@ -10,6 +10,7 @@ import formRouter from '../form-router';
 import notificationTriggerRouter from '../notification-trigger-router';
 import notificationRouter from '../notification-router';
 import collectionRouter from '../collection-router';
+import gabsAccountRouter from '../gabs-account-router';
 
 // Export the base-router
 const baseRouter = Router();
@@ -26,6 +27,7 @@ baseRouter.use('/forums', forumRouter);
 baseRouter.use('/notificationTriggers', notificationTriggerRouter);
 baseRouter.use('/notifications', notificationRouter);
 baseRouter.use('/collections', collectionRouter);
+baseRouter.use('/gabs-accounts', gabsAccountRouter);
 
 // Export default.
 export default baseRouter;
