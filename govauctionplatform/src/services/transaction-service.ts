@@ -1069,12 +1069,20 @@ async function initiateNonWinnerReservationRefunds(itemId: string, winningBidder
       }
 
       try {
+        // Resolve per-seller paygateId; fall back to global if seller has none.
+        let paygateId: string | undefined;
+        try {
+          const creds = await getSellerPayGateCredentials(reservation.sellerId.toString());
+          paygateId = creds.paygateId;
+        } catch {}
+
         const amountCents = Math.round(savedRefund.amount * 100);
         await axios.post(`${SERVICE_URLS.onlineAuctionQueueURI}/refundQueue/add-job`, {
           merchantOrderId: String(reservation._id),
           amountCents,
           reference: String(savedRefund._id),
           callbackUrl,
+          ...(paygateId && { paygateId }),
         }, {
           headers: {
             "Content-Type": "application/json",
@@ -1200,12 +1208,20 @@ async function initiateCancellationRefunds(itemId: string): Promise<void> {
       }
 
       try {
+        // Resolve per-seller paygateId; fall back to global if seller has none.
+        let paygateId: string | undefined;
+        try {
+          const creds = await getSellerPayGateCredentials(reservation.sellerId.toString());
+          paygateId = creds.paygateId;
+        } catch {}
+
         const amountCents = Math.round(savedRefund.amount * 100);
         await axios.post(`${SERVICE_URLS.onlineAuctionQueueURI}/refundQueue/add-job`, {
           merchantOrderId: String(reservation._id),
           amountCents,
           reference: String(savedRefund._id),
           callbackUrl,
+          ...(paygateId && { paygateId }),
         }, {
           headers: {
             'Content-Type': 'application/json',
