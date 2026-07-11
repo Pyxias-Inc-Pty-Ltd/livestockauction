@@ -1,4 +1,4 @@
-import { Bidder, IAdmin, IBidder, IUser } from "../models/user-model";
+import { Bidder, User, IAdmin, IBidder, IUser, ISeller } from "../models/user-model";
 import { ForbiddenError, InternalServerError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession } from 'mongoose';
@@ -7,7 +7,7 @@ import { Item } from "../models/item-model";
 import { Forum } from "../models/forum-model";
 import { Auction } from "../models/auction-model";
 import itemService from "./item-service";
-import { EPaymentStatus, EItemStatus, ERefundReason, ESortOrderType, ETransactionSortType, ETransactionType, LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, MAX_LIST_LIMIT_NUMBER, PAYGATE_ENCRYPTION_KEY, PAYGATE_ID, SERVICE_URLS, transactionType, LOCAL_CURRENCY, DEFAULT_LANG, DEFAULT_PAYMENT_EMAIL, LOCALY_COUNTRY_ALPHA_3_CODE, KEY_SECRET } from "../globals";
+import { EPaymentStatus, EItemStatus, ERefundReason, ESortOrderType, ETransactionSortType, ETransactionType, LIST_LIMIT_NUMBER, LOCAL_NATIONALITY, MAX_LIST_LIMIT_NUMBER, SERVICE_URLS, transactionType, LOCAL_CURRENCY, DEFAULT_LANG, DEFAULT_PAYMENT_EMAIL, LOCALY_COUNTRY_ALPHA_3_CODE, KEY_SECRET, PAYGATE_ENCRYPTION_KEY } from "../globals";
 import bidService from "./bid-service";
 import userService from "./user-service";
 import * as luxon from "luxon";
@@ -19,6 +19,17 @@ import forumService from "./forum-service";
 import { BidderCounter } from "../models/bidder-counter";
 import collectionService from "./collection-service";
 import axios from "axios";
+
+/**
+ * Resolve a seller's PayGate credentials from their seller record.
+ */
+async function getSellerPayGateCredentials(sellerId: string): Promise<{ paygateId: string }> {
+  const seller = await User.findById(sellerId, { paygateId: 1 }) as ISeller | null;
+  if (!seller?.paygateId) {
+    throw new Error(`Seller ${sellerId} has no PayGate configuration`);
+  }
+  return { paygateId: seller.paygateId };
+}
 
 /**
  * Intiates a reservation payment transaction for an item.
@@ -122,8 +133,11 @@ async function initiateItemReservation(currentUser: IBidder, input: { itemId: st
     // Save transaction
     const savedReservation = await newReservation.save();
 
+    // Resolve per-seller PayGate credentials
+    const { paygateId } = await getSellerPayGateCredentials(item.sellerId.toString());
+
     // Generate payment link using PayGate
-    const formattedString = convertToPaygateFormat(PAYGATE_ID, savedReservation.id.toString(), savedReservation.amount, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/paygateReturn?auctionId=${item.auctionId.toString()}&itemId=${item._id.toString()}&type=reservation`, savedReservation.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
+    const formattedString = convertToPaygateFormat(paygateId, savedReservation.id.toString(), savedReservation.amount, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/paygateReturn?auctionId=${item.auctionId.toString()}&itemId=${item._id.toString()}&type=reservation`, savedReservation.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
 
     const { paymentLink, payRequestId } = await callPayGateInitiate(formattedString);
 
@@ -260,9 +274,12 @@ async function initiatePurchaseItemByWinningBidder(currentUser: IBidder, input: 
       savedPurchase.status = EPaymentStatus.PENDING;
     }
 
+    // Resolve per-seller PayGate credentials
+    const { paygateId } = await getSellerPayGateCredentials(item.sellerId.toString());
+
     // Always re-initiate with PayGate — refreshes the payment link in case the
     // previous one expired (PayGate links are short-lived).
-    const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), savedPurchase.amount, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/paygateReturn?auctionId=${item.auctionId.toString()}&itemId=${item._id.toString()}&type=purchase`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
+    const formattedString = convertToPaygateFormat(paygateId, savedPurchase.id.toString(), savedPurchase.amount, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/paygateReturn?auctionId=${item.auctionId.toString()}&itemId=${item._id.toString()}&type=purchase`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
 
     const { paymentLink, payRequestId } = await callPayGateInitiate(formattedString);
 
@@ -347,8 +364,11 @@ async function initiatePurchaseItemUsingBuyoutPrice(currentUser: IBidder, input:
     // Save payment transaction
     const savedPurchase = await newPurchase.save();
 
+    // Resolve per-seller PayGate credentials
+    const { paygateId } = await getSellerPayGateCredentials(item.sellerId.toString());
+
     // Generate payment link using PayGate — type=buyout so RETURN_URL can distinguish it
-    const formattedString = convertToPaygateFormat(PAYGATE_ID, savedPurchase.id.toString(), item.buyoutPrice, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/paygateReturn?auctionId=${item.auctionId.toString()}&itemId=${item._id.toString()}&type=buyout`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
+    const formattedString = convertToPaygateFormat(paygateId, savedPurchase.id.toString(), item.buyoutPrice, LOCAL_CURRENCY, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/paygateReturn?auctionId=${item.auctionId.toString()}&itemId=${item._id.toString()}&type=buyout`, savedPurchase.createdDate, DEFAULT_LANG, LOCALY_COUNTRY_ALPHA_3_CODE, DEFAULT_PAYMENT_EMAIL, `${SERVICE_URLS.auctionsGovServerBaseURI}/open/processSuccessfulPaymentFromPayGate`, PAYGATE_ENCRYPTION_KEY);
 
     const { paymentLink, payRequestId } = await callPayGateInitiate(formattedString);
 
@@ -913,11 +933,17 @@ async function initiateDisputeRefund(purchaseTransactionId: string): Promise<ITr
       const amountCents = Math.round(savedRefund.amount * 100);
 
       try {
+        // Resolve seller's PayGate credentials for refund
+        const { paygateId } = await getSellerPayGateCredentials(
+          purchaseTx.sellerId.toString()
+        );
+
         const { statusName, transactionId: payhostTxId, resultCode, resultDescription } =
           await refundRequest({
             merchantOrderId: String(purchaseTx._id),
             amountCents,
             reference: String(savedRefund._id),
+            paygateId,
           });
 
         const isCompleted = statusName.toLowerCase() === 'completed';
@@ -1380,9 +1406,12 @@ async function initiatePaymentForUser(
     });
   }
 
+  // Resolve per-seller PayGate credentials
+  const { paygateId } = await getSellerPayGateCredentials(item.sellerId.toString());
+
   // Initiate PayGate session
   const formattedString = convertToPaygateFormat(
-    PAYGATE_ID,
+    paygateId,
     transaction.id.toString(),
     amount,
     LOCAL_CURRENCY,
