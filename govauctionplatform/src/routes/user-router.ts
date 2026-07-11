@@ -39,6 +39,7 @@ export const p = {
   updateSellerAttributes: '/updateSellerAttributes',
   removeBlacklist: '/removeBlacklist',
   getBlacklistedUsers: '/getBlacklistedUsers',
+  updateSellerPaygateConfig: '/updateSellerPaygateConfig',
 } as const;
 
 /**
@@ -517,6 +518,40 @@ router.get(p.getBlacklistedUsers, requirePermission(EPermission.USER_READ), asyn
   try {
     const users = await User.find({ blacklisted: true });
     return res.status(OK).json({ users });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Update a seller's PayGate configuration (admin only).
+ */
+router.put(p.updateSellerPaygateConfig, requirePermission(EPermission.USER_MANAGE), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      sellerId: mongoIdValidation.required().messages({
+        'any.required': '"sellerId" is a required field',
+      }),
+      paygateId: Joi.string().required().messages({
+        'any.required': '"paygateId" is a required field',
+      }),
+    }).required();
+
+    Joi.assert(req.body, schema);
+
+    const { sellerId, paygateId } = req.body;
+
+    const seller = await User.findOneAndUpdate(
+      { _id: sellerId, userType: 'SELLER' },
+      { $set: { paygateId } },
+      { new: true }
+    );
+
+    if (!seller) {
+      return res.status(StatusCodes.NOT_FOUND).json({ message: 'Seller not found' });
+    }
+
+    return res.status(OK).json({ seller });
   } catch (error) {
     throw error;
   }
