@@ -3,14 +3,20 @@ import { EModels } from '../globals';
 
 export interface IGabsAccount extends Document {
   sellerId: Schema.Types.ObjectId;
-  accountName: string;
+  ministry: string;
+  department: string;
+  parentAccount: string;
   accountNumber: string;
+  accountName: string;
 }
 
 const gabsAccountSchema = new Schema<IGabsAccount>({
   sellerId: { type: Schema.Types.ObjectId, ref: EModels.SELLER, required: true, index: true },
-  accountName: { type: String, required: true, trim: true },
+  ministry: { type: String, required: true, trim: true },
+  department: { type: String, required: true, trim: true },
+  parentAccount: { type: String, required: true, trim: true },
   accountNumber: { type: String, required: true, trim: true },
+  accountName: { type: String, required: true, trim: true },
 }, {
   timestamps: true,
 });
