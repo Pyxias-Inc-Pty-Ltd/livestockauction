@@ -33,14 +33,17 @@ router.get(p.getBySeller, requirePermission(EPermission.USER_MANAGE), async (req
 router.post(p.create, requirePermission(EPermission.USER_MANAGE), async (req: Request, res: Response) => {
   const schema = Joi.object({
     sellerId: mongoIdValidation.required(),
-    accountName: Joi.string().required().trim(),
+    ministry: Joi.string().required().trim(),
+    department: Joi.string().required().trim(),
+    parentAccount: Joi.string().required().trim(),
     accountNumber: Joi.string().required().trim(),
+    accountName: Joi.string().required().trim(),
   }).required();
 
   Joi.assert(req.body, schema);
 
-  const { sellerId, accountName, accountNumber } = req.body;
-  const account = await gabsAccountService.create(sellerId, accountName, accountNumber);
+  const { sellerId, ministry, department, parentAccount, accountNumber, accountName } = req.body;
+  const account = await gabsAccountService.create(sellerId, ministry, department, parentAccount, accountNumber, accountName);
   return res.status(CREATED).json({ account });
 });
 
@@ -48,8 +51,11 @@ router.post(p.create, requirePermission(EPermission.USER_MANAGE), async (req: Re
 router.put(p.update, requirePermission(EPermission.USER_MANAGE), async (req: Request, res: Response) => {
   const schema = Joi.object({
     id: mongoIdValidation.required(),
-    accountName: Joi.string().trim().optional(),
+    ministry: Joi.string().trim().optional(),
+    department: Joi.string().trim().optional(),
+    parentAccount: Joi.string().trim().optional(),
     accountNumber: Joi.string().trim().optional(),
+    accountName: Joi.string().trim().optional(),
   }).required();
 
   Joi.assert(req.body, schema);
