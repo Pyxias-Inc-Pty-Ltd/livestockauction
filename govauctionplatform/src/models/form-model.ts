@@ -125,6 +125,7 @@ export interface IForm extends Document {
   creatorId: Schema.Types.ObjectId;
   sellerId: Schema.Types.ObjectId;
   categoryId: Schema.Types.ObjectId;
+  gabsAccountId?: Schema.Types.ObjectId;
   identificationNumber: string;
   formAttributes: {
     title: string;
@@ -206,6 +207,7 @@ const schema = new Schema<IForm>({
   creatorId: { type: Schema.Types.ObjectId, required: true, ref: EModels.ADMIN },
   sellerId: { type: Schema.Types.ObjectId, required: true, ref: EModels.SELLER },
   categoryId: { type: Schema.Types.ObjectId, required: true, ref: EModels.CATEGORY },
+  gabsAccountId: { type: Schema.Types.ObjectId, ref: EModels.GABS_ACCOUNT },
   identificationNumber: { type: String, required: true, trim: true, unique: true },
   formAttributes: {
     title: { type: String, required: true },
