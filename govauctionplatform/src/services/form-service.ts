@@ -86,6 +86,7 @@ async function updateForm(
     // Update allowed fields
     if (data.description) form.description = data.description;
     if (data.formAttributes) form.formAttributes = data.formAttributes;
+    if (data.gabsAccountId !== undefined) form.gabsAccountId = data.gabsAccountId;
 
     await form.save();
     return form;
