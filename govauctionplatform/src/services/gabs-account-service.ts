@@ -4,11 +4,11 @@ async function getBySellerId(sellerId: string): Promise<IGabsAccount[]> {
   return GabsAccount.find({ sellerId }).sort({ createdAt: -1 });
 }
 
-async function create(sellerId: string, accountName: string, accountNumber: string): Promise<IGabsAccount> {
-  return GabsAccount.create({ sellerId, accountName, accountNumber });
+async function create(sellerId: string, ministry: string, department: string, parentAccount: string, accountNumber: string, accountName: string): Promise<IGabsAccount> {
+  return GabsAccount.create({ sellerId, ministry, department, parentAccount, accountNumber, accountName });
 }
 
-async function update(id: string, data: { accountName?: string; accountNumber?: string }): Promise<IGabsAccount | null> {
+async function update(id: string, data: { ministry?: string; department?: string; parentAccount?: string; accountNumber?: string; accountName?: string }): Promise<IGabsAccount | null> {
   return GabsAccount.findByIdAndUpdate(id, { $set: data }, { new: true });
 }
 
