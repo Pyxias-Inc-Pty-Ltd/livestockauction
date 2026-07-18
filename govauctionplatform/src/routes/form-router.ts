@@ -127,6 +127,7 @@ router.post(p.createForm, requirePermission(EPermission.FORM_MANAGE), async (req
       categoryId: mongoIdValidation.required().messages({
         'any.required': '"categoryId" is a required field'
       }),
+      gabsAccountId: mongoIdValidation,
       description: Joi.string().required().messages({
         'any.required': '"description" is a required field'
       }),
@@ -160,6 +161,7 @@ router.put(p.updateForm, requirePermission(EPermission.FORM_MANAGE), async (req:
         'any.required': '"formId" is a required field'
       }),
       categoryId: mongoIdValidation,
+      gabsAccountId: mongoIdValidation.allow(null),
       description: Joi.string(),
       formAttributes: Joi.object({
         title: Joi.string(),
