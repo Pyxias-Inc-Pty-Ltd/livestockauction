@@ -3,8 +3,8 @@ import { generateAuctionNumber, isBeforeStartDate, isStartDateBeforeEndDate } fr
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession, Types } from 'mongoose';
-import { MAX_GEO_DISTANCE_AUCTION, EAuctionSortType, EAuctionStatus, EItemStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, languageType, SERVICE_URLS, KEY_SECRET, auctionInviteEmailTemplate, ETransactionType, EPaymentStatus } from "../globals";
-import { Auction, IAuction, IAuctionInput, IRequiredAttribute, IRequiredAttributeInput, RequiredAttribute } from "../models/auction-model";
+import { MAX_GEO_DISTANCE_AUCTION, EAuctionSortType, EAuctionStatus, EItemStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, languageType, SERVICE_URLS, KEY_SECRET, auctionInviteEmailTemplate, ETransactionType, EPaymentStatus, ESectorType, EAttachmentType } from "../globals";
+import { Auction, IAuction, IAuctionInput, IAuctionAttachment, IRequiredAttribute, IRequiredAttributeInput, RequiredAttribute } from "../models/auction-model";
 import * as axios from "axios";
 import categoryService from "./category-service";
 import forumService from "./forum-service";
@@ -598,6 +598,14 @@ async function publishAuction(currentUser: IAuctionApprover, auctionId: string):
       throw new ForbiddenError('Rejected auctions cannot be published without changes');
     }
 
+    // Government auctions require a Form Gen 60 (authorization-to-auction) attachment.
+    if (
+      auction.sectorType === ESectorType.GOVERNMENT &&
+      !(auction.attachments || []).some(a => a.type === EAttachmentType.FORM_GEN_60)
+    ) {
+      throw new ForbiddenError('A Form Gen 60 authorization document must be attached before approving a government auction');
+    }
+
     const updatedAuction = await Auction.findByIdAndUpdate(
       auctionId,
       { 
@@ -887,6 +895,66 @@ async function getCurrentLot(auctionId: string): Promise<{ currentLotId: string 
   return { currentLotId: auction.currentLotId?.toString() ?? null };
 }
 
+/**
+ * Attach a document (e.g. Form Gen 60) to an auction. Approver-only.
+ */
+async function addAttachment(
+  auctionId: string,
+  attachment: { name: string; url: string; type: string },
+  uploadedBy: Schema.Types.ObjectId,
+): Promise<IAuctionAttachment[]> {
+  if (!isMongoId(auctionId)) throw new ForbiddenError('Invalid auctionId');
+
+  const auction = await Auction.findById(auctionId);
+  if (!auction) throw new NotFoundError('Auction not found');
+
+  auction.attachments = [
+    ...(auction.attachments || []),
+    {
+      name: attachment.name,
+      url: attachment.url,
+      type: attachment.type,
+      uploadedBy,
+      uploadedAt: new Date(),
+    } as IAuctionAttachment,
+  ];
+
+  await auction.save();
+  return auction.attachments;
+}
+
+/**
+ * Remove an attachment from an auction by its subdocument id. Approver-only.
+ */
+async function removeAttachment(
+  auctionId: string,
+  attachmentId: string,
+): Promise<IAuctionAttachment[]> {
+  if (!isMongoId(auctionId)) throw new ForbiddenError('Invalid auctionId');
+
+  const auction = await Auction.findById(auctionId);
+  if (!auction) throw new NotFoundError('Auction not found');
+
+  auction.attachments = (auction.attachments || []).filter(
+    (a: any) => a._id?.toString() !== attachmentId,
+  );
+
+  await auction.save();
+  return auction.attachments;
+}
+
+/**
+ * Get an auction's attachments (approver-only view).
+ */
+async function getAttachments(auctionId: string): Promise<IAuctionAttachment[]> {
+  if (!isMongoId(auctionId)) throw new ForbiddenError('Invalid auctionId');
+
+  const auction = await Auction.findById(auctionId).select('attachments');
+  if (!auction) throw new NotFoundError('Auction not found');
+
+  return auction.attachments || [];
+}
+
 // Export default
 export default {
   createAuction,
@@ -911,6 +979,9 @@ export default {
   inviteByEmail,
   setCurrentLot,
   getCurrentLot,
+  addAttachment,
+  removeAttachment,
+  getAttachments,
 } as const;
 
 // ── Invited bidder helpers ─────────────────────────────────────────────────
