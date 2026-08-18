@@ -47,6 +47,14 @@ jest.mock('../../../src/services/forum-service', () => ({
   },
 }));
 
+// transaction-model.ts imports `{ firebase } from '../index'` at the module
+// level, so we must mock src/index before any transaction-model import resolves.
+jest.mock('../../../src/index', () => ({
+  firebase: {
+    messaging: () => ({ send: jest.fn().mockResolvedValue(undefined) }),
+  },
+}));
+
 // ─── Imports ─────────────────────────────────────────────────────────────────
 
 import { Types } from 'mongoose';
@@ -54,6 +62,7 @@ import { Auction, IAuction, IAuctionInput } from '../../../src/models/auction-mo
 import { ForbiddenError, NotFoundError } from '../../../src/shared/errors';
 import {
   EAuctionStatus,
+  EAttachmentType,
   EPublishedStatus,
   EParticipationType,
   ESectorType,
@@ -77,6 +86,19 @@ async function seedAuction(overrides: Partial<IAuction> = {}): Promise<IAuction>
   };
   await Auction.collection.insertOne(data as any);
   return (await Auction.findById(data._id))!;
+}
+
+/** A Form Gen 60 attachment subdocument (authorization-to-auction form). */
+function makeGen60Attachment(overrides: Record<string, unknown> = {}) {
+  return {
+    _id: new Types.ObjectId(),
+    name: 'Form Gen 60 - Authorization.pdf',
+    url: 'https://example.com/files/form-gen-60.pdf',
+    type: EAttachmentType.FORM_GEN_60,
+    uploadedBy: new Types.ObjectId(),
+    uploadedAt: new Date(),
+    ...overrides,
+  };
 }
 
 /** Minimal valid IAuctionInput with future start/end times. */
@@ -238,9 +260,23 @@ describe('auction-service', () => {
       ).rejects.toThrow(ForbiddenError);
     });
 
-    it('sets publishedStatus to PUBLISHED and returns the updated auction', async () => {
+    it('throws ForbiddenError when publishing a GOVERNMENT auction without a Form Gen 60 attachment', async () => {
       const auction = await seedAuction({
+        sectorType: ESectorType.GOVERNMENT,
         publishedStatus: EPublishedStatus.UNPUBLISHED,
+      });
+      const approver = { _id: new Types.ObjectId() } as any;
+
+      await expect(
+        auctionService.publishAuction(approver, auction.id)
+      ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('publishes a GOVERNMENT auction that has a Form Gen 60 attachment', async () => {
+      const auction = await seedAuction({
+        sectorType: ESectorType.GOVERNMENT,
+        publishedStatus: EPublishedStatus.UNPUBLISHED,
+        attachments: [makeGen60Attachment()] as any,
       });
       const approver = { _id: new Types.ObjectId() } as any;
 
@@ -248,6 +284,122 @@ describe('auction-service', () => {
 
       expect(result.publishedStatus).toBe(EPublishedStatus.PUBLISHED);
       expect(result.publishedBy!.toString()).toBe(approver._id.toString());
+    });
+
+    it('publishes a PRIVATE auction without a Form Gen 60 attachment', async () => {
+      const auction = await seedAuction({
+        sectorType: ESectorType.PRIVATE,
+        publishedStatus: EPublishedStatus.UNPUBLISHED,
+      });
+      const approver = { _id: new Types.ObjectId() } as any;
+
+      const result = await auctionService.publishAuction(approver, auction.id);
+
+      expect(result.publishedStatus).toBe(EPublishedStatus.PUBLISHED);
+    });
+  });
+
+  // ─── attachments (Form Gen 60) ────────────────────────────────────────────
+
+  describe('addAttachment', () => {
+    const approverId = new Types.ObjectId() as any;
+
+    it('throws ForbiddenError for an invalid auctionId', async () => {
+      await expect(
+        auctionService.addAttachment('not-a-valid-id', makeGen60Attachment(), approverId)
+      ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('throws NotFoundError when the auction does not exist', async () => {
+      await expect(
+        auctionService.addAttachment(
+          new Types.ObjectId().toString(),
+          makeGen60Attachment(),
+          approverId
+        )
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('adds an attachment and returns the updated list', async () => {
+      const auction = await seedAuction();
+
+      const result = await auctionService.addAttachment(
+        auction.id,
+        makeGen60Attachment(),
+        approverId
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].type).toBe(EAttachmentType.FORM_GEN_60);
+      expect(result[0].uploadedBy.toString()).toBe(approverId.toString());
+
+      const stored = await Auction.findById(auction._id);
+      expect(stored!.attachments).toHaveLength(1);
+    });
+  });
+
+  describe('removeAttachment', () => {
+    it('throws ForbiddenError for an invalid auctionId', async () => {
+      await expect(
+        auctionService.removeAttachment('not-a-valid-id', new Types.ObjectId().toString())
+      ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('throws NotFoundError when the auction does not exist', async () => {
+      await expect(
+        auctionService.removeAttachment(
+          new Types.ObjectId().toString(),
+          new Types.ObjectId().toString()
+        )
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('removes the matching attachment and returns the remaining list', async () => {
+      const first = makeGen60Attachment();
+      const second = makeGen60Attachment({ name: 'Second.pdf', url: 'https://example.com/second.pdf' });
+      const auction = await seedAuction({
+        attachments: [first, second] as any,
+      });
+      const targetId = (first as any)._id.toString();
+
+      const result = await auctionService.removeAttachment(auction.id, targetId);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('Second.pdf');
+
+      const stored = await Auction.findById(auction._id);
+      expect(stored!.attachments).toHaveLength(1);
+    });
+  });
+
+  describe('getAttachments', () => {
+    it('throws ForbiddenError for an invalid auctionId', async () => {
+      await expect(auctionService.getAttachments('not-a-valid-id')).rejects.toThrow(ForbiddenError);
+    });
+
+    it('throws NotFoundError when the auction does not exist', async () => {
+      await expect(
+        auctionService.getAttachments(new Types.ObjectId().toString())
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('returns the attachments for an existing auction', async () => {
+      const auction = await seedAuction({
+        attachments: [makeGen60Attachment()] as any,
+      });
+
+      const result = await auctionService.getAttachments(auction.id);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].type).toBe(EAttachmentType.FORM_GEN_60);
+    });
+
+    it('returns an empty array when the auction has no attachments', async () => {
+      const auction = await seedAuction();
+
+      const result = await auctionService.getAttachments(auction.id);
+
+      expect(result).toEqual([]);
     });
   });
 

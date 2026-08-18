@@ -2,10 +2,10 @@ import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isoDateValidation, isStringNumberLike, mongoIdValidation } from '../shared/functions';
-import { requirePermission, SellerOnly } from '../shared/middleware';
+import { requirePermission, SellerOnly, AuctionApproverOnly } from '../shared/middleware';
 import { IAdmin, IAuctionApprover, ISeller, IUser } from '../models/user-model';
 import auctionService from '../services/auction-service';
-import { EAuctionStatus, EAuctionSortType, EParticipationType, EPermission, ESortOrderType, EPublishedStatus } from '../globals';
+import { EAuctionStatus, EAuctionSortType, EParticipationType, EPermission, ESortOrderType, EPublishedStatus, EAttachmentType } from '../globals';
 
 // Constants
 const router = Router();
@@ -30,6 +30,9 @@ export const p = {
   getInvitedBidders: '/getInvitedBidders',
   inviteByEmail: '/inviteByEmail',
   setCurrentLot: '/setCurrentLot',
+  addAttachment: '/addAttachment',
+  removeAttachment: '/removeAttachment',
+  getAttachments: '/getAttachments',
 } as const;
 
 /**
@@ -624,6 +627,94 @@ router.put(p.setCurrentLot, SellerOnly(), async (req: Request, res: Response) =>
     const { auctionId, lotId } = req.body;
     await auctionService.setCurrentLot(req.user as ISeller, auctionId, lotId);
     return res.status(OK).json({ message: 'OK' });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Attach a document (e.g. Form Gen 60) to an auction. Approver-only.
+ */
+router.post(p.addAttachment, AuctionApproverOnly(), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      auctionId: mongoIdValidation.required().messages({
+        'any.required': '"auctionId" is a required field'
+      }),
+      name: Joi.string().required().messages({
+        'any.required': '"name" is a required field'
+      }),
+      url: Joi.string().uri().required().messages({
+        'any.required': '"url" is a required field'
+      }),
+      type: Joi.string().valid(EAttachmentType.FORM_GEN_60).required().messages({
+        'any.required': '"type" is a required field'
+      })
+    }).required();
+
+    Joi.assert(req.body, schema);
+
+    const { auctionId, name, url, type } = req.body;
+
+    const attachments = await auctionService.addAttachment(
+      auctionId as string,
+      { name, url, type },
+      (req.user as IAuctionApprover)._id,
+    );
+
+    return res.status(OK).json({ attachments });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Remove an attachment from an auction. Approver-only.
+ */
+router.delete(p.removeAttachment, AuctionApproverOnly(), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      auctionId: mongoIdValidation.required().messages({
+        'any.required': '"auctionId" is a required field'
+      }),
+      attachmentId: Joi.string().required().messages({
+        'any.required': '"attachmentId" is a required field'
+      })
+    }).required();
+
+    Joi.assert(req.body, schema);
+
+    const { auctionId, attachmentId } = req.body;
+
+    const attachments = await auctionService.removeAttachment(
+      auctionId as string,
+      attachmentId as string,
+    );
+
+    return res.status(OK).json({ attachments });
+  } catch (error) {
+    throw error;
+  }
+});
+
+/**
+ * Get an auction's attachments. Approver-only.
+ */
+router.get(p.getAttachments, AuctionApproverOnly(), async (req: Request, res: Response) => {
+  try {
+    const schema = Joi.object().keys({
+      auctionId: mongoIdValidation.required().messages({
+        'any.required': '"auctionId" is a required field'
+      })
+    }).required();
+
+    Joi.assert(req.query, schema);
+
+    const { auctionId } = req.query;
+
+    const attachments = await auctionService.getAttachments(auctionId as string);
+
+    return res.status(OK).json({ attachments });
   } catch (error) {
     throw error;
   }

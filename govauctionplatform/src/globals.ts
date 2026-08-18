@@ -607,6 +607,10 @@ export enum ESectorType {
   PRIVATE = "PRIVATE"
 }
 
+export enum EAttachmentType {
+  FORM_GEN_60 = "FORM_GEN_60"
+}
+
 export enum EGenderType {
   MALE = "MALE",
   FEMALE = "FEMALE",

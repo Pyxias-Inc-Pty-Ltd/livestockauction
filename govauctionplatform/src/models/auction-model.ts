@@ -1,6 +1,6 @@
 import { ConflictError, ForbiddenError, InternalServerError, NotFoundError } from '../shared/errors';
 import { Schema, model, Document } from 'mongoose';
-import { EModels, EAuctionStatus, participationType, EParticipationType, sectorType, auctionStatus, ENVIRONMENT_PRODUCTION, publishedStatus, EPublishedStatus, SERVICE_URLS, auctionRejectedEmailTemplate, KEY_SECRET, auctionApprovalReminderEmailTemplate, ESectorType } from '../globals';
+import { EModels, EAuctionStatus, participationType, EParticipationType, sectorType, auctionStatus, ENVIRONMENT_PRODUCTION, publishedStatus, EPublishedStatus, SERVICE_URLS, auctionRejectedEmailTemplate, KEY_SECRET, auctionApprovalReminderEmailTemplate, ESectorType, EAttachmentType } from '../globals';
 import { generateSlug } from '../shared/functions';
 import { isURL } from 'validator';
 import * as axios from 'axios';
@@ -17,6 +17,14 @@ export interface IRequiredAttribute extends Document {
 
 export interface IRequiredAttributeInput {
   name: string;
+}
+
+export interface IAuctionAttachment {
+  name: string;
+  url: string;
+  type: string;
+  uploadedBy: Schema.Types.ObjectId;
+  uploadedAt: Date;
 }
 
 export interface IAuction extends Document {
@@ -62,6 +70,7 @@ export interface IAuction extends Document {
   streamUrl: string;
   currentLotId?: Schema.Types.ObjectId | null;
   thumbnailUrl: string;
+  attachments?: IAuctionAttachment[];
   collectionWindowDays: number;
   collectionStartTime: string;
   collectionEndTime: string;
@@ -215,6 +224,16 @@ const auctionSchema = new Schema<IAuction>({
       }
     }
   },
+  attachments: {
+    type: [{
+      name: { type: String, required: true, trim: true },
+      url: { type: String, required: true, trim: true },
+      type: { type: String, required: true, enum: [EAttachmentType.FORM_GEN_60] },
+      uploadedBy: { type: Schema.Types.ObjectId, ref: EModels.USER, required: true },
+      uploadedAt: { type: Date, required: true, default: Date.now }
+    }],
+    default: []
+  },
   collectionWindowDays: { type: Number, required: true, min: 1, default: 5 },
   collectionStartTime: { type: String, required: true, trim: true, default: '08:00' },
   collectionEndTime: { type: String, required: true, trim: true, default: '16:00' }
@@ -233,6 +252,7 @@ auctionSchema.set('toJSON', {
   transform: function (doc, ret) {
     delete ret.globallyEligibleBidders;
     delete ret.invitedBidders;
+    delete ret.attachments;
     delete ret._id;
     delete ret.__t;
   }
