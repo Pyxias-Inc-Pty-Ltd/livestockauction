@@ -743,7 +743,7 @@ async function trackItemStatus(): Promise<void> {
 
     const [itemsToEnd, itemsToActivate, orphanedItems] = await Promise.all([
       Item.find(
-        { endTime: { $lte: now }, status: { $ne: EItemStatus.ENDED } },
+        { endTime: { $lte: now }, status: { $nin: [EItemStatus.ENDED, EItemStatus.AWAITING_FLOOR_REASSIGNMENT] } },
         { _id: 1, isClosedBidding: 1 },
       ),
       Item.find(
