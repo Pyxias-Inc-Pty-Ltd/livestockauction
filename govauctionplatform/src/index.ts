@@ -277,24 +277,33 @@ httpServer.listen(port, async () => {
     await connect(SERVICE_URLS.mongoDBURI);
     logger.info('Connection to mongodb established');
 
-    // Seed the Floor Bid placeholder user (hybrid floor + online bidding)
-    await User.findOneAndUpdate(
-      { _id: FLOOR_BID_USER_ID },
-      { $setOnInsert: {
-        _id: FLOOR_BID_USER_ID,
-        userType: EUserType.BIDDER,
-        isOrganization: true,
-        name: 'Floor Bid',
-        identityNumber: 'FLOOR_BID_000000000',
-        nationality: 'BW',
-        physicalAddress: 'Auction Floor',
-        postalAddress: 'Auction Floor',
-        tz: 'Africa/Gaborone',
-        locale: 'en-gb'
-      } },
-      { upsert: true, new: true }
-    );
-    logger.info('Floor Bid placeholder user seeded');
+    // Seed the Floor Bid placeholder user (hybrid floor + online bidding).
+    // Wrapped in its own try/catch: a failure here (e.g. E11000 duplicate-key
+    // on the users.email unique index when inserting a null-email doc) must
+    // never prevent the bid worker from starting below — that was the regression.
+    try {
+      await User.findOneAndUpdate(
+        { _id: FLOOR_BID_USER_ID },
+        { $setOnInsert: {
+          _id: FLOOR_BID_USER_ID,
+          userType: EUserType.BIDDER,
+          isOrganization: true,
+          name: 'Floor Bid',
+          email: 'floor-bid@auction.gov.bw',
+          keycloakId: 'floor-bid-sentinel',
+          identityNumber: 'FLOOR_BID_000000000',
+          nationality: 'BW',
+          physicalAddress: 'Auction Floor',
+          postalAddress: 'Auction Floor',
+          tz: 'Africa/Gaborone',
+          locale: 'en-gb'
+        } },
+        { upsert: true, new: true }
+      );
+      logger.info('Floor Bid placeholder user seeded');
+    } catch (error) {
+      logger.err(`Floor Bid placeholder user seed skipped (non-fatal): ${(error as Error).message}`);
+    }
 
     // Start the bid worker.
     // Injecting `io` here avoids a circular import and ensures the worker
