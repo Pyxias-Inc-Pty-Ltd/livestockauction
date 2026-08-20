@@ -198,7 +198,7 @@
           "client": {
             "auction-platform-api": [
               "auction:read", "auction:update", "auction:unpublish",
-              "lot:create", "lot:read", "lot:manage",
+              "lot:create", "lot:read", "lot:manage", "lot:bid:read",
               "collection:validate", "collection:dispute", "collection:read",
               "user:approver:manage", "user:approver:read",
               "transaction:read",
