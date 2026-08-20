@@ -407,7 +407,9 @@ async function getByTitleSlug(titleSlug: string, lang: languageType, projection?
  *
  * Enforcements:
  *  - The lot must be in ENDED status.
- *  - The supplied bidder must be the holder of the highest non-retracted bid.
+ *  - The supplied bidder must hold a non-retracted bid at the highest amount.
+ *    Ties are allowed (e.g. a floor bid and an online bid at the same price),
+ *    so any tied bidder — including the floor sentinel — can be selected.
  *    This prevents an admin from awarding the lot to an arbitrary participant.
  *
  * For the automatic (non-override) path, see `autoSelectWinner`.
@@ -461,7 +463,17 @@ async function setWinningBidder(
       throw new InternalServerError('No bids found for this lot');
     }
 
-    if (winningBid.userId.toString() !== input.bidderId.toString()) {
+    // Relaxed tie-break: any participant holding a non-retracted bid at the
+    // winning amount may be selected — not just the single earliest submission.
+    // This lets the clerk award the lot to a tied bidder (e.g. a floor bid and
+    // an online bid at the same price) instead of being forced to the earliest.
+    const hasLeadingBid = await Bid.exists({
+      itemId: item._id,
+      userId: input.bidderId,
+      bidAmount: winningBid.bidAmount,
+      isRetracted: false,
+    });
+    if (!hasLeadingBid) {
       throw new ForbiddenError(
         'The supplied bidder did not place the highest bid — ' +
         'winner must be the holder of the leading bid',
