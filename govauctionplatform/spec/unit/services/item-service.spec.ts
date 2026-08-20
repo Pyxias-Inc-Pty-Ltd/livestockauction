@@ -108,6 +108,7 @@ import auctionService from '../../../src/services/auction-service';
 import bidService from '../../../src/services/bid-service';
 import { connectTestDbReplSet, disconnectTestDb, clearTestDb } from '../../helpers/db';
 import { buildItem } from '../../helpers/factories/item.factory';
+import { buildBid } from '../../helpers/factories/bid.factory';
 import { Auction } from '../../../src/models/auction-model';
 import { buildAuction } from '../../helpers/factories/auction.factory';
 import { scheduleCloseLot } from '../../../src/queues/close-lot-queue';
@@ -124,6 +125,11 @@ async function seedItem(overrides: Partial<IItem> = {}): Promise<IItem> {
   };
   await Item.collection.insertOne(data as any);
   return (await Item.findById(data._id))!;
+}
+
+/** Seed a real Bid document (setWinningBidder verifies against the DB via Bid.exists). */
+async function seedBid(overrides: any = {}): Promise<any> {
+  return Bid.create(buildBid(overrides) as any);
 }
 
 /** Minimal valid IItemInput for createItem (non-livestock).
@@ -365,13 +371,15 @@ describe('item-service', () => {
       ).rejects.toThrow(InternalServerError);
     });
 
-    it('throws ForbiddenError when winning bid belongs to a different bidder', async () => {
+    it('throws ForbiddenError when the supplied bidder has no bid at the winning amount', async () => {
       const bidderId = new Types.ObjectId();
       const otherBidderId = new Types.ObjectId();
       const item = await seedItem({
         status: EItemStatus.ENDED,
         eligibleBidders: [bidderId.toString()],
       });
+      // otherBidderId holds the only (winning) bid; bidderId has no bid at that amount.
+      await seedBid({ itemId: item._id, userId: otherBidderId, bidAmount: 1000, bidTime: new Date('2026-01-01T00:00:00Z') });
       (bidService.getWinningBid as jest.Mock).mockResolvedValueOnce({
         userId: otherBidderId,
         bidAmount: 1000,
@@ -388,6 +396,7 @@ describe('item-service', () => {
         status: EItemStatus.ENDED,
         eligibleBidders: [bidderId.toString()],
       });
+      await seedBid({ itemId: item._id, userId: bidderId, bidAmount: 1000, bidTime: new Date('2026-01-01T00:00:00Z') });
       (bidService.getWinningBid as jest.Mock).mockResolvedValueOnce({
         userId: bidderId,
         bidAmount: 1000,
@@ -397,12 +406,54 @@ describe('item-service', () => {
       expect(result.winningBidder!.toString()).toBe(bidderId.toString());
     });
 
+    it('allows a tied bidder to be selected (relaxed tie-break)', async () => {
+      const bidderId = new Types.ObjectId();
+      const otherBidderId = new Types.ObjectId();
+      const item = await seedItem({
+        status: EItemStatus.ENDED,
+        eligibleBidders: [bidderId.toString()],
+      });
+      // Two bids at the same amount; otherBidderId placed first (earliest tie),
+      // but bidderId is tied at that amount and may still be awarded the lot.
+      await seedBid({ itemId: item._id, userId: otherBidderId, bidAmount: 1000, bidTime: new Date('2026-01-01T00:00:00Z') });
+      await seedBid({ itemId: item._id, userId: bidderId, bidAmount: 1000, bidTime: new Date('2026-01-01T00:00:01Z') });
+      (bidService.getWinningBid as jest.Mock).mockResolvedValueOnce({
+        userId: otherBidderId,
+        bidAmount: 1000,
+      });
+
+      const result = await itemService.setWinningBidder({ itemId: item.id, bidderId: bidderId.toString() });
+      expect(result.winningBidder!.toString()).toBe(bidderId.toString());
+    });
+
+    it('allows the floor bidder to be selected when tied (livestream)', async () => {
+      const bidderId = new Types.ObjectId();
+      const item = await seedItem({
+        status: EItemStatus.ACTIVE,
+        isBidIncrementedManually: true,
+        eligibleBidders: [bidderId.toString()],
+      });
+      // Online bid and floor bid tied at the called price; the online bid is
+      // earliest, but the clerk may still award the lot to the floor.
+      await seedBid({ itemId: item._id, userId: bidderId, bidAmount: 1000, bidTime: new Date('2026-01-01T00:00:00Z') });
+      await seedBid({ itemId: item._id, userId: FLOOR_BID_USER_ID as any, bidAmount: 1000, bidTime: new Date('2026-01-01T00:00:01Z') });
+      (bidService.getWinningBid as jest.Mock).mockResolvedValueOnce({
+        userId: bidderId,
+        bidAmount: 1000,
+      });
+
+      const result = await itemService.setWinningBidder({ itemId: item.id, bidderId: FLOOR_BID_USER_ID });
+      expect(result.winningBidder!.toString()).toBe(FLOOR_BID_USER_ID);
+      expect(result.status).toBe(EItemStatus.AWAITING_FLOOR_REASSIGNMENT);
+    });
+
     it('acquires the bid lock before reading the winning bid', async () => {
       const bidderId = new Types.ObjectId();
       const item = await seedItem({
         status: EItemStatus.ENDED,
         eligibleBidders: [bidderId.toString()],
       });
+      await seedBid({ itemId: item._id, userId: bidderId, bidAmount: 1000, bidTime: new Date('2026-01-01T00:00:00Z') });
       (bidService.getWinningBid as jest.Mock).mockResolvedValueOnce({
         userId: bidderId,
         bidAmount: 1000,
