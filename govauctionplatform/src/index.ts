@@ -149,7 +149,7 @@ const onConnection = (socket: Socket) => {
   socket.on(ESocketEventCode.CREATE_FLOOR_BID, async function (data, cb = () => {}) {
     try {
       console.log("ESocketEventCode.CREATE_FLOOR_BID: ", data);
-      const authorizedUser = await User.findById(socket.data.userId).lean() as unknown as IBidder;
+      const authorizedUser = (socket as any).user as IBidder;
       if (!authorizedUser) {
         cb({ status: 401, msg: 'Unauthorized' });
         return;
