@@ -51,6 +51,7 @@ jest.mock('../../../src/services/transaction-service', () => ({
     initiateItemReservation: jest.fn(),
     initiatePurchaseItemByWinningBidder: jest.fn(),
     initiatePaymentForUser: jest.fn(),
+    initiateCancellationRefunds: jest.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -102,10 +103,11 @@ import '../../../src/models/form-model';    // register Form model so populate d
 import '../../../src/models/user-model';   // register Bidder model for getEligibleBidders
 import '../../../src/models/auction-model'; // register Auction model (item pre-save hook queries it)
 import { ForbiddenError, InternalServerError, NotFoundError } from '../../../src/shared/errors';
-import { EItemStatus, EPublishedStatus, ESocketEventCode, FLOOR_BID_USER_ID } from '../../../src/globals';
+import { EItemStatus, EPublishedStatus, EUserType, ESocketEventCode, FLOOR_BID_USER_ID } from '../../../src/globals';
 import itemService from '../../../src/services/item-service';
 import auctionService from '../../../src/services/auction-service';
 import bidService from '../../../src/services/bid-service';
+import transactionService from '../../../src/services/transaction-service';
 import { connectTestDbReplSet, disconnectTestDb, clearTestDb } from '../../helpers/db';
 import { buildItem } from '../../helpers/factories/item.factory';
 import { buildBid } from '../../helpers/factories/bid.factory';
@@ -807,6 +809,89 @@ describe('item-service', () => {
       await new Promise((r) => setImmediate(r));
 
       expect(scheduleCloseLot).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── cancelItem ───────────────────────────────────────────────────────────
+
+  describe('cancelItem', () => {
+    function sellerFor(item: IItem) {
+      return { id: (item.sellerId as unknown as Types.ObjectId).toString(), userType: EUserType.SELLER } as any;
+    }
+
+    it('throws ForbiddenError for an ENDED (awarded) lot — awarded lots cannot be cancelled', async () => {
+      const sellerId = new Types.ObjectId();
+      const item = await seedItem({
+        status: EItemStatus.ENDED,
+        sellerId: sellerId as any,
+        winningBidder: new Types.ObjectId() as any,
+      });
+
+      await expect(itemService.cancelItem(sellerFor(item), item.id, 'Winner never paid')).rejects.toThrow(ForbiddenError);
+    });
+
+    it('allows cancel while the lot is NOT_BEGUN', async () => {
+      const sellerId = new Types.ObjectId();
+      const item = await seedItem({ status: EItemStatus.NOT_BEGUN, sellerId: sellerId as any });
+
+      const result = await itemService.cancelItem(sellerFor(item), item.id, 'Changed my mind');
+
+      expect(result.status).toBe(EItemStatus.CANCELLED);
+    });
+
+    it('allows cancel while the lot is ACTIVE', async () => {
+      const sellerId = new Types.ObjectId();
+      const item = await seedItem({ status: EItemStatus.ACTIVE, sellerId: sellerId as any });
+
+      const result = await itemService.cancelItem(sellerFor(item), item.id, 'No bidders');
+
+      expect(result.status).toBe(EItemStatus.CANCELLED);
+    });
+
+    it('allows cancel from AWAITING_FLOOR_REASSIGNMENT', async () => {
+      const sellerId = new Types.ObjectId();
+      const item = await seedItem({ status: EItemStatus.AWAITING_FLOOR_REASSIGNMENT, sellerId: sellerId as any });
+
+      const result = await itemService.cancelItem(sellerFor(item), item.id, 'Could not reassign');
+
+      expect(result.status).toBe(EItemStatus.CANCELLED);
+    });
+
+    it('throws ForbiddenError when the lot is already CANCELLED', async () => {
+      const sellerId = new Types.ObjectId();
+      const item = await seedItem({ status: EItemStatus.CANCELLED, sellerId: sellerId as any });
+
+      await expect(itemService.cancelItem(sellerFor(item), item.id, 'Cancel again')).rejects.toThrow(ForbiddenError);
+    });
+
+    it('throws ForbiddenError when the seller does not own the lot', async () => {
+      const item = await seedItem({ status: EItemStatus.ENDED });
+      const otherSeller = { id: new Types.ObjectId().toString(), userType: EUserType.SELLER } as any;
+
+      await expect(itemService.cancelItem(otherSeller, item.id, 'Not my lot')).rejects.toThrow(ForbiddenError);
+    });
+
+    it('throws NotFoundError for an unknown item', async () => {
+      const seller = { id: new Types.ObjectId().toString(), userType: EUserType.SELLER } as any;
+
+      await expect(itemService.cancelItem(seller, new Types.ObjectId().toString(), 'Ghost')).rejects.toThrow(NotFoundError);
+    });
+
+    it('initiates cancellation refunds and emits LOT_CANCELLED to the lot room', async () => {
+      const sellerId = new Types.ObjectId();
+      const item = await seedItem({ status: EItemStatus.ACTIVE, sellerId: sellerId as any });
+      (socketEmitter as any)._reset();
+
+      await itemService.cancelItem(sellerFor(item), item.id, 'Winner never paid');
+
+      await new Promise((r) => setImmediate(r));
+      expect(transactionService.initiateCancellationRefunds).toHaveBeenCalledWith(item.id);
+      expect((socketEmitter as any)._emittedEvents).toContainEqual(
+        expect.objectContaining({
+          room: `${item._id.toString()}-bid`,
+          event: ESocketEventCode.LOT_CANCELLED,
+        }),
+      );
     });
   });
 
