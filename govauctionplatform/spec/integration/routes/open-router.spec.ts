@@ -7,6 +7,15 @@ jest.mock('../../../src/shared/middleware', () => {
       next();
     },
     deserializeUser: (_req: any, _res: any, next: any) => next(),
+    // Optional auth — an `Authorization: Bearer bidder-<id>` header simulates a
+    // logged-in bidder so tests can exercise the myBidderNumber enrichment.
+    deserializeUserOptional: (req: any, _res: any, next: any) => {
+      const auth: string | undefined = req.headers['authorization'];
+      if (auth && auth.startsWith('Bearer bidder-')) {
+        req.user = { _id: auth.replace('Bearer bidder-', ''), userType: 'BIDDER' };
+      }
+      next();
+    },
     requireQueueApiKey: (_req: any, _res: any, next: any) => next(),
   };
 });
@@ -89,6 +98,7 @@ import auctionService from '../../../src/services/auction-service';
 import itemService from '../../../src/services/item-service';
 import categoryService from '../../../src/services/category-service';
 import openRouter, { p } from '../../../src/routes/open-router';
+import { Auction } from '../../../src/models/auction-model';
 import { CustomError } from '../../../src/shared/errors';
 
 // ─── App setup ────────────────────────────────────────────────────────────────
@@ -111,6 +121,7 @@ const app = buildApp();
 const ITEM_ID = new Types.ObjectId().toHexString();
 const AUCTION_ID = new Types.ObjectId().toHexString();
 const CATEGORY_ID = new Types.ObjectId().toHexString();
+const BIDDER_ID = 'bidder-abc123';
 const STUB_ITEM = { _id: ITEM_ID, title: { en: 'Item', tn: 'Item' } };
 const STUB_AUCTION = { _id: AUCTION_ID, title: { en: 'Auction', tn: 'Auction' } };
 
@@ -157,6 +168,55 @@ describe('open-router', () => {
       expect(res.body.item).toBeDefined();
     });
 
+    it('does not expose myBidderNumber to anonymous callers', async () => {
+      (itemService.getById as jest.Mock).mockResolvedValue({
+        ...STUB_ITEM,
+        auctionId: AUCTION_ID,
+      });
+      const res = await request(app).get(p.getItemById).query({ id: ITEM_ID });
+      expect(res.status).toBe(200);
+      expect(res.body.item.myBidderNumber).toBeUndefined();
+    });
+
+    it('exposes myBidderNumber when the caller has a number in this auction', async () => {
+      (itemService.getById as jest.Mock).mockResolvedValue({
+        ...STUB_ITEM,
+        auctionId: AUCTION_ID,
+      });
+      (auctionService.getById as jest.Mock).mockResolvedValue({
+        _id: AUCTION_ID,
+        participantsWithBiddingNumbers: [`${BIDDER_ID}:BIDDER007`],
+      });
+      const res = await request(app)
+        .get(p.getItemById)
+        .query({ id: ITEM_ID })
+        .set('Authorization', `Bearer bidder-${BIDDER_ID}`);
+      expect(res.status).toBe(200);
+      expect(res.body.item.myBidderNumber).toBe('BIDDER007');
+      // the auction participants lookup is scoped to the participants field
+      expect(auctionService.getById).toHaveBeenCalledWith(
+        AUCTION_ID,
+        { participantsWithBiddingNumbers: 1 }
+      );
+    });
+
+    it('omits myBidderNumber when the caller has no number in this auction', async () => {
+      (itemService.getById as jest.Mock).mockResolvedValue({
+        ...STUB_ITEM,
+        auctionId: AUCTION_ID,
+      });
+      (auctionService.getById as jest.Mock).mockResolvedValue({
+        _id: AUCTION_ID,
+        participantsWithBiddingNumbers: ['someone-else:BIDDER001'],
+      });
+      const res = await request(app)
+        .get(p.getItemById)
+        .query({ id: ITEM_ID })
+        .set('Authorization', `Bearer bidder-${BIDDER_ID}`);
+      expect(res.status).toBe(200);
+      expect(res.body.item.myBidderNumber).toBeUndefined();
+    });
+
     it('returns 400 when id is missing', async () => {
       const res = await request(app).get(p.getItemById).query({});
       expect(res.status).toBe(400);
@@ -169,6 +229,54 @@ describe('open-router', () => {
       const res = await request(app).get(p.getAuctionById).query({ id: AUCTION_ID });
       expect(res.status).toBe(200);
       expect(res.body.auction).toBeDefined();
+    });
+
+    it('does not expose myBidderNumber to anonymous callers', async () => {
+      const res = await request(app).get(p.getAuctionById).query({ id: AUCTION_ID });
+      expect(res.status).toBe(200);
+      expect(res.body.auction.myBidderNumber).toBeUndefined();
+    });
+
+    it('exposes myBidderNumber when the caller has a number in this auction', async () => {
+      (Auction.findById as jest.Mock).mockReturnValue({
+        populate: jest.fn().mockResolvedValue({
+          _id: AUCTION_ID,
+          title: { en: 'Auction', tn: 'Auction' },
+          participantsWithBiddingNumbers: [`${BIDDER_ID}:BIDDER007`],
+          toJSON: () => ({
+            _id: AUCTION_ID,
+            participantsWithBiddingNumbers: [`${BIDDER_ID}:BIDDER007`],
+          }),
+          requiredAttributes: [],
+        }),
+      });
+      const res = await request(app)
+        .get(p.getAuctionById)
+        .query({ id: AUCTION_ID })
+        .set('Authorization', `Bearer bidder-${BIDDER_ID}`);
+      expect(res.status).toBe(200);
+      expect(res.body.auction.myBidderNumber).toBe('BIDDER007');
+    });
+
+    it('omits myBidderNumber when the caller has no number in this auction', async () => {
+      (Auction.findById as jest.Mock).mockReturnValue({
+        populate: jest.fn().mockResolvedValue({
+          _id: AUCTION_ID,
+          title: { en: 'Auction', tn: 'Auction' },
+          participantsWithBiddingNumbers: ['someone-else:BIDDER001'],
+          toJSON: () => ({
+            _id: AUCTION_ID,
+            participantsWithBiddingNumbers: ['someone-else:BIDDER001'],
+          }),
+          requiredAttributes: [],
+        }),
+      });
+      const res = await request(app)
+        .get(p.getAuctionById)
+        .query({ id: AUCTION_ID })
+        .set('Authorization', `Bearer bidder-${BIDDER_ID}`);
+      expect(res.status).toBe(200);
+      expect(res.body.auction.myBidderNumber).toBeUndefined();
     });
 
     it('returns 400 when id is missing', async () => {
