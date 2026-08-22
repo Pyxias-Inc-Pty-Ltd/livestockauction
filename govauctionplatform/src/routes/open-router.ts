@@ -3,7 +3,7 @@ import { Request, Response, Router } from 'express';
 import StatusCodes from 'http-status-codes';
 import * as Joi from 'joi';
 import { isoAlpha2CountryValidation, isStringNumberLike, mongoIdValidation, phoneValidation, validatePaygateNotifyChecksum } from '../shared/functions';
-import { requireQueueApiKey } from '../shared/middleware';
+import { requireQueueApiKey, deserializeUserOptional } from '../shared/middleware';
 import transactionService from '../services/transaction-service';
 import { Transaction } from '../models/transaction-model';
 import auctionService from '../services/auction-service';
@@ -58,6 +58,21 @@ export const p = {
 } as const;
 
 /**
+ * Resolve a bidder's assigned number from an auction's participant list.
+ * Participants are stored as "userId:BIDDER001" strings (see transaction-service
+ * initiateItemReservation). Returns null when the user has no number in this auction.
+ */
+function resolveBidderNumber(
+  participantsWithBiddingNumbers: string[] | undefined,
+  userId: string
+): string | null {
+  const entry = (participantsWithBiddingNumbers ?? []).find(
+    (participant: string) => participant.split(':')[0] === userId
+  );
+  return entry ? entry.split(':')[1] : null;
+}
+
+/**
  * Get a category by id.
  */
 router.get(p.getCategoryById, async (req: Request, res: Response) => {
@@ -83,7 +98,7 @@ router.get(p.getCategoryById, async (req: Request, res: Response) => {
 /**
  * Get an item by id.
  */
-router.get(p.getItemById, async (req: Request, res: Response) => {
+router.get(p.getItemById, deserializeUserOptional, async (req: Request, res: Response) => {
   try {
     // Query checks
     const qSchema = Joi.object().keys({
@@ -97,7 +112,27 @@ router.get(p.getItemById, async (req: Request, res: Response) => {
 
     const { id } = req.query;
     const item = await itemService.getById(id as string);
-    return res.status(OK).json({ item });
+    const itemJson = typeof (item as { toJSON?: () => object })?.toJSON === 'function'
+      ? (item as { toJSON: () => object }).toJSON()
+      : item;
+
+    // Optional auth: when the caller is a participant, expose their bidding
+    // number for this lot's auction so the UI can greet them by number.
+    if (req.user && itemJson && item?.auctionId) {
+      const auction = await auctionService.getById(
+        item.auctionId.toString(),
+        { participantsWithBiddingNumbers: 1 }
+      );
+      const myBidderNumber = resolveBidderNumber(
+        auction?.participantsWithBiddingNumbers,
+        req.user._id.toString()
+      );
+      if (myBidderNumber) {
+        (itemJson as Record<string, unknown>).myBidderNumber = myBidderNumber;
+      }
+    }
+
+    return res.status(OK).json({ item: itemJson });
   } catch (error) {
     throw error;
   }
@@ -132,7 +167,7 @@ router.get(p.getItemByTitleSlug, async (req: Request, res: Response) => {
 /**
  * Get an auction by id.
  */
-router.get(p.getAuctionById, async (req: Request, res: Response) => {
+router.get(p.getAuctionById, deserializeUserOptional, async (req: Request, res: Response) => {
   try {
     // Query checks
     const qSchema = Joi.object().keys({
@@ -156,7 +191,21 @@ router.get(p.getAuctionById, async (req: Request, res: Response) => {
       requiredAttributeSlugs = attrs.map(a => a.nameSlug);
     }
 
-    return res.status(OK).json({ auction: { ...auction?.toJSON(), requiredAttributeSlugs } });
+    const auctionJson = { ...auction?.toJSON(), requiredAttributeSlugs } as Record<string, unknown>;
+
+    // Optional auth: when the caller is a participant, expose their bidding
+    // number so the UI can greet them by number.
+    if (req.user && auctionJson) {
+      const myBidderNumber = resolveBidderNumber(
+        auction?.participantsWithBiddingNumbers,
+        req.user._id.toString()
+      );
+      if (myBidderNumber) {
+        auctionJson.myBidderNumber = myBidderNumber;
+      }
+    }
+
+    return res.status(OK).json({ auction: auctionJson });
   } catch (error) {
     throw error;
   }
