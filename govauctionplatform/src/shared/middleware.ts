@@ -16,50 +16,86 @@ import userService from '../services/user-service';
  *  - Attach coarse realm roles to `req.roles`  (realm_access.roles)
  *  - Attach fine-grained permissions to `req.permissions` (resource_access[clientId].roles)
  */
+/**
+ * Verify a Keycloak-issued JWT (when a Bearer header is present) and attach the
+ * matching MongoDB user document to `req.user`, plus realm roles and client
+ * permissions. Returns `false` when no Authorization header is present (caller
+ * decides whether that is an error), and throws `UnauthorizedError` when a
+ * present token is malformed or invalid.
+ */
+async function tryDeserializeUser(req: Request): Promise<boolean> {
+  const bearerHeader = req.headers['authorization'];
+  if (!bearerHeader) {
+    return false;
+  }
+
+  const bearerToken = bearerHeader.split(' ')[1];
+  if (!bearerToken) {
+    throw new UnauthorizedError('Malformed authorization header');
+  }
+
+  // Verify signature, issuer, and audience against Keycloak JWKS endpoint.
+  // Enforcing audience ensures only tokens explicitly issued for this API are accepted,
+  // rejecting tokens intended for other clients (e.g. the frontend client itself).
+  const { payload } = await jwtVerify(bearerToken, JWKS, {
+    issuer: KEYCLOAK_ISSUER,
+    audience: KEYCLOAK_CLIENT_ID,
+  });
+
+  const keycloakId = payload.sub;
+  if (!keycloakId) {
+    throw new UnauthorizedError('Invalid token: missing sub claim');
+  }
+
+  // Populate req.roles from realm_access.roles
+  const realmAccess = payload.realm_access as { roles?: string[] } | undefined;
+  req.roles = realmAccess?.roles ?? [];
+
+  // Populate req.permissions from resource_access[clientId].roles
+  const resourceAccess = payload.resource_access as Record<string, { roles?: string[] }> | undefined;
+  req.permissions = resourceAccess?.[KEYCLOAK_CLIENT_ID]?.roles ?? [];
+
+  // Look up local profile by Keycloak user ID (needed for business logic)
+  const user = await userService.getByKeycloakId(keycloakId);
+  if (!user) {
+    throw new UnauthorizedError('User not found');
+  }
+
+  req.user = user;
+  return true;
+}
+
+/**
+ * Require a valid Keycloak JWT: verifies via JWKS, then attaches the matching
+ * MongoDB user document to `req.user`, coarse realm roles to `req.roles`, and
+ * fine-grained permissions to `req.permissions`. Requests without a token (or
+ * with an invalid one) are rejected with 401.
+ */
 export async function deserializeUser(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const bearerHeader = req.headers['authorization'];
-    if (!bearerHeader) {
+    const attached = await tryDeserializeUser(req);
+    if (!attached) {
       throw new UnauthorizedError('No token supplied');
     }
-
-    const bearerToken = bearerHeader.split(' ')[1];
-    if (!bearerToken) {
-      throw new UnauthorizedError('Malformed authorization header');
-    }
-
-    // Verify signature, issuer, and audience against Keycloak JWKS endpoint.
-    // Enforcing audience ensures only tokens explicitly issued for this API are accepted,
-    // rejecting tokens intended for other clients (e.g. the frontend client itself).
-    const { payload } = await jwtVerify(bearerToken, JWKS, {
-      issuer: KEYCLOAK_ISSUER,
-      audience: KEYCLOAK_CLIENT_ID,
-    });
-
-    const keycloakId = payload.sub;
-    if (!keycloakId) {
-      throw new UnauthorizedError('Invalid token: missing sub claim');
-    }
-
-    // Populate req.roles from realm_access.roles
-    const realmAccess = payload.realm_access as { roles?: string[] } | undefined;
-    req.roles = realmAccess?.roles ?? [];
-
-    // Populate req.permissions from resource_access[clientId].roles
-    const resourceAccess = payload.resource_access as Record<string, { roles?: string[] }> | undefined;
-    req.permissions = resourceAccess?.[KEYCLOAK_CLIENT_ID]?.roles ?? [];
-
-    // Look up local profile by Keycloak user ID (needed for business logic)
-    const user = await userService.getByKeycloakId(keycloakId);
-    if (!user) {
-      throw new UnauthorizedError('User not found');
-    }
-
-    req.user = user;
     next();
   } catch (error) {
     next(error);
   }
+}
+
+/**
+ * Optional-auth variant for public routes: attaches `req.user` (plus
+ * `req.roles` / `req.permissions`) when a valid Bearer token is present, and
+ * proceeds anonymously otherwise. Never rejects the request — callers that use
+ * this must not require authentication.
+ */
+export async function deserializeUserOptional(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    await tryDeserializeUser(req);
+  } catch {
+    // Invalid or malformed token on a public route — continue anonymously.
+  }
+  next();
 }
 
 // ---------------------------------------------------------------------------
