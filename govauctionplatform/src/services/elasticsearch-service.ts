@@ -99,6 +99,19 @@ class ElasticsearchService {
         publishedBy: auction.publishedBy?.toString(),
         isBeingLivestreamed: auction.isBeingLivestreamed,
         streamUrl: auction.streamUrl,
+        // streamKey is deliberately NOT indexed: this index backs a public search endpoint and
+        // the key identifies the stream. The public auction routes withhold the field from
+        // anonymous callers, and no player consumes it yet, so keeping it out of this index is
+        // what makes adding it later a deliberate act.
+        //
+        // No `?? EMBED` guard here. For the case that actually occurs — an auction written
+        // before streamProvider existed, so the path is absent — the schema's `default` fills
+        // it in on hydration, so a guard changes nothing; elasticsearch-service.spec.ts pins
+        // that behaviour. Scope of this claim: absent only. A stored `null` would pass through
+        // unguarded (measured), unlike with a guard. That state is not reachable from the
+        // application — streamProvider reaches Mongo through Joi, which accepts exactly
+        // 'embed' and 'media_server' — so there is no path to add handling for.
+        streamProvider: auction.streamProvider,
         createdDate: auction.createdDate,
         updatedDate: auction.updatedDate
       };

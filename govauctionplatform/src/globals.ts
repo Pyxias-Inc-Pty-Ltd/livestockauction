@@ -592,6 +592,33 @@ export enum EParticipationType {
   EVERYONE = "EVERYONE"
 }
 
+/**
+ * Where a livestreamed auction's video actually comes from.
+ *
+ * - EMBED: a third-party player URL (YouTube and friends), stored verbatim in `streamUrl`
+ *   and rendered in an iframe. Providers document 20-60s of latency.
+ * - MEDIA_SERVER: our own media server deployment. `streamKey` identifies the stream and the
+ *   publish/playback URLs are derived from it, so nothing is typed by hand. The name is
+ *   deliberately vendor- and protocol-neutral, because neither vendor nor protocol is what
+ *   this field decides — see the `streamKey` field comment in models/auction-model.ts for the
+ *   server actually in use and the mechanism it still needs.
+ *
+ * The intended audience is signed-in users only, with no anonymous tier, so HLS is a fallback
+ * transport rather than a second tier for a crowd. Latency is not measured: the target is
+ * sub-second over WebRTC, and that is a vendor figure until a glass-to-glass measurement
+ * replaces it.
+ *
+ * Only the schema groundwork is built — neither the player nor publish authorisation exists
+ * yet, and nothing on the media server enforces the audience rule above.
+ *
+ * Defaults to EMBED so auctions created before our own media server existed keep working
+ * untouched.
+ */
+export enum EStreamProvider {
+  EMBED = "embed",
+  MEDIA_SERVER = "media_server"
+}
+
 export enum EIdentityNumberVerificationStatus {
   PENDING = "PENDING",
   VERIFIED = "VERIFIED",

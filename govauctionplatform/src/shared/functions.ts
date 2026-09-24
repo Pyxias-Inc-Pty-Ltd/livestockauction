@@ -854,6 +854,34 @@ export function generateAuctionNumber(currentCount: number): string {
 }
 
 /**
+ * Generates a stream name for our own media server.
+ *
+ * The publish and playback URLs for the auction are derived from this name, so it has to be
+ * URL-safe. It is NOT a publish credential: the name is public to anyone who is signed in,
+ * because it is part of the playback URL each signed-in viewer receives, so its unpredictability
+ * is not a security property and nothing should rely on it being secret. The API withholds the
+ * field from anonymous callers, but that is defence in depth, not the control. Publish
+ * authorisation is a separate mechanism that is not built yet (see the `streamKey` field
+ * comment in auction-model.ts).
+ *
+ * It is generated here rather than accepted from a caller so that nobody can choose a name
+ * which collides with another auction's stream. The entropy serves that collision-resistance;
+ * 16 bytes is ~128 bits.
+ *
+ * @param {number} [bytes=16] Number of random bytes to derive the name from.
+ * @returns {string} A URL-safe stream name, e.g. `auc-3f9c1a...`.
+ * @throws {Error} If random byte generation fails.
+ */
+export function generateStreamKey(bytes = 16): string {
+  try {
+    return `auc-${randomBytes(bytes).toString('hex')}`;
+  } catch (err) {
+    console.error('Error generating stream key:', err);
+    throw err;
+  }
+}
+
+/**
  * Formats a phone number to remove spaces and country code prefix.
  * @param {string} phoneNumber - The phone number in international format.
  * @return {string} - The formatted phone number or null if invalid.

@@ -205,6 +205,17 @@ router.get(p.getAuctionById, deserializeUserOptional, async (req: Request, res: 
       }
     }
 
+    // Withhold the stream name from anonymous callers. Presence of req.user is the whole
+    // test — deliberately not an ownership check. Watching a livestream is gated on being
+    // signed in, not on owning the auction, so a bidder needs streamKey to build the
+    // playback URL. That is also why this is deleted here rather than in the model's
+    // toJSON transform: that transform is not identity-aware, and removing the field
+    // globally would also strip it from the seller's own edit screen, which loads its
+    // auction through this same public route.
+    if (!req.user) {
+      delete auctionJson.streamKey;
+    }
+
     return res.status(OK).json({ auction: auctionJson });
   } catch (error) {
     throw error;
@@ -230,7 +241,14 @@ router.get(p.getAuctionByTitleSlug, async (req: Request, res: Response) => {
     Joi.assert(req.query, qSchema);
 
     const { titleSlug, lang } = req.query;
-    const auction = await auctionService.getByTitleSlug(titleSlug as string, lang as languageType);
+    // This route carries no auth middleware, so every caller is anonymous and the stream
+    // name is excluded unconditionally — there is no signed-in branch to preserve, unlike
+    // getAuctionById. Exclusion-only projection: do not add inclusion fields to it.
+    const auction = await auctionService.getByTitleSlug(
+      titleSlug as string,
+      lang as languageType,
+      { streamKey: 0 }
+    );
     return res.status(OK).json({ auction });
   } catch (error) {
     throw error;
@@ -617,7 +635,10 @@ router.get(p.getAuctions, async (req: Request, res: Response) => {
     // Ensures only published auctions are returned
     conditions.set('publishedStatus', EPublishedStatus.PUBLISHED);
 
-    const auctions = await auctionService.getAuctions(conditions);
+    // Like getAuctionByTitleSlug, this route carries no auth middleware, so the stream name
+    // is excluded unconditionally. The list view never needs it: a bidder builds the playback
+    // URL from the auction detail response, which serves it to signed-in callers.
+    const auctions = await auctionService.getAuctions(conditions, { streamKey: 0 });
     return res.status(OK).json({ auctions });
   } catch (error) {
     throw error;

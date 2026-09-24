@@ -66,6 +66,7 @@ import {
   EPublishedStatus,
   EParticipationType,
   ESectorType,
+  EStreamProvider,
 } from '../../../src/globals';
 import auctionService from '../../../src/services/auction-service';
 import categoryService from '../../../src/services/category-service';
@@ -183,6 +184,33 @@ describe('auction-service', () => {
       expect(result).not.toBeNull();
       expect(result!.titleSlug.tn).toBe('my-auction-tn2');
     });
+
+    // The public slug route passes `{ streamKey: 0 }`. Without the control below, the
+    // exclusion test would pass against an auction that simply had no key stored — the
+    // assertion could not exhibit the difference it names.
+    it('omits streamKey when the caller passes an exclusion projection', async () => {
+      await seedAuction({
+        titleSlug: { en: 'projected-auction', tn: 'projected-auction' },
+        streamKey: 'auc-abcdef0123456789abcdef0123456789',
+      });
+      const result = await auctionService.getByTitleSlug('projected-auction', 'en', {
+        streamKey: 0,
+      });
+      expect(result).not.toBeNull();
+      expect(result!.streamKey).toBeUndefined();
+      // The rest of the document still comes back — the projection is exclusion-only.
+      expect(result!.titleSlug.en).toBe('projected-auction');
+    });
+
+    it('returns streamKey when no projection is given', async () => {
+      await seedAuction({
+        titleSlug: { en: 'unprojected-auction', tn: 'unprojected-auction' },
+        streamKey: 'auc-abcdef0123456789abcdef0123456789',
+      });
+      const result = await auctionService.getByTitleSlug('unprojected-auction', 'en');
+      expect(result).not.toBeNull();
+      expect(result!.streamKey).toBe('auc-abcdef0123456789abcdef0123456789');
+    });
   });
 
   // ─── getAuctions ───────────────────────────────────────────────────────────
@@ -192,6 +220,23 @@ describe('auction-service', () => {
       await expect(
         auctionService.getAuctions(new Map([['limit', 101]]))
       ).rejects.toThrow(ForbiddenError);
+    });
+
+    // The public list route passes `{ streamKey: 0 }` for the same reason the slug route does.
+    // The control below is what makes the exclusion test non-vacuous: without it, the
+    // assertion would pass against auctions that simply had no key stored.
+    it('omits streamKey when the caller passes an exclusion projection', async () => {
+      await seedAuction({ streamKey: 'auc-abcdef0123456789abcdef0123456789' });
+      const results = await auctionService.getAuctions(new Map(), { streamKey: 0 });
+      expect(results).toHaveLength(1);
+      expect(results[0].streamKey).toBeUndefined();
+    });
+
+    it('returns streamKey when no projection is given', async () => {
+      await seedAuction({ streamKey: 'auc-abcdef0123456789abcdef0123456789' });
+      const results = await auctionService.getAuctions(new Map());
+      expect(results).toHaveLength(1);
+      expect(results[0].streamKey).toBe('auc-abcdef0123456789abcdef0123456789');
     });
 
     it('returns all auctions when no filters applied', async () => {
@@ -630,6 +675,235 @@ describe('auction-service', () => {
       expect(result.status).toBe('NOT_BEGUN');
       const stored = await Auction.findById(result._id);
       expect(stored).not.toBeNull();
+    });
+
+    // ── streamKey generation ────────────────────────────────────────────────
+    // The stream identity only matters for our own media server; an embed auction must not
+    // grow one. These assert the persisted document, not just the returned value, because
+    // that is what a later phase would read.
+
+    it('generates a streamKey for a media-server livestream', async () => {
+      const input = makeAuctionInput({
+        isBeingLivestreamed: true,
+        streamProvider: EStreamProvider.MEDIA_SERVER,
+      });
+
+      const result = await auctionService.createAuction(mockAdmin, input);
+
+      const stored = await Auction.findById(result._id);
+      expect(stored?.streamKey).toMatch(/^auc-[0-9a-f]{32}$/);
+    });
+
+    it('does not generate a streamKey for an embed livestream', async () => {
+      const input = makeAuctionInput({
+        isBeingLivestreamed: true,
+        streamProvider: EStreamProvider.EMBED,
+        streamUrl: 'https://youtube.com/live/abc',
+      });
+
+      const result = await auctionService.createAuction(mockAdmin, input);
+
+      const stored = await Auction.findById(result._id);
+      expect(stored?.streamKey).toBeUndefined();
+    });
+
+    it('does not generate a streamKey when the auction is not livestreamed', async () => {
+      const input = makeAuctionInput({
+        isBeingLivestreamed: false,
+        streamProvider: EStreamProvider.MEDIA_SERVER,
+      });
+
+      const result = await auctionService.createAuction(mockAdmin, input);
+
+      const stored = await Auction.findById(result._id);
+      expect(stored?.streamKey).toBeUndefined();
+    });
+
+    it('drops a client-supplied streamKey on the embed path', async () => {
+      // The embed path is where the delete is the *only* defence: no key is minted here, so
+      // nothing would overwrite a caller-chosen value. Route through the embed path for that
+      // reason — a media-server-path version of this test passes with or without the delete, because
+      // the mint covers for it, and so tests nothing about the guard.
+      const input = makeAuctionInput({
+        isBeingLivestreamed: true,
+        streamProvider: EStreamProvider.EMBED,
+        streamUrl: 'https://youtube.com/live/abc',
+        streamKey: 'auc-client-chosen',
+      } as any);
+
+      const result = await auctionService.createAuction(mockAdmin, input);
+
+      const stored = await Auction.findById(result._id);
+      expect(stored?.streamProvider).toBe(EStreamProvider.EMBED);
+      expect(stored?.streamKey).toBeUndefined();
+    });
+  });
+
+  // ─── Model-level regression guard for existing (embed) auctions ────────────
+  //
+  // The media-server path must not weaken the rule that every pre-existing livestreamed auction
+  // obeys: a livestream needs a streamUrl unless it is on our own media server. Checked at
+  // the model, because the model — not Joi — is what rejects the save.
+
+  describe('auction model — streamUrl requirement survives the media-server branch', () => {
+    /** A document that satisfies every other model requirement, so the only possible
+     *  validation failure is the streamUrl rule under test. */
+    function documentFor(overrides: Partial<IAuction>) {
+      return {
+        ...buildAuction(),
+        thumbnailUrl: 'https://example.com/thumb.jpg',
+        auctionCoordinates: { type: 'Point', coordinates: [25.91, -24.65] },
+        publishedBy: new Types.ObjectId(),
+        ...overrides,
+      } as any;
+    }
+
+    it('still rejects a livestreamed auction with no streamUrl and no provider', async () => {
+      // No streamProvider written => the schema default makes this an embed auction, so the
+      // old requirement applies exactly as it did before this change.
+      await expect(Auction.create(documentFor({
+        isBeingLivestreamed: true,
+        streamUrl: undefined,
+        streamProvider: undefined,
+      } as Partial<IAuction>))).rejects.toThrow(/streamUrl/);
+    });
+
+    it('accepts a livestreamed embed auction that supplies a streamUrl', async () => {
+      await expect(Auction.create(documentFor({
+        isBeingLivestreamed: true,
+        streamUrl: 'https://youtube.com/live/abc',
+        streamProvider: EStreamProvider.EMBED,
+      } as Partial<IAuction>))).resolves.toBeDefined();
+    });
+
+    it('accepts a livestreamed media-server auction with no streamUrl', async () => {
+      await expect(Auction.create(documentFor({
+        isBeingLivestreamed: true,
+        streamUrl: undefined,
+        streamProvider: EStreamProvider.MEDIA_SERVER,
+        streamKey: 'auc-abcdef0123456789abcdef0123456789',
+      } as Partial<IAuction>))).resolves.toBeDefined();
+    });
+
+    it('accepts a non-livestreamed auction with no streamUrl', async () => {
+      await expect(Auction.create(documentFor({
+        isBeingLivestreamed: false,
+        streamUrl: undefined,
+      } as Partial<IAuction>))).resolves.toBeDefined();
+    });
+  });
+
+  // ─── updateAuction: streamKey invariant ───────────────────────────────────
+
+  describe('updateAuction — streamKey invariant', () => {
+    /** An editable (unpublished) auction owned by the caller. */
+    async function seedEditableAuction(overrides: Partial<IAuction> = {}) {
+      const creatorId = new Types.ObjectId();
+      const data = {
+        ...buildAuction(),
+        thumbnailUrl: 'https://example.com/thumb.jpg',
+        auctionCoordinates: { type: 'Point', coordinates: [25.91, -24.65] },
+        creatorId,
+        publishedStatus: EPublishedStatus.UNPUBLISHED,
+        isBeingLivestreamed: false,
+        streamProvider: EStreamProvider.EMBED,
+        ...overrides,
+      };
+      // insertOne matches the house pattern here, and deliberately bypasses the schema so a
+      // fixture can hold a state the model would reject (e.g. a hand-written streamKey).
+      await Auction.collection.insertOne(data as any);
+      const seeded = (await Auction.findById(data._id))!;
+      return { auction: seeded, seller: { _id: creatorId } as any };
+    }
+
+    it('mints a streamKey when an existing auction is switched to the media server', async () => {
+      // The defect this guards: findByIdAndUpdate runs no validators, so without explicit
+      // handling here the auction persists as media-server + livestreamed with no stream identity.
+      const { auction, seller } = await seedEditableAuction();
+
+      await auctionService.updateAuction(seller, auction._id.toString(), {
+        streamProvider: EStreamProvider.MEDIA_SERVER,
+        isBeingLivestreamed: true,
+      } as Partial<IAuctionInput>);
+
+      const stored = await Auction.findById(auction._id);
+      expect(stored?.isBeingLivestreamed).toBe(true);
+      expect(stored?.streamProvider).toBe(EStreamProvider.MEDIA_SERVER);
+      expect(stored?.streamKey).toMatch(/^auc-[0-9a-f]{32}$/);
+    });
+
+    it('mints a streamKey when an already-livestreamed auction switches to the media server', async () => {
+      // Same invariant reached by a different route: provider changed, livestream flag
+      // left alone, so the effective state must be read from the stored auction.
+      const { auction, seller } = await seedEditableAuction({ isBeingLivestreamed: true });
+
+      await auctionService.updateAuction(seller, auction._id.toString(), {
+        streamProvider: EStreamProvider.MEDIA_SERVER,
+      } as Partial<IAuctionInput>);
+
+      const stored = await Auction.findById(auction._id);
+      expect(stored?.streamKey).toMatch(/^auc-[0-9a-f]{32}$/);
+    });
+
+    it('preserves an existing streamKey instead of rotating it', async () => {
+      // Rotating would invalidate the ingest URL already configured in the seller's encoder
+      // and cut a live stream, so an edit must not touch it.
+      const { auction, seller } = await seedEditableAuction({
+        isBeingLivestreamed: true,
+        streamProvider: EStreamProvider.MEDIA_SERVER,
+        streamKey: 'auc-existingkey00000000000000000000',
+      });
+
+      await auctionService.updateAuction(seller, auction._id.toString(), {
+        auctionLocation: 'Francistown',
+      } as Partial<IAuctionInput>);
+
+      const stored = await Auction.findById(auction._id);
+      expect(stored?.streamKey).toBe('auc-existingkey00000000000000000000');
+    });
+
+    it('does not mint a streamKey for an embed auction', async () => {
+      const { auction, seller } = await seedEditableAuction();
+
+      await auctionService.updateAuction(seller, auction._id.toString(), {
+        isBeingLivestreamed: true,
+        streamProvider: EStreamProvider.EMBED,
+        streamUrl: 'https://youtube.com/live/abc',
+      } as Partial<IAuctionInput>);
+
+      const stored = await Auction.findById(auction._id);
+      expect(stored?.streamKey).toBeUndefined();
+    });
+
+    it('does not mint a streamKey when switching to the media server but not livestreaming', async () => {
+      const { auction, seller } = await seedEditableAuction();
+
+      await auctionService.updateAuction(seller, auction._id.toString(), {
+        streamProvider: EStreamProvider.MEDIA_SERVER,
+        isBeingLivestreamed: false,
+      } as Partial<IAuctionInput>);
+
+      const stored = await Auction.findById(auction._id);
+      expect(stored?.streamKey).toBeUndefined();
+    });
+
+    it('does not let a client-supplied streamKey overwrite an existing one', async () => {
+      // The mint is conditional on there being no key, so for an auction that already has one
+      // the delete is the only thing between `input` spread into `$set` and a caller rewriting
+      // a live stream's identity. The earlier version of this test used a key-less auction,
+      // where the mint overwrote the client value and the assertion passed either way.
+      const { auction, seller } = await seedEditableAuction({
+        isBeingLivestreamed: true,
+        streamProvider: EStreamProvider.MEDIA_SERVER,
+        streamKey: 'auc-existingkey00000000000000000000',
+      });
+
+      await auctionService.updateAuction(seller, auction._id.toString(), {
+        streamKey: 'auc-client-chosen',
+      } as any);
+
+      const stored = await Auction.findById(auction._id);
+      expect(stored?.streamKey).toBe('auc-existingkey00000000000000000000');
     });
   });
 });
