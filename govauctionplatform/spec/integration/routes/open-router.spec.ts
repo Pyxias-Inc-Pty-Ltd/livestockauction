@@ -122,6 +122,7 @@ const ITEM_ID = new Types.ObjectId().toHexString();
 const AUCTION_ID = new Types.ObjectId().toHexString();
 const CATEGORY_ID = new Types.ObjectId().toHexString();
 const BIDDER_ID = 'bidder-abc123';
+const STREAM_KEY = 'auc-abcdef0123456789abcdef0123456789';
 const STUB_ITEM = { _id: ITEM_ID, title: { en: 'Item', tn: 'Item' } };
 const STUB_AUCTION = { _id: AUCTION_ID, title: { en: 'Auction', tn: 'Auction' } };
 
@@ -283,6 +284,78 @@ describe('open-router', () => {
       const res = await request(app).get(p.getAuctionById).query({});
       expect(res.status).toBe(400);
     });
+
+    // The stream name is what an attacker would use to publish to this auction, so it is
+    // withheld from anonymous callers — and withheld *conditionally*, because a signed-in
+    // bidder needs it to build the playback URL. Both halves are asserted; a test that
+    // only checked one would pass with the gate removed or with it inverted.
+    it('does not expose streamKey to anonymous callers', async () => {
+      (Auction.findById as jest.Mock).mockReturnValue({
+        populate: jest.fn().mockResolvedValue({
+          _id: AUCTION_ID,
+          title: { en: 'Auction', tn: 'Auction' },
+          toJSON: () => ({
+            _id: AUCTION_ID,
+            title: { en: 'Auction', tn: 'Auction' },
+            streamKey: STREAM_KEY,
+          }),
+          requiredAttributes: [],
+        }),
+      });
+      const res = await request(app).get(p.getAuctionById).query({ id: AUCTION_ID });
+      expect(res.status).toBe(200);
+      expect(res.body.auction.streamKey).toBeUndefined();
+    });
+
+    it('exposes streamKey to a signed-in caller', async () => {
+      (Auction.findById as jest.Mock).mockReturnValue({
+        populate: jest.fn().mockResolvedValue({
+          _id: AUCTION_ID,
+          title: { en: 'Auction', tn: 'Auction' },
+          toJSON: () => ({
+            _id: AUCTION_ID,
+            title: { en: 'Auction', tn: 'Auction' },
+            streamKey: STREAM_KEY,
+          }),
+          requiredAttributes: [],
+        }),
+      });
+      const res = await request(app)
+        .get(p.getAuctionById)
+        .query({ id: AUCTION_ID })
+        .set('Authorization', `Bearer bidder-${BIDDER_ID}`);
+      expect(res.status).toBe(200);
+      expect(res.body.auction.streamKey).toBe(STREAM_KEY);
+    });
+  });
+
+  describe('GET /getAuctionByTitleSlug', () => {
+    // This route carries no auth middleware, so no caller on it can be signed in. The
+    // route's whole contribution is the projection it passes; that the projection actually
+    // excludes the field is pinned against a real database in
+    // spec/unit/services/auction-service.spec.ts ("getByTitleSlug — projection").
+    it('passes an exclusion projection for the stream name', async () => {
+      (auctionService.getByTitleSlug as jest.Mock).mockResolvedValue({
+        _id: AUCTION_ID,
+        titleSlug: { en: 'my-auction', tn: 'my-auction' },
+      });
+      const res = await request(app)
+        .get(p.getAuctionByTitleSlug)
+        .query({ titleSlug: 'my-auction', lang: 'en' });
+      expect(res.status).toBe(200);
+      expect(auctionService.getByTitleSlug).toHaveBeenCalledWith(
+        'my-auction',
+        'en',
+        { streamKey: 0 }
+      );
+    });
+
+    it('returns 400 when lang is missing', async () => {
+      const res = await request(app)
+        .get(p.getAuctionByTitleSlug)
+        .query({ titleSlug: 'my-auction' });
+      expect(res.status).toBe(400);
+    });
   });
 
   describe('GET /getAuctions', () => {
@@ -298,6 +371,22 @@ describe('open-router', () => {
     it('returns 400 when sortOrder is missing', async () => {
       const res = await request(app).get(p.getAuctions).query({ sortBy: 'DATE', limit: '10' });
       expect(res.status).toBe(400);
+    });
+
+    // The list is a third public route that returned the full document. It is anonymous by
+    // construction (no auth middleware), so the exclusion is unconditional — same shape as
+    // getAuctionByTitleSlug. That the projection actually excludes the field is pinned
+    // against a real database in spec/unit/services/auction-service.spec.ts.
+    it('passes an exclusion projection for the stream name', async () => {
+      (auctionService.getAuctions as jest.Mock).mockResolvedValue([STUB_AUCTION]);
+      const res = await request(app)
+        .get(p.getAuctions)
+        .query({ sortOrder: 'asc', sortBy: 'DATE', limit: '10' });
+      expect(res.status).toBe(200);
+      expect(auctionService.getAuctions).toHaveBeenCalledWith(
+        expect.any(Map),
+        { streamKey: 0 }
+      );
     });
   });
 

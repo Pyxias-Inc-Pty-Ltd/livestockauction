@@ -1,6 +1,6 @@
 import { ConflictError, ForbiddenError, InternalServerError, NotFoundError } from '../shared/errors';
 import { Schema, model, Document } from 'mongoose';
-import { EModels, EAuctionStatus, participationType, EParticipationType, sectorType, auctionStatus, ENVIRONMENT_PRODUCTION, publishedStatus, EPublishedStatus, SERVICE_URLS, auctionRejectedEmailTemplate, KEY_SECRET, auctionApprovalReminderEmailTemplate, ESectorType, EAttachmentType } from '../globals';
+import { EModels, EAuctionStatus, participationType, EParticipationType, sectorType, auctionStatus, ENVIRONMENT_PRODUCTION, publishedStatus, EPublishedStatus, SERVICE_URLS, auctionRejectedEmailTemplate, KEY_SECRET, auctionApprovalReminderEmailTemplate, ESectorType, EAttachmentType, EStreamProvider } from '../globals';
 import { generateSlug } from '../shared/functions';
 import { isURL } from 'validator';
 import * as axios from 'axios';
@@ -68,6 +68,8 @@ export interface IAuction extends Document {
   isBeingLivestreamed: boolean;
   isClosedBidding: boolean;
   streamUrl: string;
+  streamProvider: EStreamProvider;
+  streamKey?: string;
   currentLotId?: Schema.Types.ObjectId | null;
   thumbnailUrl: string;
   attachments?: IAuctionAttachment[];
@@ -107,6 +109,7 @@ export interface IAuctionInput {
   isBeingLivestreamed: boolean;
   isClosedBidding: boolean;
   streamUrl?: string;
+  streamProvider?: EStreamProvider;
   thumbnailUrl: string;
   collectionWindowDays: number;
   collectionStartTime: string;
@@ -199,7 +202,15 @@ const auctionSchema = new Schema<IAuction>({
   isClosedBidding: { type: Boolean, required: true, default: false },
   currentLotId: { type: Schema.Types.ObjectId, ref: EModels.ITEM, default: null },
   streamUrl: {type: String, required: function (): boolean {
-    return (this as IAuction).isBeingLivestreamed;
+    const auction = this as IAuction;
+    // An embed needs a URL to embed; our own media server derives its publish and playback
+    // URLs from streamKey, so there is nothing for the caller to supply. Auction documents
+    // written before streamProvider existed hydrate with the 'embed' default, so the
+    // comparison below keeps their behaviour unchanged.
+    //
+    // This mirrors the Joi rule in shared/auction-validation.ts. Both layers must agree: Joi
+    // alone is not enough, because the model is what actually rejects the save.
+    return auction.isBeingLivestreamed && auction.streamProvider !== EStreamProvider.MEDIA_SERVER;
   }, validate: {
     msg: 'Valid URL must be supplied.',
       validator: function (v: string): boolean {
@@ -210,6 +221,36 @@ const auctionSchema = new Schema<IAuction>({
           return true;
         }
       }
+    }
+  },
+  streamProvider: {
+    type: String,
+    enum: [EStreamProvider.EMBED, EStreamProvider.MEDIA_SERVER],
+    default: EStreamProvider.EMBED
+  },
+  // The stream *name* on our own media server (MediaMTX). Server-generated so a client
+  // cannot pick a name that collides with another auction's stream.
+  //
+  // This is NOT the publish credential. The name is public to every signed-in user, because it
+  // is part of the playback URL they receive, so gating publishing on its secrecy would mean
+  // "anyone who can watch can broadcast". Every public auction read route withholds the field
+  // from anonymous callers (see routes/open-router.ts), but that only narrows who reads it; it
+  // is not the control. Publish authorisation therefore has to be a separate mechanism, and it
+  // is NOT BUILT YET: the intended one is MediaMTX's HTTP auth hook, which asks a backend
+  // endpoint to allow or deny each publish/read event, checked against a per-auction publish
+  // token held by the owner. Until that exists a stream is protected by name secrecy alone, so
+  // do not ship ingest before it lands.
+  //
+  // Sparse+unique mirrors the pattern already used by RequiredAttribute.nameSlug.
+  streamKey: {
+    type: String,
+    trim: true,
+    sparse: true,
+    unique: true,
+    required: function (this: IAuction): boolean {
+      // Auctions predating streamProvider have it undefined; those are embed auctions and
+      // deliberately need no key.
+      return this.isBeingLivestreamed && this.streamProvider === EStreamProvider.MEDIA_SERVER;
     }
   },
   thumbnailUrl: {type: String, required: true, validate: {
