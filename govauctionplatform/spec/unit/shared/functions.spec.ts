@@ -23,6 +23,7 @@ import {
   hashOTP,
   verifyOTP,
   generateAuctionNumber,
+  generateStreamKey,
   formatPhoneNumber,
   normalizeAndCompareNames,
   getAnimalByEID,
@@ -235,6 +236,31 @@ describe('generateAuctionNumber', () => {
   it('increments the count correctly', () => {
     expect(generateAuctionNumber(4).slice(-3)).toBe('005');
     expect(generateAuctionNumber(99).slice(-3)).toBe('100');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// generateStreamKey
+// ─────────────────────────────────────────────────────────────────────────────
+describe('generateStreamKey', () => {
+  it('returns a stream name with the auc- prefix and 128 bits of hex', () => {
+    expect(generateStreamKey()).toMatch(/^auc-[0-9a-f]{32}$/);
+  });
+
+  it('does not repeat itself across many calls', () => {
+    // A constant, a counter, or a truncated buffer would collapse this set.
+    const keys = new Set(Array.from({ length: 200 }, () => generateStreamKey()));
+    expect(keys.size).toBe(200);
+  });
+
+  it('honours a custom byte length', () => {
+    expect(generateStreamKey(8)).toMatch(/^auc-[0-9a-f]{16}$/);
+  });
+
+  it('is usable verbatim as a URL path segment without escaping', () => {
+    // Every publish and playback URL embeds this name directly.
+    const key = generateStreamKey();
+    expect(encodeURIComponent(key)).toBe(key);
   });
 });
 
