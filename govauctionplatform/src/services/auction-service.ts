@@ -1,9 +1,9 @@
 import { Bidder, IBidder, IAdmin, IAuctionApprover, ISeller, User } from "../models/user-model";
-import { generateAuctionNumber, isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
+import { generateAuctionNumber, generateStreamKey, isBeforeStartDate, isStartDateBeforeEndDate } from "../shared/functions";
 import { ForbiddenError, NotFoundError } from "../shared/errors";
 import { isMongoId } from "validator";
 import { ClientSession, Schema, startSession, Types } from 'mongoose';
-import { MAX_GEO_DISTANCE_AUCTION, EAuctionSortType, EAuctionStatus, EItemStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, languageType, SERVICE_URLS, KEY_SECRET, auctionInviteEmailTemplate, ETransactionType, EPaymentStatus, ESectorType, EAttachmentType } from "../globals";
+import { MAX_GEO_DISTANCE_AUCTION, EAuctionSortType, EAuctionStatus, EItemStatus, EModels, EPublishedStatus, ESortOrderType, LIST_LIMIT_NUMBER, MAX_LIST_LIMIT_NUMBER, languageType, SERVICE_URLS, KEY_SECRET, auctionInviteEmailTemplate, ETransactionType, EPaymentStatus, ESectorType, EAttachmentType, EStreamProvider } from "../globals";
 import { Auction, IAuction, IAuctionInput, IAuctionAttachment, IRequiredAttribute, IRequiredAttributeInput, RequiredAttribute } from "../models/auction-model";
 import * as axios from "axios";
 import categoryService from "./category-service";
@@ -22,11 +22,25 @@ async function createAuction(currentUser: IAdmin, input: IAuctionInput): Promise
   let sess: ClientSession | null = null;
 
   try {
+    // streamKey is server-owned on every path, so drop any caller-supplied value before it can
+    // reach the document. `IAuctionInput` does not declare the field and the router's Joi schema
+    // rejects it, but neither is an enforcement mechanism at this boundary: TypeScript does not
+    // strip undeclared properties at runtime, and Mongoose will happily set a schema path it
+    // finds on the input object. Without this delete an embed-path caller's chosen key would be
+    // persisted, which is exactly the collision the generator exists to prevent.
+    delete (input as any).streamKey;
+
     const newAuction = new Auction(input);
 
     newAuction.creatorId = currentUser.id;
     const currentCount = await Auction.count();
     newAuction.auctionNumber = generateAuctionNumber(currentCount);
+
+    // Our own media server needs a stream name before the auction can be broadcast, and every
+    // publish/playback URL is derived from it. Generated here, never read from input.
+    if (newAuction.isBeingLivestreamed && newAuction.streamProvider === EStreamProvider.MEDIA_SERVER) {
+      newAuction.streamKey = generateStreamKey();
+    }
 
     if (!isBeforeStartDate(new Date(), new Date(input.startTime))) {
       throw new ForbiddenError('Start time must not come before the current time');
@@ -724,8 +738,32 @@ async function updateAuction(currentUser: ISeller, auctionId: string, input: Par
       unsetFields.registrationFee = '';
     }
 
+    // streamKey is server-owned on every path: drop any caller-supplied value before `input` is
+    // spread into `$set` below. The mint is conditional — it only runs when no key exists — so
+    // without this delete `input` would win the spread for an auction that already has one, and
+    // a caller could overwrite a live stream's identity. As in createAuction, the Joi schema and
+    // the IAuctionInput type are not enforcement: only this delete is.
+    delete (input as any).streamKey;
+
+    // Hold the model's "our media server + livestreamed => has a streamKey" invariant on the
+    // update path too. findByIdAndUpdate does not run validators, so nothing else would enforce
+    // it, and a seller switching an existing auction to our media server would otherwise
+    // persist it with no stream identity at all — silently, and only discovered when the
+    // player tries to derive a playback URL from it.
+    //
+    // An existing key is preserved rather than rotated. Rotating on every edit would invalidate
+    // the ingest URL already configured in the seller's encoder, cutting a live stream.
+    const effectiveStreamProvider = input.streamProvider ?? auction.streamProvider;
+    const effectiveIsLivestreamed =
+      input.isBeingLivestreamed ?? auction.isBeingLivestreamed;
+    const hasKey = !!auction.streamKey;
+    const streamKeyReset: Record<string, string> =
+      effectiveIsLivestreamed && effectiveStreamProvider === EStreamProvider.MEDIA_SERVER && !hasKey
+        ? { streamKey: generateStreamKey() }
+        : {};
+
     const updateDoc: Record<string, any> = {
-      $set: { ...input, ...publishedStatusReset, ...statusReset },
+      $set: { ...input, ...publishedStatusReset, ...statusReset, ...streamKeyReset },
     };
     if (Object.keys(unsetFields).length > 0) {
       updateDoc.$unset = unsetFields;
